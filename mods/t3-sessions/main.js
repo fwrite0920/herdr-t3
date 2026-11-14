@@ -128,7 +128,7 @@ let telemetry = {
   maxCtx: agentType === "codex" ? "875k" : agentType === "antigravity" ? "1M" : "200k",
   hitRate: 0, cost: "$0.00", sessionCost: "$0.00", turnCost: "$0.000",
   ttft: "1.0s", tokPerSec: "135 tok/s", avgTtft: "1.0s", avgTokPerSec: "130 tok/s",
-  recentTools: [], toolsOk: 0, usedToolsCount: 0, readFilesCount: 0, editedFilesCount: 0,
+  recentTools: [], toolsOk: 0, usedToolsCount: 0, usedToolNames: [], readFilesCount: 0, editedFilesCount: 0,
   headroom: 35, health: "充裕", healthColor: "#34d399",
   builtinTools: builtinNames.length, extTools: extNames.length, totalTools: builtinNames.length + extNames.length,
   builtinNames, extNames, stepCount: turnNum * 2, storage: "saved", cwd, gitBranch, gitClean, gitChanges,
@@ -226,7 +226,13 @@ if (agentType === "antigravity") {
           }
 
           telemetry.toolsOk = totalToolsOk || (turnNum * 2);
-          telemetry.usedToolsCount = Math.max(usedTools.size, 1);
+          telemetry.usedToolNames = Array.from(usedTools);
+          telemetry.usedToolsCount = usedTools.size;
+          for (const ut of telemetry.usedToolNames) {
+            if (!builtinNames.includes(ut) && !extNames.includes(ut)) builtinNames.push(ut);
+          }
+          telemetry.builtinTools = builtinNames.length;
+          telemetry.totalTools = builtinNames.length + extNames.length;
           telemetry.readFilesCount = readFiles.size;
           telemetry.editedFilesCount = editedFiles.size;
 
@@ -316,8 +322,11 @@ if (agentType === "antigravity") {
             if (o.payload.info.last_token_usage) lastTokenUsage = o.payload.info.last_token_usage;
           }
           if (o.payload?.item?.type === "CommandExecution") {
-            executedCount++; usedTools.add("bash");
+            executedCount++;
             const rawCmd = Array.isArray(o.payload.item.command) ? o.payload.item.command.slice(-1)[0] : String(o.payload.item.command);
+            usedTools.add("exec");
+            if (/\brtk\b/.test(rawCmd)) usedTools.add("rtk");
+            if (/\bgit\b/.test(rawCmd)) usedTools.add("git");
             const cmdName = rawCmd.trim().split(NL)[0].replace(/^\S*zsh\s+-lc\s+['"]?/, "").slice(0, 32);
             lastCmdStart = ts; lastCmdName = cmdName || "command";
             const pm = rawCmd.match(/(?:git\s+apply|patch|tee|cat\s+>\s*|nano|vim)\s+([^\s;&|]+)/i);
@@ -350,7 +359,13 @@ if (agentType === "antigravity") {
       }
       if (recentCmds.length > 0) telemetry.recentTools = recentCmds;
       telemetry.toolsOk = executedCount || (turnNum * 3);
-      telemetry.usedToolsCount = Math.max(usedTools.size, 3);
+      telemetry.usedToolNames = Array.from(usedTools);
+      telemetry.usedToolsCount = usedTools.size;
+      for (const ut of telemetry.usedToolNames) {
+        if (!builtinNames.includes(ut) && !extNames.includes(ut)) builtinNames.push(ut);
+      }
+      telemetry.builtinTools = builtinNames.length;
+      telemetry.totalTools = builtinNames.length + extNames.length;
       telemetry.readFilesCount = readFiles.size;
       telemetry.editedFilesCount = editedFiles.size;
 
@@ -420,7 +435,8 @@ if (agentType === "antigravity") {
         }
         if (turnCount > 0) telemetry.turn = turnCount;
         telemetry.toolsOk = toolCount || (telemetry.turn * 2);
-        telemetry.usedToolsCount = Math.max(usedTools.size, recent.length, 2);
+        telemetry.usedToolNames = Array.from(usedTools);
+        telemetry.usedToolsCount = usedTools.size;
         if (recent.length > 0) telemetry.recentTools = recent;
         telemetry.inTok = totalIn; telemetry.cacheTok = totalCache; telemetry.outTok = totalOut;
         telemetry.totalCtx = totalIn + totalOut + totalCache;
@@ -689,7 +705,7 @@ export default class Sessions extends View {
   init(_props, cx) {
     this.viewMode = "inspector"; // "inspector" | "history"
     this.breakdownOpen = true;
-    this.toolsOpen = false;
+    this.toolsOpen = true;
     this.toolCategory = "all"; // "all" | "builtin" | "ext"
     this.toolFilter = "";
     this.toolInput = InputState.new({ placeholder: "搜索工具与技能名称..." });
@@ -727,6 +743,7 @@ export default class Sessions extends View {
       recentTools: [],
       toolsOk: 0,
       usedToolsCount: 0,
+      usedToolNames: [],
       builtinTools: 13,
       extTools: 39,
       totalTools: 52,
@@ -1045,12 +1062,15 @@ export default class Sessions extends View {
     const remainingTools = Math.max(0, (tel.toolsOk || 0) - (tel.recentTools?.length || 0));
 
     // Filter tools for tools catalog
+    const usedSet = new Set(tel.usedToolNames || []);
     const builtins = (tel.builtinNames || []).map((name) => ({ name, type: "builtin" }));
     const exts = (tel.extNames || []).map((name) => ({ name, type: "ext" }));
     let displayedTools = [];
     if (this.toolCategory === "all") displayedTools = [...builtins, ...exts];
     else if (this.toolCategory === "builtin") displayedTools = builtins;
-    else displayedTools = exts;
+    else if (this.toolCategory === "ext") displayedTools = exts;
+    else if (this.toolCategory === "used") displayedTools = [...builtins, ...exts].filter((x) => usedSet.has(x.name));
+    else displayedTools = [...builtins, ...exts];
 
     if (this.toolFilter) {
       displayedTools = displayedTools.filter((x) => x.name.toLowerCase().includes(this.toolFilter));
@@ -1172,7 +1192,11 @@ export default class Sessions extends View {
             .child(div().text_size(11).font_medium().text_color(t.muted).cursor_pointer()
               .on_click((_e, cx) => { this.toolsOpen = !this.toolsOpen; cx.notify(); })
               .child(this.toolsOpen ? "▾ 收起" : "▸ 展开清单"))))
-        .child(div().text_size(10.5).text_color(t.dim).child(`内置基元 ${tel.builtinTools || 13} · 扩展技能 ${tel.extTools || 39} · 已调用 ${tel.usedToolsCount || 1} 项`))
+        .child(h_flex().w_full().justify_between().items_center().text_size(10.5)
+          .child(div().text_color(t.dim).child(`内置基元 ${tel.builtinTools || 13} · 扩展技能 ${tel.extTools || 39}`))
+          .child(h_flex().gap(4).items_center()
+            .child(div().size(5).rounded_full().bg(usedSet.size > 0 ? "#10b981" : t.dim))
+            .child(div().font_bold().text_color(usedSet.size > 0 ? "#34d399" : t.dim).child(`已调用 ${usedSet.size || tel.usedToolsCount || 0} 项`))))
         .when(this.toolsOpen, (el) => el.child(v_flex().w_full().gap(6).pt(4)
           // Search Box
           .child(h_flex().w_full().h(26).px(6).gap(6).items_center().rounded(4).bg(t.background).border(1).border_color(t.border)
@@ -1182,7 +1206,7 @@ export default class Sessions extends View {
               div().text_size(10).text_color(t.dim).cursor_pointer().hover((s) => s.text_color(t.ansi1))
                 .on_click((_e, cx) => { this.toolInput.set_value(""); this.toolFilter = ""; cx.notify(); })
                 .child("✕"))))
-          // Filter Tabs
+          // Filter Tabs (All, Builtin, Ext, Used)
           .child(h_flex().w_full().gap(4)
             .child(div().px(6).py(2).rounded(3).cursor_pointer().text_size(10.5).font_medium()
               .when(this.toolCategory === "all", (tEl) => tEl.bg(t.border).text_color(t.foreground))
@@ -1198,17 +1222,30 @@ export default class Sessions extends View {
               .when(this.toolCategory === "ext", (tEl) => tEl.bg(t.border).text_color("#c084fc"))
               .when(this.toolCategory !== "ext", (tEl) => tEl.text_color(t.muted).hover((s) => s.text_color(t.foreground)))
               .on_click((_e, cx) => { this.toolCategory = "ext"; cx.notify(); })
-              .child(`技能 (${tel.extTools || 39})`)))
-          // 2-Column Responsive Chips Matrix (Flows naturally with parent scroll, zero clipping!)
+              .child(`技能 (${tel.extTools || 39})`))
+            .child(div().px(6).py(2).rounded(3).cursor_pointer().text_size(10.5).font_medium()
+              .when(this.toolCategory === "used", (tEl) => tEl.bg("#065f46").text_color("#34d399"))
+              .when(this.toolCategory !== "used", (tEl) => tEl.text_color(usedSet.size > 0 ? "#34d399" : t.muted).hover((s) => s.text_color("#34d399")))
+              .on_click((_e, cx) => { this.toolCategory = "used"; cx.notify(); })
+              .child(`已调用 (${usedSet.size})`)))
+          // 2-Column Responsive Chips Matrix: Invoked tools prominently highlighted in Emerald
           .child(h_flex().id("tools-chips-grid").w_full().flex_wrap().gap(4).pt(2)
-            .children(displayedTools.map((tool) =>
-              h_flex().id(`tool-chip-${tool.name}`).items_center().gap(4).px(6).py(3).rounded(4).bg(t.background).border(1).border_color(t.border)
+            .children(displayedTools.map((tool) => {
+              const isUsed = usedSet.has(tool.name);
+              const chipColor = isUsed ? "#34d399" : (tool.type === "builtin" ? "#38bdf8" : "#c084fc");
+              return h_flex().id(`tool-chip-${tool.name}`).items_center().gap(4).px(6).py(3).rounded(4)
+                .bg(isUsed ? "#064e3b4d" : t.background)
+                .border(1)
+                .border_color(isUsed ? "#10b981" : t.border)
                 .cursor_pointer()
-                .hover((s) => s.border_color(tool.type === "builtin" ? "#38bdf8" : "#c084fc").bg(t.hover))
-                .child(svg(tool.type === "builtin" ? "mods/t3-sessions/icons/terminal.svg" : "mods/t3-sessions/icons/sparkles.svg").size(10).text_color(tool.type === "builtin" ? "#38bdf8" : "#c084fc").flex_none())
+                .hover((s) => s.border_color(isUsed ? "#34d399" : (tool.type === "builtin" ? "#38bdf8" : "#c084fc")).bg(t.hover))
+                .child(svg(isUsed ? "mods/t3-sessions/icons/check.svg" : (tool.type === "builtin" ? "mods/t3-sessions/icons/terminal.svg" : "mods/t3-sessions/icons/sparkles.svg")).size(10).text_color(chipColor).flex_none())
                 .child(div().text_size(10.5).font_family("JetBrains Mono")
-                  .text_color(tool.type === "builtin" ? "#38bdf8" : t.foreground)
-                  .child(tool.name)))))
+                  .when(isUsed, (d) => d.font_bold().text_color("#34d399"))
+                  .when(!isUsed, (d) => d.text_color(tool.type === "builtin" ? "#38bdf8" : t.foreground))
+                  .child(tool.name))
+                .when(isUsed, (elChip) => elChip.child(div().text_size(8.5).font_bold().px(3).py(0.5).rounded(2).bg("#059669").text_color("#ffffff").child("ACTIVE")));
+            })))
           .when(displayedTools.length === 0, (el3) => el3.child(
             div().p(8).text_size(11).text_color(t.dim).child("没有匹配的工具或技能"))))))
 
@@ -1233,11 +1270,6 @@ export default class Sessions extends View {
             .child(svg("mods/t3-sessions/icons/database.svg").size(11).text_color(t.muted).flex_none())
             .child(div().text_color(t.muted).child("CWD")))
           .child(div().max_w(170).truncate().text_color(t.dim).child(activeCwd || root || "—")))
-        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
-          .child(h_flex().gap(4).items_center()
-            .child(svg("mods/t3-sessions/icons/file-text.svg").size(11).text_color(t.muted).flex_none())
-            .child(div().text_color(t.muted).child("Files")))
-          .child(div().text_color(t.foreground).child(`${tel.readFilesCount || 0} read · ${tel.editedFilesCount || 0} edited`)))
         .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
           .child(div().text_color(t.muted).child("Session ID"))
           .child(div().font_family("JetBrains Mono").font_bold().text_color(t.foreground).child(tel.sessionId || "term")))
