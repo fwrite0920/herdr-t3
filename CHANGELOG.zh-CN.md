@@ -8,7 +8,9 @@
   - **全 Agent 通用遥测感知引擎**：深度原生适配 **Google Antigravity**、**OpenAI Codex**、**Oh-My-Prompt (Omp)**、**Inflection Pi**、**Claude Code** 以及通用 **System Shell / SSH** 等多种环境，智能识别 Agent 身份、模型参数、执行状态与实时用量。
   - **100% 真实日志时间戳推算 TTFT 与吞吐速率**：根据交互记录中真实 `USER_INPUT` 与 `PLANNER_RESPONSE` / `CommandExecution` 的精准毫秒时间戳差值计算真实 TTFT（如 Gemini 实测 1.0s，Codex GPT-6 思考链实测 7.4s），彻底移除合成公式与人为上限（如 `Math.min(34, ...)`）。
   - **动态全量工具与技能清单检索**：扫描各 Agent 真实注册的内置基元（Antigravity 13项，Codex 8项，Omp 7项）与本地 `skills/`、`builtin/skills`、`plugins/` 中真实安装的全部 44 项扩展技能，显示实时总数并动态统计当前会话实际调用的工具数。
-  - **原生高清矢量 SVG 图标体系集成**：全面替换粗糙的字符与表情，全景接入 Herdr 原生高清矢量 SVG 图标（`sparkles.svg`、`zap.svg`、`layers.svg`、`clock.svg`、`terminal.svg`、`wrench.svg`、`git-branch.svg`、`server.svg`、`database.svg`），使 HUD 与各项分栏拥有纯正统一的视觉语言。
+  - **Magpie 深度遥测与余量预警算法接入**：全面借鉴与融合 `yetone/magpie` 项目中的上下文模型，引入上下文余量预测算法（根据每轮 Token 增量中位数推算剩余可用轮次，如 `~679 turns remaining`）、窗口健康状态度量（`Healthy` < 75%，`Filling up` 75%-90%，`Near full` > 90% 并动态联动进度条色阶），以及多智能体缓存提示词去重抵扣机制。
+  - **极简专业参考设计布局深度重构**：全面采用细线横向贯通风格分栏（`✦ SESSION`、`✦ CONTEXT`、`✦ USAGE`、`✦ ACTIVITY`、`✦ GIT`、`✦ TOOLS`、`✦ WORKSPACE`），遵循高密度排版美学与 JetBrains Mono 等宽数字排版，配备实时单轮计时器（轮次切换即刻平滑校准），带来媲美专业 IDE 的极简高质感。
+  - **原生高清矢量 SVG 图标体系集成**：全面替换粗糙的字符与表情，全景接入 Herdr 原生高清矢量 SVG 图标（`sparkles.svg`、`zap.svg`、`layers.svg`、`clock.svg`、`terminal.svg`、`wrench.svg`、`git-branch.svg`、`server.svg`、`database.svg`、`folder.svg`、`chevron-down.svg`、`chevron-right.svg`），使各项分栏拥有纯正统一的视觉语言。
   - **彻底修复 TOOLS 展开滑动与全功能检索体验**：解决内层容器滑轮事件被外层截获导致无法滚动的底层交互 Bug，新增内联即时搜索框（`🔍 搜索工具与技能名称...`）、分类筛选胶囊（`[ 全部 (57) ] [ 内置 (13) ] [ 技能 (44) ]`）以及双列流式徽章矩阵（配备 `>_` 内置基元与 `✦` 技能专属徽章），自适应全局滚动，无任何内容遮挡。
   - **高信息密度 2x2 Quick Stats HUD 与现代美学 UI 重构**：全面重构 Inspector 视觉体系，兼具极高美观度与开发实用性：
     - **Hero Card（Agent 身份卡）**：专属品牌胶囊与矢量星芒图标、呼吸指示灯、Turn 胶囊、实时平滑递增的计时器（JetBrains Mono 字体 `04:12`）、模型与任务标题卡。
