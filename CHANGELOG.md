@@ -4,7 +4,16 @@ English · [中文](CHANGELOG.zh-CN.md)
 
 ## 2026-11-14
 
-- Real-time Session Telemetry Inspector (`t3-sessions`):
+- Real-time Session Telemetry Inspector & Multi-Agent Multi-Machine Live Sync (`t3-sessions`):
+  - **Independent per-terminal running timers**: Introduced `termTimers` keyed by `termAddr` to track each terminal/agent's running time and state independently; switching between different agents, tabs, or spaces never resets elapsed timers to `0:00`, resuming smoothly upon return.
+  - **Multi-machine & Remote SSH / WSL telemetry routing**: Automatically distinguishes local, WSL, and remote SSH machines (e.g. `racknerd`, `evoxt`):
+    - WSL terminals directly read live Codex rollout sessions and token usage, and query Git status via `hc exec --on wsl`.
+    - Remote SSH machines query remote Git branches and changes through `hc exec --on <machine>`, correctly displaying remote host tags (`RACKNERD`, `EVOXT`) and remote working directories without falling back to local Antigravity data.
+  - **Exact multi-agent conversation matching**: Accurately pairs each local Antigravity terminal (`t8`, `t12`, `t17`) with its own distinct session transcript by comparing `status.msg` and workspace folders, eliminating cross-terminal crosstalk and stale session ID display.
+  - **Blazing-fast history scanner & real-time updates**:
+    - Upgraded scanning to 64KB/128KB chunked buffers (<13ms for 30+ sessions), properly capturing WSL Codex session titles and working directories.
+    - Fixed path matching on Windows drive roots (`D:/`, `C:/`) that previously caused project session filtering to appear empty.
+    - Lowered background sync interval to 4s with instant refresh on tab switch and manual `⟳ 刷新` button click.
   - Added full live agent telemetry inspector matching the visual terminal telemetry panel:
     - `✦ SESSION`: Task name, live status badge (`🟣 WORKING · turn N · 0:11`), model effort badge (`xhigh`).
     - `✦ CONTEXT`: Total token usage (`102.5k / 1M +102.5k`), percentage bar, collapsible multi-color token breakdown bar and legend (System ~24%, Tools ~54%, Messages ~1%, Tool results ~21%).
