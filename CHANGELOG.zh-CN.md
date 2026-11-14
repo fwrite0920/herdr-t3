@@ -4,13 +4,16 @@
 
 ## 2026-11-14
 
-- 实时会话遥测检查器与历史列表全场景增强（`t3-sessions`）：
-  - **动态上下文构成比例拆解**：根据实时 System 设定、工具定义、上下文历史与工具输出真实体量动态按比例拆解并呈现条形分布，彻底移除固定硬编码上限（如 5.8k / 12.9k 封顶）。
-  - **缓存命中率与调用费用精准核算**：校正 OpenAI/Codex 输入 Token 计算公式（修正 input_tokens 已包含 cached_input_tokens 的双重累加 Bug），精准计算高达 99.5% 的真实缓存命中率与重型会话的实际费用（如 $0.20+）。
-  - **活动流水与 TTFT 吞吐量实时推演**：动态输出当前会话工具调用流水、真实执行成功数（`toolsOk`），以及自适应轮次的 TTFT 首字延迟与生成吞吐速度。
-  - **Git 仓库上下文真实校验**：本地 Windows、WSL 与 SSH 环境下统一引入 `git rev-parse --is-inside-work-tree` 先行校验，在非 Git 目录（如 `D:\`）精准显示 `no repo` 与 `—`，避免误报 `main clean`。
-  - **全量内置与扩展工具清单扫描**：深度扫描本地已安装的 8 项内置基元与 39 项扩展技能及插件（扫描 `~/.gemini/antigravity-cli/skills`、`builtin/skills` 及 `config/plugins`），并在展开时以分组清晰的可滚动列表分类呈现 `BUILTIN (8)` 与 `EXTENSIONS & SKILLS (39)`。
-  - **工作区轮次与步数精准计数**：将原先固定的磁盘文件夹数量改为真实的 `${turn} turns · ${stepCount} steps`，并动态呈现会话持久化状态（`saved` / `in-memory`）与主机标签。
+- 实时会话遥测检查器与全通用 Agent 架构深度增强（`t3-sessions`）：
+  - **全 Agent 通用遥测感知引擎**：深度原生适配 **Google Antigravity**、**OpenAI Codex**、**Oh-My-Prompt (Omp)**、**Inflection Pi**、**Claude Code** 以及通用 **System Shell / SSH** 等多种环境，智能识别 Agent 身份、模型参数、执行状态与实时用量。
+  - **彻底清除伪造兜底与硬编码数据**：彻底剔除所有历史遗留的硬编码默认值（包括 `4732`、`213867`、`447`、`01a1d52c`、`$0.006` 以及 `14200/16800` 等封顶截断），所有数据（Token、命中率、调用成本、工具成功数、执行轮次与步数）均 100% 动态读取并精准换算。
+  - **彻底修复 TOOLS 展开滑动与全功能检索体验**：解决内层容器滑轮事件被外层截获导致无法滚动的底层交互 Bug，新增内联即时搜索框（`🔍 搜索 47 个工具与技能...`）、分类筛选胶囊（`[ 全部 (47) ] [ 内置 (8) ] [ 技能 (39) ]`）以及双列流式徽章矩阵（配备 `⚡` 内置基元与 `🧩` 技能专属徽章），自适应全局滚动，无任何内容遮挡。
+  - **高信息密度 2x2 Quick Stats HUD 与现代美学 UI 重构**：全面重构 Inspector 视觉体系，兼具极高美观度与开发实用性：
+    - **Hero Card（Agent 身份卡）**：专属品牌胶囊、呼吸指示灯、Turn 胶囊、实时平滑递增的计时器（JetBrains Mono 字体 `04:12`）、模型与任务标题卡。
+    - **2x2 Quick Stats HUD（核心运营面板）**：在一屏内极速获取 Context 水位（附带百分比与增量）、Cache Hit 缓存命中率（高亮祖母绿）、Est. Cost 真实预估费用（琥珀金）以及 Latency & Tok/s 吞吐速率（淡紫）。
+    - **Context Composition Bar（动态上下文构成）**：发光微渐变分段条，精确展现系统设定、工具声明、对话历史与工具输出的真实比例与 Token 计数。
+    - **Live Activity Feed（执行流跟踪）**：实时追踪工具调用毫秒耗时与状态反馈，动态统计已执行工具总数。
+    - **Workspace & Git Environment（工作区与版本控制）**：整合宿主机标识、真实 Git 分支与状态、格式化工作区路径与会话唯一标识。
   - **独立终端计时器连续性**：引入 `termTimers` 按终端地址（`termAddr`）独立记录并维护每个终端/Agent 的启动时间与状态；在不同 Agent、窗格或 Space 之间切换时，各终端计时器绝对不会被重置为 `0:00`，切回后持续平滑递增。
   - **多机器与远程 SSH / WSL 实时遥测分发**：根据终端地址动态区分本地、WSL 及远程 SSH 机器（如 `racknerd`、`evoxt` 等）：
     - WSL 环境直接读取 Codex 会话最新日志与 Token 计数，并通过 `hc exec --on wsl` 极速查询 WSL 内 Git 分支与状态。

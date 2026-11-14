@@ -5,12 +5,15 @@ English · [中文](CHANGELOG.zh-CN.md)
 ## 2026-11-14
 
 - Real-time Session Telemetry Inspector & Multi-Agent Multi-Machine Live Sync (`t3-sessions`):
-  - **Dynamic context token breakdown**: Computes proportional token breakdowns dynamically based on system prompts, tool definitions, message history, and tool result sizes, removing artificial caps.
-  - **Accurate cache hit rate & cost calculation**: Calibrated token accounting across models (e.g. proper calculation of cached input tokens without double-counting), calculating realistic session cost ($0.20+ for complex sessions).
-  - **Activity & TTFT tracking**: Real-time tool invocation feed, dynamic tool success counters, and turn-adaptive generation latency & throughput calculation.
-  - **Git context verification**: Verified git worktree presence via `git rev-parse --is-inside-work-tree` across local Windows, WSL, and SSH environments, correctly showing `no repo` and `—` when not inside a git repository.
-  - **Comprehensive tools & extensions directory**: Scans built-in primitives and all installed extension skills and plugins across `~/.gemini/antigravity-cli/skills`, `builtin/skills`, and `config/plugins`, providing categorized `BUILTIN (8)` and `EXTENSIONS & SKILLS (39)` listings in a scrollable list.
-  - **Workspace progress tracking**: Replaced static folder counts with `${turn} turns · ${stepCount} steps`, real-time session ID matching, and storage status indicators.
+  - **Universal Multi-Agent Telemetry Engine**: Deep native support across **Google Antigravity**, **OpenAI Codex**, **Oh-My-Prompt (Omp)**, **Inflection Pi**, **Claude Code**, and generic **System Shell / SSH** environments, dynamically discovering sessions and parsing real-time usage, model names, and tool executions.
+  - **Zero Fallbacks & Zero Hardcoded Metrics**: Completely eliminated all hardcoded fallback values (`4732`, `213867`, `447`, `01a1d52c`, `$0.006`, `14200/16800 caps`), ensuring 100% of telemetry numbers (tokens, cost, hit rate, tool success, turn, and step counts) are computed directly from live logs.
+  - **Fixed Tools Scrolling & Multi-Category Explorer**: Resolved the inner scrollbar freeze bug by integrating natural parent scrolling, adding an instant search filter (`🔍`), category filter pills (`[ All (47) ] [ Builtin (8) ] [ Skills (39) ]`), and a sleek 2-column wrapping chip matrix with distinct tool badges (`⚡` and `🧩`).
+  - **High-Density 2x2 Quick Stats HUD & Modern Aesthetic Redesign**: Redesigned the Inspector layout into a cohesive, developer-grade dashboard:
+    - **Hero Card**: Agent brand pill, live status pulse, turn pill, live ticking timer (`04:12`), model name, and user task title.
+    - **2x2 Quick Stats HUD**: 4 primary metrics in a compact 2x2 grid (Context Window with percentage gauge, Cache Hit Rate in emerald, Real Est. Cost in amber, and Latency & Tok/s Speed in purple).
+    - **Context Composition Bar**: Glowing segmented progress bar with dynamic proportional breakdown (System, Tools, Messages, Tool Results).
+    - **Live Activity Stream**: Real-time tool execution feed with latency tags and dynamic execution counters.
+    - **Project & Git Environment**: Unified host, git branch, status count, formatted CWD, and session ID card.
   - **Independent per-terminal running timers**: Introduced `termTimers` keyed by `termAddr` to track each terminal/agent's running time and state independently; switching between different agents, tabs, or spaces never resets elapsed timers to `0:00`, resuming smoothly upon return.
   - **Multi-machine & Remote SSH / WSL telemetry routing**: Automatically distinguishes local, WSL, and remote SSH machines (e.g. `racknerd`, `evoxt`):
     - WSL terminals directly read live Codex rollout sessions and token usage, and query Git status via `hc exec --on wsl`.
