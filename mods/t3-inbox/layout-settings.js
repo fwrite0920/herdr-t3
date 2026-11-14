@@ -4,6 +4,29 @@ import { shared } from "herdr";
 import { KEY } from "./store.js";
 
 export const SETTINGS = KEY.settings;
+
+export const DEFAULT_PANEL_TABS = {
+  files: true,
+  sessions: true,
+  changes: true,
+  favorites: false,
+  tools: false,
+  todos: false
+};
+
 // afterAway: where putting away the agent in view lands, "home" or "next" (card). homeMod: the mod Home is, by its folder's name; null, a terminal.
-const DEFAULTS = { afterAway: "home", homeMod: "t3-home" };
-export const t3Settings = () => ({ ...DEFAULTS, ...shared(SETTINGS) });
+const DEFAULTS = {
+  afterAway: "home",
+  homeMod: "t3-home",
+  livePorts: true,
+  panelTabs: DEFAULT_PANEL_TABS
+};
+
+export const t3Settings = () => {
+  const current = shared(SETTINGS) ?? {};
+  return {
+    ...DEFAULTS,
+    ...current,
+    panelTabs: { ...DEFAULT_PANEL_TABS, ...(current.panelTabs ?? {}) }
+  };
+};

@@ -454,9 +454,10 @@ export function navigation(beforeAsk = (_cx) => {}, core = { spaces, panes, agen
       else if (command === "home") await goHome(cx);
       else if (command === "home-mod") await refitHome(false, cx);
       // As Herdr's own Settings, a dialog; pressed again, it replaces the open one (closing one already gone does nothing).
-      else if (command === "settings") {
+      else if (command === "settings" || command.startsWith("settings:")) {
         if (settingsOpen) closeOverlay(settingsOpen);
-        settingsOpen = openOverlay({ mod: "t3-chrome", kind: "dialog", width: 880, props: { view: "settings" } });
+        const props = command.startsWith("settings:") ? { view: "settings", section: command.slice("settings:".length) } : { view: "settings" };
+        settingsOpen = openOverlay({ mod: "t3-chrome", kind: "dialog", width: 880, props });
       }
       else if (command === "next" || command === "prev") step(command);
       // New work doesn't start in Home: New picks its space.

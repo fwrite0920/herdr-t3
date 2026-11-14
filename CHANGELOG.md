@@ -4,6 +4,16 @@ English · [中文](CHANGELOG.zh-CN.md)
 
 ## 2026-11-14
 
+- Space Panel configurable tab toggles & clean defaults:
+  - Added dedicated "Space Panel" section in Herdr T3 Settings (`t3-chrome/settings.js`) with native toggle switches to enable or disable individual tabs (`Files`, `Sessions`, `Changes`, `Favorites`, `Tools`, `Todos`).
+  - Default visible tabs configured to a clean core set (`[ Files ] [ Sessions ] [ Changes ]`), while `Favorites`, `Tools`, and `Todos` can be toggled on demand. Hiding an active tab gracefully falls back to Files.
+- Project task manager (`t3-todos`):
+  - Added interactive Todos tab synchronized with `TODO.md` directly on disk.
+  - Supports interactive checkmark toggling (`- [ ]` <-> `- [x]`), inline task creation, deletion, filtering (All, Active, Done), and an "Ask Agent" button to dispatch tasks directly into the active terminal/agent.
+- Live Dev Server Port Detection:
+  - Automatically queries active local listening ports (e.g. 3000, 5173, 8080) and renders compact port badges in the Space Panel header with 1-click open in default browser. Configurable in T3 Settings.
+- Open in VS Code:
+  - Added a dedicated 1-click VS Code button on the Files toolbar header (`<>`) and right-click context menu item ("Open in VS Code") to open the active file or workspace folder in VS Code.
 - Space Panel integrated tabs:
   - Added Sessions, Favorites, Changes, and Tools tabs alongside Files and Review (`[ Files ] [ Sessions ] [ Favorites ] [ Changes ] [ Tools ]`).
   - Tools (`t3-tools`): unified catalog of AI coding Skills, MCP services, and plugins from Antigravity, Gemini, and Claude Code environments. Supports live search, categorization (Skills, MCP/Plugins, Project, Global), direct markdown preview of `SKILL.md`, one-click terminal `@mention` insertion, and File Explorer folder navigation.

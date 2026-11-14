@@ -4,15 +4,29 @@ import { div, svg } from "gpui-kit";
 import { h_flex, v_flex, Select, Popup } from "gpui-base";
 import { theme, props, closeOverlay, run, shared, setShared, appHome, readTextFile, exec } from "herdr";
 import * as fs from "fs/promises";
-import { SETTINGS, t3Settings } from "./layout-settings.js";
+import { SETTINGS, t3Settings, DEFAULT_PANEL_TABS } from "./layout-settings.js";
 import { stopsInit, stop, focusRoot } from "./focus.js";
 import { menuJump } from "./list.js";
 
-const SECTIONS = [{ id: "home", title: "Home", icon: "mods/t3-chrome/icons/house.svg" }];
+const SECTIONS = [
+  { id: "home", title: "Home", icon: "mods/t3-chrome/icons/house.svg" },
+  { id: "panel", title: "Space Panel", icon: "mods/t3-chrome/icons/folder-tree.svg" },
+];
+
 const ROWS = [
   { key: "afterAway", title: "After putting away", about: "Settling, snoozing or dragging away the agent in view.", options: () => [["home", "Home"], ["next", "Next card"]] },
   { key: "homeMod", title: "Home shows", about: "A terminal, or a mod that offers itself with \"home\": true in its mod.json.", options: (view) => view.homeMods },
 ];
+
+const PANEL_TABS_CONFIG = [
+  { id: "files", title: "Files", about: "Browse workspace files, preview markdown and code.", locked: true },
+  { id: "sessions", title: "Sessions", about: "Recent sessions, conversation history and agent resume." },
+  { id: "changes", title: "Changes", about: "Git status, staged changes, diffs and commit actions." },
+  { id: "favorites", title: "Favorites", about: "Pinned workspaces, directories, and favorite files." },
+  { id: "tools", title: "Tools", about: "Explore installed AI skills, plugins, and MCP server tools." },
+  { id: "todos", title: "Todos", about: "Project task checklist synchronized with TODO.md and agent actions." },
+];
+
 // Home as a shell, not a mod (homeMod null): an agent started there turns that space into an ordinary one (t3-tabs/navigation.js).
 const TERMINAL = [null, "Terminal"];
 
@@ -20,6 +34,7 @@ export function initSettings(view, cx) {
   view.keys = cx.focus_handle();
   view.keys.focus();
   stopsInit(view, cx, "modal");
+  view.section = props()?.section || view.section || "home";
   view.homeMods = [];
   // The row whose menu is open, and each row's handles: its button's, and its menu's while open.
   view.picking = null;
@@ -43,19 +58,37 @@ async function findHomeMods(view, cx) {
 
 export function settingsView(view) {
   const t = theme(), now = t3Settings(), done = () => closeOverlay(props().overlay);
+  const currentSection = view.section || props()?.section || "home";
+
   // What Home shows changes at once, as the person picking it expects to see.
   const pick = (key, value) => {
     setShared(SETTINGS, { ...shared(SETTINGS), [key]: value });
     if (key === "homeMod") run("t3-tabs.home-mod");
   };
+
   // Herdr's row: what it is on the left, the control on the right.
   const row = (r) => h_flex().w_full().gap(16).py(12).items_center().border_b(1).border_color(t.border)
       .child(v_flex().flex_1().min_w(0).gap(3)
         .child(div().text_size(14).text_color(t.foreground).child(r.title))
         .child(div().text_size(12.5).line_height("18px").text_color(t.dim).child(r.about)))
       .child(menu(r));
-  // The layout's menu, as the agents list's sort menu, on the kit's Select as the Snooze unit's: hung 4px under the button, as
-  // wide; nothing lit until a key or the pointer gets there; ↑/↓, Home, End, typeahead, Enter or Space, Esc; the one in use ticked.
+
+  // Native toggle row for settings switches
+  const toggleRow = (id, title, about, on, onToggle, locked = false) => h_flex()
+      .w_full().gap(16).py(12).items_center().border_b(1).border_color(t.border)
+      .child(v_flex().flex_1().min_w(0).gap(3)
+        .child(div().text_size(14).text_color(t.foreground).child(title))
+        .child(div().text_size(12.5).line_height("18px").text_color(t.dim).child(about)))
+      .child(locked
+        ? div().px(8).py(3).rounded(6).bg(t.hover).text_size(11.5).text_color(t.dim).child("Required")
+        : div().id(id).w(36).h(20).rounded(10).p(2).cursor_pointer()
+            .bg(on ? t.accent : t.hover)
+            .flex().items_center()
+            .when(on, (el) => el.justify_end())
+            .on_click((_e, cx) => { onToggle(); cx.notify(); })
+            .child(div().w(16).h(16).rounded(8).bg(on ? t.background : t.muted)));
+
+  // The layout's menu, as the agents list's sort menu, on the kit's Select as the Snooze unit's
   const menu = (r) => {
     const options = r.options(view), id = `st-${r.key}`, label = options.find(([v]) => v === now[r.key])?.[1] ?? now[r.key];
     const { focus, keys } = view.pick[r.key], open = view.picking === r.key;
@@ -77,11 +110,9 @@ export function settingsView(view) {
       .child(svg("mods/t3-chrome/icons/chevron-down.svg").size(14).mr(-4).flex_none().text_color(t.muted)), 8, { handle: focus });
     const list = v_flex().id(`${id}-menu`).w(220).mt(4).p(4).rounded(8).bg(t.popover).border_1().border_color(t.border).shadow_lg().text_size(14)
       .track_focus(keys)
-      // The trigger's own click toggles, so a press on it isn't "elsewhere".
       .on_mouse_down_out((_e, cx) => { if (view.overPick !== r.key) { show(false); cx.notify(); } })
       .on_key_down((e, cx) => {
         if (e.key === "enter" || e.key === "space") { if (view.pickAt >= 0) choose(options[view.pickAt][0]); }
-        // Here, before the dialog's own Esc, which would close it.
         else if (e.key === "escape") { show(false); focus.focus(); }
         else {
           const to = menuJump(view, e, options.map(([, l]) => l), view.pickAt);
@@ -102,11 +133,43 @@ export function settingsView(view) {
       .on_open_change((on, cx) => { show(on); cx.notify(); })
       .child(Popup.new(`${id}-popup`, trigger).w_full().when(open, (el) => el.content(list)));
   };
+
   const nav = v_flex().flex_none().w(190).h_full().p(10).gap(2).border_r(1).border_color(t.border)
     .child(div().px(10).pt(6).pb(12).text_size(16).font_semibold().text_color(t.foreground).child("Herdr T3"))
-    .children(SECTIONS.map((s) => h_flex().id(`st-s-${s.id}`).gap(10).px(10).py(7).items_center().rounded(7).bg(t.raised)
-      .child(svg(s.icon).size(15).text_color(t.accent))
-      .child(div().flex_1().text_size(13.5).text_color(t.foreground).child(s.title))));
+    .children(SECTIONS.map((s) => {
+      const active = currentSection === s.id;
+      return h_flex().id(`st-s-${s.id}`).gap(10).px(10).py(7).items_center().rounded(7).cursor_pointer()
+        .when(active, (el) => el.bg(t.raised).border_1().border_color(t.border))
+        .when(!active, (el) => el.hover((st) => st.bg(t.hover)))
+        .on_click((_e, cx) => {
+          view.section = s.id;
+          view.picking = null;
+          cx.notify();
+        })
+        .child(svg(s.icon).size(15).text_color(active ? t.accent : t.muted))
+        .child(div().flex_1().text_size(13.5).text_color(active ? t.foreground : t.dim).child(s.title));
+    }));
+
+  const homeContent = div().flex_1().min_w(0).h_full().px(28).py(22).overflow_y_scrollbar()
+    .child(div().pt(6).pb(8).text_size(12).font_semibold().text_color(t.dim).child("HOME"))
+    .children(ROWS.map(row));
+
+  const panelContent = div().flex_1().min_w(0).h_full().px(28).py(22).overflow_y_scrollbar()
+    .child(div().pt(6).pb(4).text_size(12).font_semibold().text_color(t.dim).child("SPACE PANEL TABS"))
+    .child(div().pb(10).text_size(12.5).line_height("18px").text_color(t.dim).child("Configure which tabs appear in the Space Panel. Default shows core tabs; others can be turned on as needed."))
+    .children(PANEL_TABS_CONFIG.map((item) => {
+      const tabs = now.panelTabs ?? DEFAULT_PANEL_TABS;
+      const on = item.locked ? true : Boolean(tabs[item.id]);
+      return toggleRow(`st-tab-${item.id}`, item.title, item.about, on, () => {
+        const nextTabs = { ...DEFAULT_PANEL_TABS, ...tabs, [item.id]: !on };
+        pick("panelTabs", nextTabs);
+      }, item.locked);
+    }))
+    .child(div().pt(18).pb(4).text_size(12).font_semibold().text_color(t.dim).child("DEVELOPER FEATURES"))
+    .child(toggleRow("st-live-ports", "Live Dev Ports", "Detect listening localhost dev server ports (3000, 5173...) and show 1-click browser badges in the panel header.", Boolean(now.livePorts !== false), () => {
+      pick("livePorts", !Boolean(now.livePorts !== false));
+    }));
+
   return focusRoot(view, h_flex().id("settings").track_focus(view.keys).w_full().h(620).min_h(0).items_start()
     .on_key_down((e, cx) => {
       if (e.key !== "escape") return;
@@ -114,7 +177,5 @@ export function settingsView(view) {
       cx.stop_propagation();
     })
     .child(nav)
-    .child(div().flex_1().min_w(0).h_full().px(28).py(22)
-      .child(div().pt(6).pb(8).text_size(12).font_semibold().text_color(t.dim).child("HOME"))
-      .children(ROWS.map(row))));
+    .child(currentSection === "panel" ? panelContent : homeContent));
 }

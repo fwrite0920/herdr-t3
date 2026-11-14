@@ -449,9 +449,23 @@ export default class Files extends View {
   // A row's menu: file-menu.js's items.
   menuItems(st, path) {
     const abs = join(st.root, path), agent = agentFor(st.id), platform = window()?.platform, dir = Boolean(this.rows(st).find((r) => r.path === path)?.dir);
-    return fileMenuItems({ page: "files", dir, remote: Boolean(st.on), platform, agent }).map((it) => ({ ...it,
+    const items = fileMenuItems({ page: "files", dir, remote: Boolean(st.on), platform, agent }).map((it) => ({ ...it,
       hint: it.id === "copy-path" ? st.on ?? "" : it.id === "mention" ? agent.program?.name ?? "" : "",
       run: (cx) => runCommon(it.id, { abs, rel: path, agent, platform }, cx) }));
+    if (!st.on) {
+      items.push({
+        id: "vscode",
+        label: "Open in VS Code",
+        icon: "code",
+        hint: "",
+        run: () => {
+          if (platform === "windows") exec("cmd", ["/c", "code", `"${abs}"`]).catch(() => null);
+          else exec("code", [abs]).catch(() => null);
+          return true;
+        }
+      });
+    }
+    return items;
   }
 
   rows(st) { return st.rows ??= treeRows(folderEntries(st), (p) => st.expanded.has(p)); }
@@ -510,6 +524,13 @@ export default class Files extends View {
         .when(md, (el) => el.child(h_flex().flex_none().gap(2).child(tab("Preview", !code, "preview")).child(tab("Code", code, "code"))))
         // The page's buttons 4 apart, as Review's.
         .child(h_flex().flex_none().gap(4).items_center()
+          // Open in VS Code
+          .when(Boolean(st.root), (el) => el.child(ghostButton(t, MOD, "t3-files-open-vscode", "code", "Open in VS Code", () => {
+            const target = st.file ? join(st.root, st.file) : st.root;
+            const platform = window()?.platform;
+            if (platform === "windows") exec("cmd", ["/c", "code", `"${target}"`]).catch(() => null);
+            else exec("code", [target]).catch(() => null);
+          }, { view: this })))
           // Wrap or scroll long lines, this page's own choice.
           .when(Boolean(st.view?.code), (el) => el.child(ghostButton(t, MOD, "t3-files-wrap", "text-wrap", wrapLines() ? "Scroll long lines" : "Wrap long lines", (cx) => { setWrapLines(!wrapLines()); cx.notify(); }, { on: wrapLines(), view: this })))
           .child(navToggle(t, MOD, "t3-files-nav-toggle", this.navOpen, (cx) => { this.navOpen = !this.navOpen; setNavOpen(this.navOpen); cx.notify(); }, false, this)));

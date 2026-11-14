@@ -4,6 +4,16 @@
 
 ## 2026-11-14
 
+- Space Panel 页签设置开关与精简默认展示：
+  - 在 T3 设置面板（`t3-chrome/settings.js`）新增「Space Panel」独立配置分栏，配备原生滑动开关，支持自由开启或关闭各个页签（`Files`、`Sessions`、`Changes`、`Favorites`、`Tools`、`Todos`）。
+  - 默认仅展示核心精简页签（`[ Files ] [ Sessions ] [ Changes ]`），其余页签如 `Favorites`、`Tools`、`Todos` 等可根据需要在设置中一键开启。隐藏当前所在页签时会自动优雅回退至 `Files`。
+- 项目待办事项管理（`t3-todos`）：
+  - 新增交互式 Todos 页签，直接与项目根目录下的 `TODO.md` 双向实时同步。
+  - 支持直接点击复选框即时更新磁盘文件中的 `- [ ]` / `- [x]` 状态、顶部输入框快速追加任务、按状态（全部 / 进行中 / 已完成）多维筛选、删除任务，并支持「Ask Agent」一键将任务以 `@TODO.md` 派发给活跃终端中的 AI Agent。
+- Live Dev Ports 本地开发端口感知：
+  - 自动扫描本机处于监听状态的 Web 开发端口（如 3000、5173、8080 等），并在 Space Panel 顶栏右侧展示精巧的状态胶囊（如 `🟢 :3000`），点击即可直接在系统默认浏览器中打开对应网页；支持在设置中开启或关闭。
+- 联动 VS Code 打开文件与工作区：
+  - 在 Files 面板顶部工具栏新增一键「Open in VS Code」图标按钮（`<>`），并在文件树右键菜单中加入「Open in VS Code」选项，快速调起 VS Code 查看当前文件或工作区目录。
 - Space Panel 集成全新页签：
   - 在 Space Panel 顶栏新增 Sessions（历史会话）、Favorites（收藏夹）、Changes（Git变更）和 Tools（技能与插件）页签，形成 `[ Files ] [ Sessions ] [ Favorites ] [ Changes ] [ Tools ]` 统一工作面板。
   - Tools（`t3-tools`）：统一聚合 Antigravity、Gemini 与 Claude Code 等环境下的 Skills（技能库）、MCP 服务与 Plugins（插件）；支持实时检索、多维分类（Skills / MCP / 项目级 / 全局级）、点击直接预览文档详情、一键在活跃终端中 `@` 引用，以及在资源管理器中定位目录。

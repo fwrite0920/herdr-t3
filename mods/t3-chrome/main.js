@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { theme, run, props, updates, layout, shared, spaces, window, settings, appHome, readTextFile, writeTextFile, notify } from "herdr";
+import { theme, run, props, updates, layout, shared, spaces, window, settings, appHome, readTextFile, writeTextFile, notify, exec } from "herdr";
 import { tip, glow } from "./tip.js";
 import { stopsInit, stopsEnd, stop, focusRoot } from "./focus.js";
 import { sidebarParts } from "./sidebar.js";
@@ -8,6 +8,7 @@ import { initSettings, settingsView } from "./settings.js";
 import { KEY } from "./store.js";
 import { panelState, showPage, hidePanel, toggleWide } from "./panel.js";
 import { button as drawButton, radiusOf } from "./button.js";
+import { t3Settings } from "./layout-settings.js";
 
 // The space panel's pages (docs/adr/0011), as its stack has them: a page the layout lacks has no tab.
 // Review wears pulls.review's own mark, as the Review bar does: a review, not a git command. In its colors, so an image.
@@ -17,7 +18,16 @@ const PAGES = {
   favorites: ["Favorites", "star"],
   changes: ["Changes", "git-commit"],
   tools: ["Tools", "wrench"],
+  todos: ["Todos", "check"],
   review: ["Review", "pulls-review", true]
+};
+
+const currentSettings = () => {
+  try {
+    return typeof t3Settings === "function" ? t3Settings() : (shared(KEY?.settings) ?? {});
+  } catch {
+    return {};
+  }
 };
 
 // The sidebar shows either Lists (Spaces and Agents) or the Inbox (t3-inbox): a stack in the layout.
@@ -28,11 +38,57 @@ export default class WorkspaceChrome extends View {
   init(_props, cx) {
     if (props()?.view === "settings") return initSettings(this, cx);
     stopsInit(this, cx);
+    if (props()?.part === "panel") {
+      this.ports = [];
+      this.scanPorts(cx);
+      cx.timer.every(6000, (cx) => this.scanPorts(cx));
+    }
     if (!props()?.footer && !props()?.part) {
       this.alignLights(cx);
       // The brand copy stays alive with the sidebar hidden; no redraw is needed until a zoom actually changes the file.
       cx.timer.every(250, cx => this.alignLights(cx));
     }
+  }
+
+  scanPorts(cx) {
+    if (currentSettings().livePorts === false) {
+      if (this.ports?.length) { this.ports = []; cx.notify(); }
+      return;
+    }
+    cx.spawn(async (cx) => {
+      try {
+        const plat = window()?.platform;
+        let out = "";
+        if (plat === "windows") {
+          const res = await exec("netstat", ["-ano", "-p", "tcp"]).catch(() => null);
+          out = res?.stdout ?? "";
+        } else {
+          const res = await exec("lsof", ["-iTCP", "-sTCP:LISTEN", "-n", "-P"]).catch(() => null);
+          out = res?.stdout ?? "";
+        }
+        if (!out) return;
+        const DEV_COMMON = new Set([
+          3000, 3001, 3002, 3003, 3004, 3005, 4000, 4173, 4200, 4321, 5000, 5001,
+          5173, 5174, 5175, 5176, 8000, 8001, 8080, 8081, 8088, 8888, 9000, 9001
+        ]);
+        const found = new Set();
+        for (const line of out.split("\n")) {
+          if (!line.includes("LISTEN")) continue;
+          const m = line.match(/(?:127\.0\.0\.1|0\.0\.0\.0|\[::\]|:::?):(\d+)\s/);
+          if (m) {
+            const p = parseInt(m[1], 10);
+            if (DEV_COMMON.has(p) || (p >= 3000 && p <= 3010) || (p >= 5170 && p <= 5180) || (p >= 8080 && p <= 8090)) {
+              found.add(p);
+            }
+          }
+        }
+        const list = Array.from(found).sort((a, b) => a - b);
+        if (JSON.stringify(list) !== JSON.stringify(this.ports)) {
+          this.ports = list;
+          cx.notify();
+        }
+      } catch {}
+    });
   }
 
   alignLights(cx) {
@@ -141,6 +197,12 @@ export default class WorkspaceChrome extends View {
   // The rest of the row drags the window, as the tab bar does.
   panelHead(t) {
     const s = panelState(), space = spaces().find(p => p.active);
+    const settings = currentSettings();
+    const tabsConfig = settings.panelTabs ?? {};
+    const visiblePages = s.pages.filter(id => id === "files" || id === "review" || tabsConfig[id]);
+    if (s.open && s.page && !visiblePages.includes(s.page)) {
+      showPage("files");
+    }
     // Review's run for this space, marked as a tab's agent is: what was news in a pane's card before (docs/adr/0011).
     const word = space && shared("review.status")?.[space.id];
     const mark = word === "working" ? svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)
@@ -165,8 +227,26 @@ export default class WorkspaceChrome extends View {
       .on_hover(glow(this, id))
       .on_click((_e, cx) => { this.hot = null; action(); cx.notify(); })), radiusOf("xs")), { action: key, below: true });
     return focusRoot(this, h_flex().id("panel-head").size_full().bg(t.chrome).gap(4).items_center()
-      .children(s.pages.map(page))
+      .children(visiblePages.map(page))
       .child(div().flex_1())
+      .when(Boolean(settings.livePorts !== false && this.ports?.length), (el) => el.child(
+        h_flex().gap(4).items_center().mr(4).children(this.ports.map((port) => {
+          const key = `port-${port}`;
+          return tip(this, t, key, `Open http://localhost:${port} in browser`,
+            stop(this, t, key, own(h_flex().id(key).h(22).px(6).gap(4).items_center().rounded(6).bg(t.raised).cursor_pointer()
+              .hover(st => st.bg(t.hover))
+              .on_click((_e, cx) => {
+                const url = `http://localhost:${port}`;
+                const plat = window()?.platform;
+                if (plat === "windows") exec("rundll32", ["url.dll,FileProtocolHandler", url]).catch(() => null);
+                else exec(plat === "macos" ? "open" : "xdg-open", [url]).catch(() => null);
+                cx.notify();
+              })
+              .child(div().size(6).rounded_full().bg(t.done))
+              .child(div().text_size(11).font_medium().text_color(t.foreground).child(`:${port}`))),
+            6), { action: `http://localhost:${port}`, below: true });
+        }))
+      ))
       .child(button("panel-wide", s.wide ? "minimize-2" : "maximize-2", s.wide ? "Restore panel" : "Expand panel", toggleWide))
       .child(button("panel-close", "x", "Close panel", hidePanel, "t3-tabs.panel")));
   }

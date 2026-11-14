@@ -189,7 +189,8 @@
             { "id": "sessions", "type": "block", "content": { "mod": "t3-sessions" } },
             { "id": "favorites", "type": "block", "content": { "mod": "t3-favorites" } },
             { "id": "changes", "type": "block", "content": { "mod": "t3-changes" } },
-            { "id": "tools", "type": "block", "content": { "mod": "t3-tools" } }
+            { "id": "tools", "type": "block", "content": { "mod": "t3-tools" } },
+            { "id": "todos", "type": "block", "content": { "mod": "t3-todos" } }
           ]
         },
         { "id": "panel-bottom-inset", "type": "row", "size": { "px": 8 }, "children": [] }
