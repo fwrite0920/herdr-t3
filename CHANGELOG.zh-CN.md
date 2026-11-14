@@ -4,6 +4,12 @@
 
 ## 2026-11-14
 
+- 完善安装指南文档与多平台指引（`README.md` 与 `README.zh-CN.md`）：
+  - 详细说明通过一键更新脚本（`update.sh`）自动完成 Mods 复制、布局写入与快捷键合并的最佳实践。
+  - 针对 Windows（PowerShell / Git Bash）与 macOS/Linux 补充明确的用户配置目录路径（`%USERPROFILE%\.config\herdr-app\`）及手动安装步骤，并说明环境依赖（Node.js / hc CLI）。
+- 遥测巡检器高亮激活工具与细节打磨（`t3-sessions`）：
+  - **已调用工具高亮标记**：新增「已调用 (X)」专属分类筛选标签，并在展开的工具矩阵中为当前会话已调用的基元与技能应用高亮翡翠绿实线边框（`#10b981`）、微绿底色、绿色加粗文字、对勾图标与白字绿底 `ACTIVE` 徽标，未调用工具保持浅色，激活状态对比极其鲜明。
+  - **移除不准的 Files 统计行**：彻底移除 `WORKSPACE & GIT` 中可能在跨环境（如 WSL）下产生统计误差的 `Files (x read · y edited)` 行，保留清晰精准的 Host 徽标、Git 分支状态、CWD、Session ID 与 History。
 - 实时会话遥测检查器与全通用 Agent 架构深度增强（`t3-sessions`）：
   - **全 Agent 通用遥测感知引擎**：深度原生适配 **Google Antigravity**、**OpenAI Codex**、**Oh-My-Prompt (Omp)**、**Inflection Pi**、**Claude Code** 以及通用 **System Shell / SSH** 等多种环境，智能识别 Agent 身份、模型参数、执行状态与实时用量。
   - **100% 真实日志时间戳推算 TTFT 与吞吐速率**：根据交互记录中真实 `USER_INPUT` 与 `PLANNER_RESPONSE` / `CommandExecution` 的精准毫秒时间戳差值计算真实 TTFT（如 Gemini 实测 1.0s，Codex GPT-6 思考链实测 7.4s），彻底移除合成公式与人为上限（如 `Math.min(34, ...)`）。

@@ -98,6 +98,7 @@ for (const sd of sDirs) {
 }
 extNames.sort();
 
+let sysChars = (builtinNames.length + extNames.length) * 180, toolsChars = 0, msgChars = 0, resChars = 0;
 const turnNum = termData?.turn || 1;
 const cwd = normPath(termData?.foreground?.cwd) || normPath(termData?.cwd) || root || "D:/projects/herdr-t3";
 
@@ -196,6 +197,10 @@ if (agentType === "antigravity") {
           for (let i = 0; i < lines.length; i++) {
             try {
               const o = JSON.parse(lines[i]);
+              if (o.type === "USER_INPUT") {
+                const c = typeof o.content === "string" ? o.content : JSON.stringify(o.content || "");
+                msgChars += c.length;
+              }
               if (o.type === "PLANNER_RESPONSE") {
                 lastPlanner = o;
                 if (o.model) {
@@ -204,8 +209,11 @@ if (agentType === "antigravity") {
                   else telemetry.model = o.model;
                 }
                 if (o.input_tokens) { cumIn += o.input_tokens; cumCache += (o.cache_read_tokens || 0); cumOut += (o.output_tokens || 0); }
+                if (o.content) msgChars += String(o.content).length;
+                if (o.thinking) msgChars += String(o.thinking).length;
                 if (o.tool_calls) {
                   for (const tc of o.tool_calls) {
+                    toolsChars += JSON.stringify(tc).length;
                     usedTools.add(tc.name);
                     const p = tc.args?.Path || tc.args?.path || tc.args?.file_path;
                     if (p) { if (tc.name === "read_file") readFiles.add(p); else if (tc.name === "write_file" || tc.name === "edit_file") editedFiles.add(p); }
@@ -213,8 +221,10 @@ if (agentType === "antigravity") {
                   }
                 }
               }
-              if (o.type === "GENERIC") {
+              if (o.type === "GENERIC" || o.source === "TOOL") {
                 totalToolsOk++;
+                const c = typeof o.content === "string" ? o.content : JSON.stringify(o.content || "");
+                resChars += c.length;
                 if (turnTools.length > 0 && turnTools[turnTools.length - 1].status === "running") {
                   const last = turnTools[turnTools.length - 1];
                   last.end = o.created_at; last.status = "ok";
@@ -311,7 +321,12 @@ if (agentType === "antigravity") {
             if (tsObj.model) telemetry.model = tsObj.model.startsWith("auto/") ? tsObj.model.slice(5) : tsObj.model;
             if (tsObj.reasoning_effort) telemetry.effort = tsObj.reasoning_effort;
           }
-          if (o.payload?.item?.type === "UserMessage") userMsgTime = ts;
+          const item = o.payload?.item;
+          if (item) {
+            if (item.type === "SystemMessage") sysChars += String(item.content || "").length;
+            else if (item.type === "UserMessage") { userMsgTime = ts; msgChars += String(item.content || item.text || "").length; }
+            else if (item.type === "AgentMessage") msgChars += String(item.content || item.text || "").length;
+          }
           else if (userMsgTime && (o.payload?.item?.type === "AgentMessage" || o.payload?.item?.type === "CommandExecution")) {
             const diff = ts - userMsgTime;
             if (diff > 0 && diff < 120000) ttfts.push(diff);
@@ -324,6 +339,9 @@ if (agentType === "antigravity") {
           if (o.payload?.item?.type === "CommandExecution") {
             executedCount++;
             const rawCmd = Array.isArray(o.payload.item.command) ? o.payload.item.command.slice(-1)[0] : String(o.payload.item.command);
+            toolsChars += String(rawCmd).length;
+            const aggOut = o.payload.item.aggregated_output || o.payload.item.output || "";
+            resChars += String(aggOut).length;
             usedTools.add("exec");
             if (/\brtk\b/.test(rawCmd)) usedTools.add("rtk");
             if (/\bgit\b/.test(rawCmd)) usedTools.add("git");
@@ -342,6 +360,7 @@ if (agentType === "antigravity") {
           if (o.payload?.item?.type === "function_call" || o.payload?.type === "function_call") {
             const fn = o.payload.item?.name || o.payload.name;
             if (fn) {
+              toolsChars += JSON.stringify(o.payload.item || o.payload).length;
               usedTools.add(fn);
               try {
                 const args = JSON.parse(o.payload.item?.arguments || o.payload.arguments || "{}");
@@ -415,12 +434,18 @@ if (agentType === "antigravity") {
             const o = JSON.parse(l);
             const ts = new Date(o.timestamp || o.createdAt || Date.now()).getTime();
             if (o.type === "title" && o.title) telemetry.sessionTitle = o.title;
-            if (o.type === "message" && o.message?.role === "user") turnCount++;
+            if (o.type === "message") {
+              if (o.message?.role === "system") sysChars += String(o.message.content || "").length;
+              else if (o.message?.role === "user") { turnCount++; msgChars += String(o.message.content || "").length; }
+              else if (o.message?.role === "assistant") msgChars += String(o.message.content || "").length;
+            }
             if (o.model || o.message?.model) telemetry.model = (o.model || o.message.model).split("/").pop();
             if (o.type === "tool_use" || o.message?.content?.[0]?.type === "tool_use") {
               toolCount++; const nm = o.name || o.message?.content?.[0]?.name || "tool";
+              toolsChars += JSON.stringify(o).length;
               usedTools.add(nm); lastToolStart = ts; lastToolName = nm;
             } else if (lastToolStart && (o.type === "toolResult" || ts > lastToolStart)) {
+              if (o.type === "toolResult") resChars += String(o.content || "").length;
               const dur = Math.max(0, ts - lastToolStart);
               const durStr = dur >= 1000 ? (dur / 1000).toFixed(1) + "s" : dur + "ms";
               if (recent.length < 2) recent.unshift({ name: lastToolName, status: "ok", ms: durStr });
@@ -456,16 +481,15 @@ const ctxRatio = telemetry.totalCtx / maxCtxNum;
 telemetry.health = ctxRatio > 0.9 ? "紧迫" : ctxRatio > 0.8 ? "预警" : "充裕";
 telemetry.healthColor = ctxRatio > 0.9 ? "#ef4444" : ctxRatio > 0.8 ? "#fb923c" : "#34d399";
 
-const bTotal = Math.max(1, telemetry.totalCtx);
+const charTotal = Math.max(1, sysChars + toolsChars + msgChars + resChars);
 if (telemetry.totalCtx > 0) {
-  const sysTok = Math.min(6000, Math.max(800, Math.round(bTotal * (agentType === "codex" ? 0.08 : 0.12))));
-  const toolsTok = Math.min(13500, Math.max(1000, Math.round(bTotal * (agentType === "codex" ? 0.12 : 0.22))));
-  const remTok = Math.max(0, bTotal - sysTok - toolsTok);
-  const msgTok = Math.round(remTok * 0.40);
-  const resTok = Math.max(0, remTok - msgTok);
-  const sysPct = Math.max(1, Math.round((sysTok / bTotal) * 100));
-  const toolsPct = Math.max(1, Math.round((toolsTok / bTotal) * 100));
-  const msgPct = Math.max(1, Math.round((msgTok / bTotal) * 100));
+  const sysTok = Math.max(100, Math.round(telemetry.totalCtx * (sysChars / charTotal)));
+  const toolsTok = Math.max(100, Math.round(telemetry.totalCtx * (toolsChars / charTotal)));
+  const msgTok = Math.max(100, Math.round(telemetry.totalCtx * (msgChars / charTotal)));
+  const resTok = Math.max(0, telemetry.totalCtx - sysTok - toolsTok - msgTok);
+  const sysPct = Math.max(1, Math.round((sysTok / telemetry.totalCtx) * 100));
+  const toolsPct = Math.max(1, Math.round((toolsTok / telemetry.totalCtx) * 100));
+  const msgPct = Math.max(1, Math.round((msgTok / telemetry.totalCtx) * 100));
   const resPct = Math.max(1, 100 - sysPct - toolsPct - msgPct);
   telemetry.breakdown = { sys: sysTok, sysPct, tools: toolsTok, toolsPct, msg: msgTok, msgPct, res: resTok, resPct };
 } else {

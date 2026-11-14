@@ -24,13 +24,62 @@ I'd worked this way in T3 Code: what's running stays out of sight, what needs me
 - **Slim tabs and framed panes**, in T3 Code's look.
 - **Other machines**: their spaces grouped by machine, their Inbox cards marked. In Lists, hover an Agents row to see its machine's name.
 - **Files**: the space's folder, read-only, in a panel at the window's right: the tree at its outer edge, the file you pick beside it. It stays put as you switch tabs and follows you to another space. Hidden pages do no file refreshes, and full data is cached for only three recent spaces per page.
+- **Sessions (Inspector & History)**: A built-in agent telemetry dashboard and session history explorer in the right panel. Natively supports Google Antigravity, OpenAI Codex, Oh-My-Prompt, Inflection Pi, and terminal shells; features a 2x2 HUD (real-time context headroom & warning, cache hit rate, session/turn cost, speed & TTFT latency), dynamic 4-segment token breakdown, live tool activity stream, tools & skills catalog with emerald `ACTIVE` badges for invoked tools (and a dedicated "Used" filter tab), environment detection (`LOCAL` / `WSL` / remote SSH), and persistent elapsed timers that never reset to zero when switching terminals.
 - **Review** (optional): what's left to review in the worktree, on the same panel's other page. Files and Review keep their own files, reading positions, line wrapping and tree widths; switching pages restores each one.
 
 Each in detail: [the guide](docs/user/guide.md).
 
 ## Install
 
-Ask your Herdr agent to add `herdr.dev/layouts/JinJieBeWater/herdr-t3`. By hand: copy `layouts/herdr-t3.json`, `layouts/herdr-t3.svg` and every `mods/t3-*` into `~/.config/herdr-app/`, and merge `keys.json` into yours.
+### Method 1: One-Command Install / Update (Recommended)
+
+Clone the repository and run the update script:
+
+**macOS / Linux**:
+```sh
+git clone https://github.com/JinJieBeWater/herdr-t3.git
+cd herdr-t3
+./scripts/update.sh
+```
+
+**Windows** (PowerShell / Git Bash):
+```pwsh
+git clone https://github.com/JinJieBeWater/herdr-t3.git
+cd herdr-t3
+& "C:\Program Files\Git\bin\sh.exe" ./scripts/update.sh
+```
+
+What the script does automatically:
+1. Syncs all `mods/t3-*` (including `t3-sessions`, `t3-inbox`, `t3-agents`, `t3-tabs`, `t3-pane`, `t3-chrome`, `t3-files`, `t3-todos`, `t3-tools`, etc.) into your Herdr App configuration directory.
+2. Installs `layouts/herdr-t3.json` and its vector icon into `layouts/`.
+3. Safely merges shortcut bindings in `keys.json` without clobbering your existing custom shortcuts.
+4. Preserves your pins, settled agents, custom actions, themes, and focus ring settings.
+
+---
+
+### Method 2: Manual Installation
+
+If you prefer to install manually, locate your Herdr App home directory:
+- **Windows**: `%USERPROFILE%\.config\herdr-app\` (e.g. `C:\Users\<username>\.config\herdr-app\`)
+- **macOS / Linux**: `~/.config/herdr-app/`
+
+1. **Install Layout**: Copy `layouts/herdr-t3.json` and `layouts/herdr-t3.svg` into your Herdr home's `layouts/` folder.
+2. **Install Mods**: Copy all `t3-*` folders inside `mods/` into your Herdr home's `mods/` folder.
+3. **Merge Keys**: Merge `keys.json` into your Herdr home's `keys.json` (or copy it directly if none exists).
+
+---
+
+### Activating the Layout
+
+After installation:
+1. Launch **Herdr App**.
+2. Press `Cmd-K` (macOS) or `Ctrl-K` (Windows) to open the Command Palette, type `layout`, and select **Herdr T3** (or pick `herdr-t3` from the window's layout switcher).
+3. The T3 sidebar and framed panes will activate immediately. Switch to `Sessions` in the right panel to view the Inspector HUD and History browser.
+
+> **Requirements**:
+> - Herdr App and its `hc` CLI.
+> - [Node.js](https://nodejs.org/) (for session telemetry, token breakdown calculation, and multi-agent history parsing).
+> - The automated install script requires `jq`, `rsync`, and `sh` (on Windows, run via Git for Windows' `sh.exe`).
 
 Only want the Inbox? It is also published alone: [herdr-t3-inbox](https://github.com/JinJieBeWater/herdr-t3-inbox).
 
@@ -77,6 +126,7 @@ It overwrites the layout and its mods and merges `keys.json`; your pins, settled
 - `t3-chrome`: on macOS, when the zoom changes, it rewrites the window button position in the installed `layouts/herdr-t3.json`, so the buttons stay on the brand bar's middle line.
 - `t3-files`, read-only, where the space is (on its machine): `git rev-parse`, `git status`, `git check-ignore` and `git ls-files` (with `--no-optional-locks`, so nothing is written under `.git`), `sh` to list a folder or, on another machine, to check a file's size and search paths, `find` outside Git, `base64` for another machine's images. It copies images it shows into `cache/t3-files/` and deletes them when it stops. Right-click: Reveal in Finder (Reveal in File Explorer on Windows) and Open in default app run `open` (`xdg-open` on Linux, default app protocol handler on Windows); Mention in agent pastes into the agent's terminal through the clipboard, then puts your clipboard back.
 - `t3-spaces`, `t3-agents`, `t3-inbox`, `t3-new-menu`, `t3-picker`: for each space's icon, `git rev-parse --show-toplevel`, `sh` file tests and `base64` where the space is (on its machine); a found icon is copied into `cache/t3-icons/`.
+- `t3-sessions`: read-only. Polls telemetry every 1.5s via Node.js for the focused agent session (Antigravity, Codex, Omp, Pi, or terminal shell); inspects remote machine or WSL state via `hc exec` when remote; refreshes multi-agent session history every 4s; keeps independent elapsed runtimes per terminal. Writes no disk data and makes no network requests.
 
 No network requests.
 

@@ -4,6 +4,12 @@ English · [中文](CHANGELOG.zh-CN.md)
 
 ## 2026-11-14
 
+- Detailed Installation Documentation & Multi-Platform Guidance (`README.md` & `README.zh-CN.md`):
+  - Documented best practices for automated installation and updates via `./scripts/update.sh`.
+  - Added step-by-step manual installation instructions with explicit configuration paths for both Windows (`%USERPROFILE%\.config\herdr-app\`) and macOS/Linux (`~/.config/herdr-app/`), detailing layout files, mods folders, keybindings, and runtime requirements (Node.js and `hc` CLI).
+- Active Tool Highlighting & Inspector Refinements (`t3-sessions`):
+  - **Invoked Tool Highlighting**: Added an emerald green indicator pill `● 已调用 X 项`, a dedicated `已调用 (X)` filter tab, and distinct emerald styling for invoked tools (subtle green background, `#10b981` border, checkmark icon, bold text, and a crisp white-on-green `ACTIVE` badge).
+  - **Removed Inaccurate Files Counter**: Dropped the `Files (x read · y edited)` row from `WORKSPACE & GIT` to prevent cross-environment discrepancy (e.g. in WSL), focusing on accurate Host, Git branch/status, CWD, and Session ID metrics.
 - Real-time Session Telemetry Inspector & Multi-Agent Multi-Machine Live Sync (`t3-sessions`):
   - **Universal Multi-Agent Telemetry Engine**: Deep native support across **Google Antigravity**, **OpenAI Codex**, **Oh-My-Prompt (Omp)**, **Inflection Pi**, **Claude Code**, and generic **System Shell / SSH** environments, dynamically discovering sessions and parsing real-time usage, model names, and tool executions.
   - **100% Real Log-Based Telemetry & TTFT Timestamps**: Calculated real Time-To-First-Token (TTFT) and throughput directly from actual message timestamps in logs (e.g. 1.0s on Gemini, 7.4s on Codex GPT-6 reasoning chains), eliminating all synthetic formulas and artificial `Math.min(34, ...)` caps.

@@ -24,13 +24,62 @@
 - **窄标签、带框窗格**，照 T3 Code 的外观。
 - **其他机器**：它们的 space 按机器分组，Inbox 卡片带机器标记；Lists 中悬停 Agents 行查看机器名。
 - **Files**：在窗口右侧的面板里只读浏览 space 的文件夹：文件树贴窗口外沿，选中的文件显示在它旁边。切换标签时面板不动，换到别的 space 时跟着换。隐藏时停止文件刷新，每页只缓存最近三个 space 的完整数据。
+- **Sessions（巡检与会话）**：右侧面板内置的实时 Agent 遥测与历史浏览器。支持 Google Antigravity、OpenAI Codex、Oh-My-Prompt、Pi 等多 Agent 协议；呈现 2x2 HUD 仪表盘（上下文余量/告警、缓存命中率、累计/当轮费用、速度与延迟）、Token 四色动态构成、实时调用动态流；展开工具库时高亮已调用的工具（翡翠绿 `ACTIVE` 徽标与独立“已调用”过滤）；自动识别当前主机（LOCAL / WSL / 远端 SSH），切端连续累计运行时长不归零。
 - **Review**（可选）：同一个面板的另一页，看当前 worktree 待评审的内容。Files 和 Review 各记文件、阅读位置、换行和树宽，切页恢复各自的状态。
 
 每项的详细说明见[使用指南](docs/user/guide.zh-CN.md)。
 
 ## 安装
 
-让你的 Herdr agent 添加 `herdr.dev/layouts/JinJieBeWater/herdr-t3`。手动安装：把 `layouts/herdr-t3.json`、`layouts/herdr-t3.svg` 和所有 `mods/t3-*` 复制进 `~/.config/herdr-app/`，再把 `keys.json` 合并进你自己的。
+### 方式一：一键脚本安装 / 更新（推荐）
+
+克隆仓库并运行更新脚本：
+
+**macOS / Linux**：
+```sh
+git clone https://github.com/JinJieBeWater/herdr-t3.git
+cd herdr-t3
+./scripts/update.sh
+```
+
+**Windows**（PowerShell / Git Bash）：
+```pwsh
+git clone https://github.com/JinJieBeWater/herdr-t3.git
+cd herdr-t3
+& "C:\Program Files\Git\bin\sh.exe" ./scripts/update.sh
+```
+
+脚本会自动完成：
+1. 将所有 `mods/t3-*`（包括 `t3-sessions`、`t3-inbox`、`t3-agents`、`t3-tabs`、`t3-pane`、`t3-chrome`、`t3-files`、`t3-todos`、`t3-tools` 等）完整同步至 Herdr 配置目录。
+2. 安装 `layouts/herdr-t3.json` 布局文件和矢量图标。
+3. 安全合并快捷键 `keys.json`（保留你现有的个性化快捷键映射）。
+4. 完好保留你的置顶、已收起卡片、动作按钮、自定义主题和聚焦边框。
+
+---
+
+### 方式二：手动安装
+
+如果希望手动放置文件，请找到你的 Herdr App 用户配置目录：
+- **Windows**：`%USERPROFILE%\.config\herdr-app\`（即 `C:\Users\<你的用户名>\.config\herdr-app\`）
+- **macOS / Linux**：`~/.config/herdr-app/`
+
+1. **安装布局**：将仓库中 `layouts/herdr-t3.json` 和 `layouts/herdr-t3.svg` 复制到配置目录下的 `layouts/` 文件夹中。
+2. **安装 Mods**：将仓库中 `mods/` 下的所有 `t3-*` 文件夹整目录复制到配置目录下的 `mods/` 文件夹中。
+3. **合并快捷键**：将仓库中的 `keys.json` 合并进配置目录下的 `keys.json`（如无该文件直接复制即可）。
+
+---
+
+### 启用布局
+
+安装完成后：
+1. 打开 **Herdr App**。
+2. 按 `Cmd-K`（macOS）或 `Ctrl-K`（Windows）打开命令面板，输入并执行 `layout`，选择 **Herdr T3**（或点击窗口顶部的布局切换器图标选择 `herdr-t3`）。
+3. 界面立即切换到 T3 风格，右上角面板选择 `Sessions` 即可查看会话巡检仪表盘与历史记录。
+
+> **环境依赖**：
+> - Herdr App 及其命令行工具 `hc`。
+> - [Node.js](https://nodejs.org/)（会话遥测、多 Agent 上下文计算与历史记录实时解析依赖 Node.js 执行）。
+> - 自动化安装脚本依赖 `jq`、`rsync` 和 `sh`（Windows 用户建议通过 Git for Windows 自带的 `sh.exe` 运行）。
 
 只想要 Inbox？它也单独发布了一份：[herdr-t3-inbox](https://github.com/JinJieBeWater/herdr-t3-inbox)。
 
@@ -77,6 +126,7 @@ git clone --depth 1 https://github.com/JinJieBeWater/herdr-t3 && herdr-t3/script
 - `t3-chrome`：macOS 上缩放变化时，改写已安装的 `layouts/herdr-t3.json` 里的窗口按钮位置，让按钮留在品牌栏的中线上。
 - `t3-files`：只读，在 space 所在的机器上执行：`git rev-parse`、`git status`、`git check-ignore` 和 `git ls-files`（带 `--no-optional-locks`，不会往 `.git` 里写东西），用 `sh` 列文件夹，在其他机器上也用它查文件大小、搜路径；不在 Git 里时用 `find`；其他机器上的图片用 `base64` 传回。显示的图片复制到 `cache/t3-files/`，mod 停止时删掉。右键菜单：Reveal in Finder（Windows 上为 Reveal in File Explorer）和 Open in default app（macOS 执行 `open`，Linux 执行 `xdg-open`，Windows 调起系统默认程序）；Mention in agent 借剪贴板粘贴进 agent 的终端，然后恢复你原来的剪贴板。
 - `t3-spaces`、`t3-agents`、`t3-inbox`、`t3-new-menu`、`t3-picker`：为每个 space 的图标，在 space 所在的位置（它的机器上）运行 `git rev-parse --show-toplevel`、`sh` 文件检测和 `base64`；找到的图标复制到 `cache/t3-icons/`。
+- `t3-sessions`：只读。每 1.5 秒通过 Node.js 解析当前焦点 Agent 会话的遥测数据（Antigravity、Codex、Omp、Pi 或系统终端）；跨机器时通过 `hc exec` 读取远端或 WSL 状态；每 4 秒扫描多 Agent 历史会话列表；为终端计时器保持独立运行时间。不写磁盘数据，不发外部网络请求。
 
 不发网络请求。
 
