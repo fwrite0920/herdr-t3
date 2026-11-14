@@ -76,7 +76,7 @@ The sub-agent control counts live agents at every depth: `3 agents ⌄`, or `1 n
 
 ### Space panel and Files
 
-One right panel follows the space across tabs. Open/page/maximized are per-space including Home, unseen starts closed; width is window-wide. Fixed 40px head lists `panel-body` pages (Files, Sessions, Favorites, Changes, plus installed Review): tabs 24px/radius 6/text 12/icon 14px, active `selected`. Right 24px maximize/restore hides/shows work; close restores it. Review uses colored pulls.review mark at 70% until hovered/active, with per-space analysis state. Closed panel moves state left of the bar toggle's icon, never an overlapping badge/duplicate.
+One right panel follows the space across tabs. Open/page/maximized are per-space including Home, unseen starts closed; width is window-wide. Fixed 40px head lists `panel-body` pages (Files, Sessions, Favorites, Changes, Tools, plus installed Review): tabs 24px/radius 6/text 12/icon 14px, active `selected`. Right 24px maximize/restore hides/shows work; close restores it. Review uses colored pulls.review mark at 70% until hovered/active, with per-space analysis state. Closed panel moves state left of the bar toggle's icon, never an overlapping badge/duplicate.
 
 Both pages: radius 8 `background` card, full-width 40px transparent toolbar, content left/navigation right, rules only; code gutter matches card. Center loading spinner (14px)/status; empty icon (24px), title (13px medium), hint (12px dim), gap 8. Failures: under-toolbar 11px `ansi1`/`18` wash bar + Retry. Empty states keep toolbar.
 

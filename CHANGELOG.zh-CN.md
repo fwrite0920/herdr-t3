@@ -5,7 +5,8 @@
 ## 2026-11-14
 
 - Space Panel 集成全新页签：
-  - 在 Space Panel 顶栏新增 Sessions（历史会话）、Favorites（收藏夹）和 Changes（Git变更）页签，形成 `[ Files ] [ Sessions ] [ Favorites ] [ Changes ]` 统一面板。
+  - 在 Space Panel 顶栏新增 Sessions（历史会话）、Favorites（收藏夹）、Changes（Git变更）和 Tools（技能与插件）页签，形成 `[ Files ] [ Sessions ] [ Favorites ] [ Changes ] [ Tools ]` 统一工作面板。
+  - Tools（`t3-tools`）：统一聚合 Antigravity、Gemini 与 Claude Code 等环境下的 Skills（技能库）、MCP 服务与 Plugins（插件）；支持实时检索、多维分类（Skills / MCP / 项目级 / 全局级）、点击直接预览文档详情、一键在活跃终端中 `@` 引用，以及在资源管理器中定位目录。
   - Sessions（`t3-sessions`）：原生 Node 扫描引擎，全面兼容 Pi、Claude Code 与 Antigravity 历史会话；支持当前项目目录过滤与一键切换全局会话、#标签分类检索，并支持点击直接在新终端标签页中恢复继续会话。
   - Favorites（`t3-favorites`）：目录快速收藏与跨项目切换，支持一键收藏当前目录与 Files 面板右键文件夹直接收藏。
   - Changes（`t3-changes`）：轻量级 Git 工作区变动跟踪、Diff 差异查看器、快速提交与 AI Commit 辅助。

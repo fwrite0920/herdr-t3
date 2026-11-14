@@ -16,6 +16,7 @@ const PAGES = {
   sessions: ["Sessions", "clock"],
   favorites: ["Favorites", "star"],
   changes: ["Changes", "git-commit"],
+  tools: ["Tools", "wrench"],
   review: ["Review", "pulls-review", true]
 };
 

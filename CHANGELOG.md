@@ -5,7 +5,8 @@ English · [中文](CHANGELOG.zh-CN.md)
 ## 2026-11-14
 
 - Space Panel integrated tabs:
-  - Added Sessions, Favorites, and Changes tabs alongside Files and Review (`[ Files ] [ Sessions ] [ Favorites ] [ Changes ]`).
+  - Added Sessions, Favorites, Changes, and Tools tabs alongside Files and Review (`[ Files ] [ Sessions ] [ Favorites ] [ Changes ] [ Tools ]`).
+  - Tools (`t3-tools`): unified catalog of AI coding Skills, MCP services, and plugins from Antigravity, Gemini, and Claude Code environments. Supports live search, categorization (Skills, MCP/Plugins, Project, Global), direct markdown preview of `SKILL.md`, one-click terminal `@mention` insertion, and File Explorer folder navigation.
   - Sessions (`t3-sessions`): pure Node.js scanning engine supporting Pi, Claude Code, and Antigravity conversation history, live project root filtering with one-click "All projects" toggle, #tag labeling and search, and one-click session resumption in a new terminal tab.
   - Favorites (`t3-favorites`): persistent directory bookmarks with 1-click current folder addition, quick navigation across projects, and right-click folder context menu integration in Files.
   - Changes (`t3-changes`): lightweight Git change tracking and status badges, integrated diff inspection, commit message drafting, and AI commit assistance.
