@@ -4,6 +4,11 @@
 
 ## 2026-11-14
 
+- Space Panel 集成全新页签：
+  - 在 Space Panel 顶栏新增 Sessions（历史会话）、Favorites（收藏夹）和 Changes（Git变更）页签，形成 `[ Files ] [ Sessions ] [ Favorites ] [ Changes ]` 统一面板。
+  - Sessions（`t3-sessions`）：原生 Node 扫描引擎，全面兼容 Pi、Claude Code 与 Antigravity 历史会话；支持当前项目目录过滤与一键切换全局会话、#标签分类检索，并支持点击直接在新终端标签页中恢复继续会话。
+  - Favorites（`t3-favorites`）：目录快速收藏与跨项目切换，支持一键收藏当前目录与 Files 面板右键文件夹直接收藏。
+  - Changes（`t3-changes`）：轻量级 Git 工作区变动跟踪、Diff 差异查看器、快速提交与 AI Commit 辅助。
 - 完整适配 Windows 平台：
   - `keys.json` 补充完整的 Windows 快捷键映射（`ctrl-shift-b` 切换侧栏、`ctrl-shift-s` Settle、`ctrl-p` 快速跳转、`ctrl-w` / `ctrl-shift-w` / `ctrl-shift-x` 关闭标签与窗格、`ctrl-]` / `ctrl-[` 遍历 agent、`alt-1…9` 选 space 等），并对所有弹层（`mod:*`）补充 `ctrl-w` / `ctrl-shift-w` 关闭支持。
   - 文件树与评审面板（Files & Review）在 Windows 上支持右键菜单「Reveal in File Explorer」和「Open in default app」。

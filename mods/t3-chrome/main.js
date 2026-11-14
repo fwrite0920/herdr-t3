@@ -11,7 +11,13 @@ import { button as drawButton, radiusOf } from "./button.js";
 
 // The space panel's pages (docs/adr/0011), as its stack has them: a page the layout lacks has no tab.
 // Review wears pulls.review's own mark, as the Review bar does: a review, not a git command. In its colors, so an image.
-const PAGES = { files: ["Files", "folder-tree"], review: ["Review", "pulls-review", true] };
+const PAGES = {
+  files: ["Files", "folder-tree"],
+  sessions: ["Sessions", "clock"],
+  favorites: ["Favorites", "star"],
+  changes: ["Changes", "git-commit"],
+  review: ["Review", "pulls-review", true]
+};
 
 // The sidebar shows either Lists (Spaces and Agents) or the Inbox (t3-inbox): a stack in the layout.
 const inboxShown = () => sidebarParts(layout()).stack?.active === "inbox";

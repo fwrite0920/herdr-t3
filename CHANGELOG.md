@@ -4,6 +4,11 @@ English · [中文](CHANGELOG.zh-CN.md)
 
 ## 2026-11-14
 
+- Space Panel integrated tabs:
+  - Added Sessions, Favorites, and Changes tabs alongside Files and Review (`[ Files ] [ Sessions ] [ Favorites ] [ Changes ]`).
+  - Sessions (`t3-sessions`): pure Node.js scanning engine supporting Pi, Claude Code, and Antigravity conversation history, live project root filtering with one-click "All projects" toggle, #tag labeling and search, and one-click session resumption in a new terminal tab.
+  - Favorites (`t3-favorites`): persistent directory bookmarks with 1-click current folder addition, quick navigation across projects, and right-click folder context menu integration in Files.
+  - Changes (`t3-changes`): lightweight Git change tracking and status badges, integrated diff inspection, commit message drafting, and AI commit assistance.
 - Complete Windows platform compatibility:
   - Added Windows keybindings in `keys.json` (`ctrl-shift-b` to toggle sidebar, `ctrl-shift-s` to Settle, `ctrl-p` for picker, `ctrl-w` / `ctrl-shift-w` / `ctrl-shift-x` to close tab and pane, `ctrl-]` / `ctrl-[` for agent navigation, `alt-1…9` for space selection, and `ctrl-w` / `ctrl-shift-w` to dismiss overlays across all `mod:*` sections).
   - Added "Reveal in File Explorer" and "Open in default app" right-click actions on Windows in Files and Review panels.

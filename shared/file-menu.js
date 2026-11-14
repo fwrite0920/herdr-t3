@@ -4,7 +4,7 @@
 // scripts/sync.sh copies this to both mods.
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, agents, run, notify, exec } from "herdr";
+import { spaces, agents, panes, run, notify, exec, focused, shared, setShared } from "herdr";
 import { step } from "./list.js";
 
 export const MENU_W = 220, MENU_ROW = 28;
@@ -20,6 +20,8 @@ export function fileMenuItems({ page, dir = false, remote = false, platform, age
   return [
     { id: "copy-path", label: "Copy path", icon: "copy" },
     { id: "copy-relative", label: "Copy relative path", icon: "copy" },
+    page === "files" && dir && { id: "cd-terminal", label: "cd in terminal", icon: "terminal" },
+    page === "files" && dir && { id: "favorite", label: "Add to favorites", icon: "star" },
     agent && { id: "mention", label: "Mention in agent", icon: "at-sign" },
     !remote && (mac || win) && { id: "reveal", label: mac ? "Reveal in Finder" : "Reveal in File Explorer", icon: "folder-open" },
     !remote && !dir && { id: "open", label: "Open in default app", icon: "external-link" },
@@ -37,6 +39,26 @@ export function agentFor(spaceId) {
 export function runCommon(id, { abs, rel, agent, platform }, cx) {
   if (id === "copy-path") cx.write_to_clipboard(abs);
   else if (id === "copy-relative") cx.write_to_clipboard(rel);
+  else if (id === "cd-terminal") {
+    const f = focused();
+    const term = f?.terminal || panes().find((p) => p.tab === f?.tab && p.terminal)?.terminal;
+    if (term) {
+      const q = abs.replace(/\\/g, "/");
+      exec("hc", ["send", term, `cd "${q}"`]).catch(() => null);
+    }
+  }
+  else if (id === "favorite") {
+    const name = abs.split(/[\\/]/).filter(Boolean).pop() ?? abs;
+    const all = shared("t3.favorites") ?? shared("hs.favorites") ?? [];
+    if (!all.some((x) => x.folder === abs)) {
+      const updated = [...all, { name, folder: abs, machine: null }];
+      setShared("t3.favorites", updated);
+      setShared("hs.favorites", updated);
+      notify({ title: "Added to favorites", body: abs, level: "success" });
+    } else {
+      notify({ title: "Already in favorites", body: abs, level: "info" });
+    }
+  }
   else if (id === "mention") mention(rel, agent.address, cx);
   else if (id === "reveal") {
     if (platform === "windows") exec("explorer", [`/select,${abs.replace(/\//g, "\\")}`]);

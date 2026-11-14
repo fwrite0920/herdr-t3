@@ -32,6 +32,8 @@ declare module "gpui-shell" {
 }
 
 declare module "fs/promises" {
-  export function stat(path: string): Promise<{ isFile(): boolean; isDirectory(): boolean }>;
+  export function stat(path: string): Promise<{ isFile(): boolean; isDirectory(): boolean; mtimeMs: number }>;
   export function access(path: string): Promise<void>;
+  export function readFile(path: string, encoding?: string | { encoding?: string }): Promise<string>;
+  export function readdir(path: string): Promise<string[]>;
 }

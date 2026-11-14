@@ -185,7 +185,10 @@
           "background": "background",
           "radius": 8,
           "children": [
-            { "id": "files", "type": "block", "content": { "mod": "t3-files" } }
+            { "id": "files", "type": "block", "content": { "mod": "t3-files" } },
+            { "id": "sessions", "type": "block", "content": { "mod": "t3-sessions" } },
+            { "id": "favorites", "type": "block", "content": { "mod": "t3-favorites" } },
+            { "id": "changes", "type": "block", "content": { "mod": "t3-changes" } }
           ]
         },
         { "id": "panel-bottom-inset", "type": "row", "size": { "px": 8 }, "children": [] }
