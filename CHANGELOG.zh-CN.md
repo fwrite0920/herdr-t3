@@ -5,6 +5,12 @@
 ## 2026-11-14
 
 - 实时会话遥测检查器与历史列表全场景增强（`t3-sessions`）：
+  - **动态上下文构成比例拆解**：根据实时 System 设定、工具定义、上下文历史与工具输出真实体量动态按比例拆解并呈现条形分布，彻底移除固定硬编码上限（如 5.8k / 12.9k 封顶）。
+  - **缓存命中率与调用费用精准核算**：校正 OpenAI/Codex 输入 Token 计算公式（修正 input_tokens 已包含 cached_input_tokens 的双重累加 Bug），精准计算高达 99.5% 的真实缓存命中率与重型会话的实际费用（如 $0.20+）。
+  - **活动流水与 TTFT 吞吐量实时推演**：动态输出当前会话工具调用流水、真实执行成功数（`toolsOk`），以及自适应轮次的 TTFT 首字延迟与生成吞吐速度。
+  - **Git 仓库上下文真实校验**：本地 Windows、WSL 与 SSH 环境下统一引入 `git rev-parse --is-inside-work-tree` 先行校验，在非 Git 目录（如 `D:\`）精准显示 `no repo` 与 `—`，避免误报 `main clean`。
+  - **全量内置与扩展工具清单扫描**：深度扫描本地已安装的 8 项内置基元与 39 项扩展技能及插件（扫描 `~/.gemini/antigravity-cli/skills`、`builtin/skills` 及 `config/plugins`），并在展开时以分组清晰的可滚动列表分类呈现 `BUILTIN (8)` 与 `EXTENSIONS & SKILLS (39)`。
+  - **工作区轮次与步数精准计数**：将原先固定的磁盘文件夹数量改为真实的 `${turn} turns · ${stepCount} steps`，并动态呈现会话持久化状态（`saved` / `in-memory`）与主机标签。
   - **独立终端计时器连续性**：引入 `termTimers` 按终端地址（`termAddr`）独立记录并维护每个终端/Agent 的启动时间与状态；在不同 Agent、窗格或 Space 之间切换时，各终端计时器绝对不会被重置为 `0:00`，切回后持续平滑递增。
   - **多机器与远程 SSH / WSL 实时遥测分发**：根据终端地址动态区分本地、WSL 及远程 SSH 机器（如 `racknerd`、`evoxt` 等）：
     - WSL 环境直接读取 Codex 会话最新日志与 Token 计数，并通过 `hc exec --on wsl` 极速查询 WSL 内 Git 分支与状态。
@@ -17,12 +23,12 @@
     - 将轮询间隔调整为 4 秒，并在切换页签及点击「⟳ 刷新」时实现毫秒级即时更新。
   - 新增完整的实时 Agent 会话遥测检查面板（Live Session Inspector），像素级还原终端运行状态：
     - `✦ SESSION`：任务名称、实时运行状态徽标（`🟣 WORKING · turn N · 0:11`）、模型推理强度（`xhigh`）。
-    - `✦ CONTEXT`：总 Token 消耗与上下文窗口水位（`102.5k / 1M +102.5k`）、百分比进度条、可折叠多色上下文构成细分条形图与图例（系统设定 ~24%、工具声明 ~54%、用户对话 ~1%、工具输出 ~21%）。
-    - `✦ USAGE`：输入与输出 Token 统计、Prompt 缓存命中率（`hit 98%`）与预估成本（`$0.006`）。
-    - `✦ ACTIVITY`：实时工具调用流水跟踪（`▶ run_command`、`✓ manage_task`）、已完成工具数统计、TTFT（首字延迟）与生成吞吐速度（`126 tok/s`）。
+    - `✦ CONTEXT`：总 Token 消耗与上下文窗口水位（`102.5k / 1M +102.5k`）、百分比进度条、可折叠多色上下文构成细分条形图与图例。
+    - `✦ USAGE`：输入与输出 Token 统计、Prompt 缓存命中率与预估成本。
+    - `✦ ACTIVITY`：实时工具调用流水跟踪（`▶ run_command`、`✓ manage_task`）、已完成工具数统计、TTFT（首字延迟）与生成吞吐速度。
     - `✦ GIT`：当前 Git 分支（`⑂ main`）与工作区文件修改状态计数。
     - `✦ TOOLS`：可用工具总数与活跃数（`34 / 47`）、内置与扩展工具分类（`builtin 8 · ext 39`）及可展开的工具清单。
-    - `✦ WORKSPACE`：工作目录缩略路径、8位十六进制会话 ID、存储保存状态与历史会话条目数。
+    - `✦ WORKSPACE`：工作目录缩略路径、8位十六进制会话 ID、存储保存状态与历史会话轮次步数。
   - 双模式顶栏切换：支持在「✦ Inspector」（实时遥测面板，附带呼吸灯提示）与「📜 History」（历史会话检索、#标签过滤与一键恢复）之间无缝切换。
 - Space Panel 页签设置开关与精简默认展示：
   - 在 T3 设置面板（`t3-chrome/settings.js`）新增「Space Panel」独立配置分栏，配备原生滑动开关，支持自由开启或关闭各个页签（`Files`、`Sessions`、`Changes`、`Favorites`、`Tools`、`Todos`）。

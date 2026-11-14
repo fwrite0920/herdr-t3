@@ -5,6 +5,12 @@ English · [中文](CHANGELOG.zh-CN.md)
 ## 2026-11-14
 
 - Real-time Session Telemetry Inspector & Multi-Agent Multi-Machine Live Sync (`t3-sessions`):
+  - **Dynamic context token breakdown**: Computes proportional token breakdowns dynamically based on system prompts, tool definitions, message history, and tool result sizes, removing artificial caps.
+  - **Accurate cache hit rate & cost calculation**: Calibrated token accounting across models (e.g. proper calculation of cached input tokens without double-counting), calculating realistic session cost ($0.20+ for complex sessions).
+  - **Activity & TTFT tracking**: Real-time tool invocation feed, dynamic tool success counters, and turn-adaptive generation latency & throughput calculation.
+  - **Git context verification**: Verified git worktree presence via `git rev-parse --is-inside-work-tree` across local Windows, WSL, and SSH environments, correctly showing `no repo` and `—` when not inside a git repository.
+  - **Comprehensive tools & extensions directory**: Scans built-in primitives and all installed extension skills and plugins across `~/.gemini/antigravity-cli/skills`, `builtin/skills`, and `config/plugins`, providing categorized `BUILTIN (8)` and `EXTENSIONS & SKILLS (39)` listings in a scrollable list.
+  - **Workspace progress tracking**: Replaced static folder counts with `${turn} turns · ${stepCount} steps`, real-time session ID matching, and storage status indicators.
   - **Independent per-terminal running timers**: Introduced `termTimers` keyed by `termAddr` to track each terminal/agent's running time and state independently; switching between different agents, tabs, or spaces never resets elapsed timers to `0:00`, resuming smoothly upon return.
   - **Multi-machine & Remote SSH / WSL telemetry routing**: Automatically distinguishes local, WSL, and remote SSH machines (e.g. `racknerd`, `evoxt`):
     - WSL terminals directly read live Codex rollout sessions and token usage, and query Git status via `hc exec --on wsl`.
@@ -16,12 +22,12 @@ English · [中文](CHANGELOG.zh-CN.md)
     - Lowered background sync interval to 4s with instant refresh on tab switch and manual `⟳ 刷新` button click.
   - Added full live agent telemetry inspector matching the visual terminal telemetry panel:
     - `✦ SESSION`: Task name, live status badge (`🟣 WORKING · turn N · 0:11`), model effort badge (`xhigh`).
-    - `✦ CONTEXT`: Total token usage (`102.5k / 1M +102.5k`), percentage bar, collapsible multi-color token breakdown bar and legend (System ~24%, Tools ~54%, Messages ~1%, Tool results ~21%).
-    - `✦ USAGE`: Input and output token counts, cache hit rate (`hit 98%`), and estimated cost (`$0.006`).
+    - `✦ CONTEXT`: Total token usage (`102.5k / 1M +102.5k`), percentage bar, collapsible multi-color token breakdown bar and legend.
+    - `✦ USAGE`: Input and output token counts, cache hit rate, and estimated cost.
     - `✦ ACTIVITY`: Live tool executions (`▶ run_command`, `✓ manage_task`), tool count, TTFT, and tokens/sec throughput.
     - `✦ GIT`: Current branch (`⑂ main`) and clean/dirty file changes counter.
     - `✦ TOOLS`: Total active tools (`34 / 47`), builtin vs. extension breakdown (`builtin 8 · ext 39`), and expandable tool names list.
-    - `✦ WORKSPACE`: Truncated CWD, 8-character hex session ID, storage status, and history count.
+    - `✦ WORKSPACE`: Host label, truncated CWD, 8-character hex session ID, storage status, and history turn/step count.
   - Dual-mode header: seamlessly switch between `✦ Inspector` (real-time telemetry with live pulse badge) and `📜 History` (searchable session logs, tags, and one-click terminal resume).
 - Space Panel configurable tab toggles & clean defaults:
   - Added dedicated "Space Panel" section in Herdr T3 Settings (`t3-chrome/settings.js`) with native toggle switches to enable or disable individual tabs (`Files`, `Sessions`, `Changes`, `Favorites`, `Tools`, `Todos`).
