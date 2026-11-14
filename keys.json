@@ -60,110 +60,186 @@
     "ctrl-shift-tab": "t3-tabs.tab-prev",
     "cmd-shift-[": "t3-tabs.tab-prev",
     "ctrl-alt-[": "t3-tabs.tab-prev",
-    "cmd-shift-,": "t3-tabs.settings"
+    "cmd-shift-,": "t3-tabs.settings",
+    "ctrl-shift-b": "t3-tabs.sidebar",
+    "ctrl-shift-s": "t3-tabs.settle",
+    "ctrl-p": "mod.open:t3-picker",
+    "ctrl-]": "t3-tabs.next",
+    "ctrl-[": "t3-tabs.prev",
+    "ctrl-w": "t3-tabs.close-tab",
+    "ctrl-shift-w": "t3-tabs.close-pane",
+    "ctrl-shift-x": "t3-tabs.close-pane",
+    "ctrl-shift-h": "t3-tabs.home",
+    "ctrl-t": "t3-tabs.new",
+    "ctrl-alt-b": "t3-tabs.panel",
+    "ctrl-shift-g": "t3-tabs.review",
+    "ctrl-shift-,": "t3-tabs.settings",
+    "alt-1": "t3-tabs.space:1",
+    "alt-2": "t3-tabs.space:2",
+    "alt-3": "t3-tabs.space:3",
+    "alt-4": "t3-tabs.space:4",
+    "alt-5": "t3-tabs.space:5",
+    "alt-6": "t3-tabs.space:6",
+    "alt-7": "t3-tabs.space:7",
+    "alt-8": "t3-tabs.space:8",
+    "alt-9": "t3-tabs.space:9",
+    "alt-]": "t3-tabs.space-next",
+    "alt-[": "t3-tabs.space-prev"
   },
   "mod:t3-picker": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close"
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   },
   "mod:t3-new-menu": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close"
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   },
   "mod:t3-menu": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close"
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   },
   "mod:t3-actions": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close"
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   },
   "mod:t3-inbox": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close"
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   },
   "mod:t3-agents": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close"
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   },
   "mod:t3-pane": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close"
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   },
   "mod:pulls-review": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close"
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   },
   "mod:frame-settings": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close"
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   },
   "mod:frame-palette": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close"
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   },
   "mod:help": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close"
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   },
   "mod:confirm": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close"
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   },
   "mod:prompt": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close"
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   },
   "mod:machine-add": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close"
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   },
   "mod:worktree": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close"
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   },
   "mod:t3-chrome": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close"
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   },
   "mod:t3-files": {
     "cmd-w": "t3-files.close",
-    "ctrl-alt-shift-x": "t3-files.close"
+    "ctrl-alt-shift-x": "t3-files.close",
+    "ctrl-w": "t3-files.close",
+    "ctrl-shift-w": "t3-files.close"
   },
   "mod:review": {
     "cmd-w": "review.close",
-    "ctrl-alt-shift-x": "review.close"
+    "ctrl-alt-shift-x": "review.close",
+    "ctrl-w": "review.close",
+    "ctrl-shift-w": "review.close"
   }
 }

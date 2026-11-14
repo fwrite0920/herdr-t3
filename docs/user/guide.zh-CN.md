@@ -39,7 +39,7 @@
 
 ## 快捷键
 
-布局自带的，写在 `keys.json` 的 `layout:herdr-t3` 里（安装时会合并进去）。这些只覆盖 macOS 的键：`keys.json` 不能按平台区分按键，所以在 Linux 和 Windows 上，Herdr 自己的键（`ctrl-shift-w` 关闭标签、`alt-1…` 选 space 等）仍执行 Herdr 的命令，绕过布局的规则，比如关闭前确认、序号不算 Home。请在你自己的 `keys.json` 里把它们绑到下面的命令。
+布局自带的，写在 `keys.json` 的 `layout:herdr-t3` 里（安装时会合并进去）。仓库同时提供了 macOS 键（`cmd-`）与 Windows 常用键（`ctrl-` / `alt-`），包括关闭确认（`ctrl-w` / `ctrl-shift-w`）、切换侧栏（`ctrl-shift-b`）、Settle（`ctrl-shift-s`）、跳转（`ctrl-p`）和序号不算 Home 的 space 切换（`alt-1…9`）。
 
 | 快捷键 | 命令 | 作用 |
 | --- | --- | --- |

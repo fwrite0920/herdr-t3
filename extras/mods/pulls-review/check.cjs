@@ -206,7 +206,7 @@ const load = (props = {}, setup = record) => {
 
   // In a real repository: a change worth a read reads a second after the last read at the soonest; one Git ignores
   // (macOS reports them), or of Git's own files but HEAD and refs, waits for the 10 s.
-  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pulls-review-")));
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pulls-review-"))).replace(/\\/g, "/");
   try {
     spawnSync("git", ["init", "-q"], { cwd: tmp });
     fs.writeFileSync(path.join(tmp, ".gitignore"), "node_modules/\n");

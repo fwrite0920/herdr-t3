@@ -90,7 +90,7 @@ Search matches every space-separated word in the path, ignoring case. Show at mo
 
 Files refreshes only when page/space/window visible: immediately on return, normally 5s local/10s remote, slower for expensive reads. Text reloads on change, image on reselect. Too large/binary/missing/non-UTF-8: named explanatory empty; read/list failure: Retry. Remote images ≤512KB, text size/NUL-probed. Full content/Editors for last three shown spaces only; older lightweight reading choices reload.
 
-File/folder menus: Copy path (remote machine included), Copy relative path, Mention in agent; local Reveal in Finder, file-only Open in default app. Mention pastes `@<relative path> ` to space's viewed agent, restoring text clipboard after 150ms; nontext stays untouched, item asks to copy instead.
+File/folder menus: Copy path (remote machine included), Copy relative path, Mention in agent; local Reveal in Finder (Reveal in File Explorer on Windows), file-only Open in default app. Mention pastes `@<relative path> ` to space's viewed agent, restoring text clipboard after 150ms; nontext stays untouched, item asks to copy instead.
 
 ### Optional Review page
 

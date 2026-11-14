@@ -41,10 +41,12 @@ share button mods/t3-actions mods/t3-agents mods/t3-spaces mods/t3-inbox mods/t3
 for d in mods/t3-files extras/mods/review; do rsync -a --delete "$src/shared/icons/cat/" "$src/$d/icons/cat/"; done
 
 # mod.json stays per repo: here the layout places it ("none"), alone it docks left.
-rsync -a --delete $gen --exclude mod.json "$src/mods/t3-inbox/" "$inbox/mods/t3-inbox/"
-rsync -a --delete $gen "$src/mods/t3-actions/" "$actions/mods/t3-actions/"
+[ ! -d "$inbox" ] || rsync -a --delete $gen --exclude mod.json "$src/mods/t3-inbox/" "$inbox/mods/t3-inbox/"
+[ ! -d "$actions" ] || rsync -a --delete $gen "$src/mods/t3-actions/" "$actions/mods/t3-actions/"
 # Their jsconfig.json (each person's own, never copied) includes these, and no mod folder ships them.
-for r in "$inbox" "$actions" "$review"; do mkdir -p "$r/types"; cp "$src"/types/*.d.ts "$r/types/"; done
+for r in "$inbox" "$actions" "$review"; do [ ! -d "$r" ] || { mkdir -p "$r/types"; cp "$src"/types/*.d.ts "$r/types/"; }; done
 # The Review extra (pulls-review and review): config.json is the person's own, so it is never shipped or deleted.
-for m in pulls-review review; do rsync -a --delete $gen --exclude config.json "$src/extras/mods/$m/" "$review/mods/$m/"; done
+if [ -d "$review" ]; then
+  for m in pulls-review review; do rsync -a --delete $gen --exclude config.json "$src/extras/mods/$m/" "$review/mods/$m/"; done
+fi
 "$src/scripts/update.sh"

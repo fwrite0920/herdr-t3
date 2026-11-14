@@ -5,7 +5,7 @@ src=$(cd "$(dirname "$0")/.." && pwd)
 app=$(mktemp -d)
 trap 'rm -rf "$app"' EXIT
 ok() { "$@" || { echo "FAIL check-update: $*"; exit 1; }; }
-is() { [ "$(jq -r "$1" "$2")" = "$3" ] || { echo "FAIL check-update: $1 in $2 isn't $3"; exit 1; }; }
+is() { [ "$(jq -r "$1" "$2" | tr -d '\r')" = "$3" ] || { echo "FAIL check-update: $1 in $2 isn't $3"; exit 1; }; }
 
 mkdir -p "$app/mods/t3-tabs" "$app/mods/mine" "$app/mods/pulls-review" "$app/layouts" "$app/themes"
 touch "$app/mods/t3-tabs/stale.js" "$app/mods/t3-tabs/check-old.cjs" "$app/mods/t3-tabs/jsconfig.json" "$app/mods/mine/main.js" "$app/themes/t3-code-dark.json"

@@ -60,8 +60,8 @@ function when(ms, now) {
 
 // Worth a read? Of Git's own files only HEAD and refs, and nothing Git ignores: macOS reports those too.
 async function touchesDiff(root, paths) {
-  if (paths.some(p => /\/\.git\/(HEAD|refs\/)/.test(p))) return true;
-  const files = paths.filter(p => !/\/\.git(\/|$)/.test(p));
+  if (paths.some(p => /[/\\]\.git[/\\](HEAD|refs[/\\])/.test(p))) return true;
+  const files = paths.filter(p => !/[/\\]\.git([/\\]|$)/.test(p));
   if (!files.length) return false;
   // check-ignore: 0 some ignored and listed, 1 none, 128 can't judge.
   const r = await git(root, ["check-ignore", "--", ...files]).catch(() => null);

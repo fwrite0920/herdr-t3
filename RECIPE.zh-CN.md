@@ -90,7 +90,7 @@ Files 只读，根是 space 所在机器的 `folder`，不跟终端 cwd。未选
 
 仅本页、space、窗口都可见才刷新：回来立即读，通常本机每 5s、远程每 10s，慢读取延长。文本只在变化时重读，图片重新点选才刷新。太大、二进制、缺失、非 UTF-8 是带文件名说明的空态；真正的读取／列目录失败用 Retry。远程图片上限 512KB，文本先检查大小／NUL。完整内容和 Editor 只保留最近显示的三个 space，更早只留轻量阅读选择，回来重读。
 
-文件／目录右键：Copy path（远程带机器）、Copy relative path、Mention in agent，本机另有 Reveal in Finder，文件还有 Open in default app。Mention 发给该 space 当前查看的 agent，粘贴 `@<相对路径> `，150ms 后恢复原文本剪贴板；非文本剪贴板不动，提示改用复制路径。目录没有默认程序打开项。
+文件／目录右键：Copy path（远程带机器）、Copy relative path、Mention in agent，本机另有 Reveal in Finder（Windows 为 Reveal in File Explorer），文件还有 Open in default app。Mention 发给该 space 当前查看的 agent，粘贴 `@<相对路径> `，150ms 后恢复原文本剪贴板；非文本剪贴板不动，提示改用复制路径。目录没有默认程序打开项。
 
 ### 可选 Review 页
 

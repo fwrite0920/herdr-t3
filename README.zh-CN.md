@@ -45,17 +45,17 @@
 
 ## 快捷键
 
-| 快捷键 | 作用 |
+| 快捷键 (macOS / Windows) | 作用 |
 | --- | --- |
-| `cmd-shift-b` | 侧栏在 Inbox 和 Lists 之间切换 |
-| `cmd-shift-s` | Settle 当前查看的 agent 并回到 Home，已 Settle 的则取回 |
-| `cmd-]` / `cmd-[` | 按侧栏的顺序到下一个或上一个 agent |
-| `cmd-p` | 跳到任一窗格 |
-| `cmd-shift-h` | 回到 Home |
-| `cmd-shift-,` | 布局的设置 |
-| `cmd-alt-b` | 打开或关闭 space 面板，停在上次的页面 |
-| `cmd-shift-g` | 打开 Review；面板正显示 Review 时关闭面板（Review 扩展） |
-| `cmd-t` | 在当前位置新建标签；在 Home 时先选 space |
+| `cmd-shift-b` / `ctrl-shift-b` | 侧栏在 Inbox 和 Lists 之间切换 |
+| `cmd-shift-s` / `ctrl-shift-s` | Settle 当前查看的 agent 并回到 Home，已 Settle 的则取回 |
+| `cmd-]` / `ctrl-]`、`cmd-[` / `ctrl-[` | 按侧栏的顺序到下一个或上一个 agent |
+| `cmd-p` / `ctrl-p` | 跳到任一窗格 |
+| `cmd-shift-h` / `ctrl-shift-h` | 回到 Home |
+| `cmd-shift-,` / `ctrl-shift-,` | 布局的设置 |
+| `cmd-alt-b` / `ctrl-alt-b` | 打开或关闭 space 面板，停在上次的页面 |
+| `cmd-shift-g` / `ctrl-shift-g` | 打开 Review；面板正显示 Review 时关闭面板（Review 扩展） |
+| `cmd-t` / `ctrl-t` | 在当前位置新建标签；在 Home 时先选 space |
 
 完整列表见[快捷键](docs/user/guide.zh-CN.md#快捷键)。
 
@@ -75,7 +75,7 @@ git clone --depth 1 https://github.com/JinJieBeWater/herdr-t3 && herdr-t3/script
 - `t3-tabs`：关闭终端前运行 `hc get`，看里面有没有程序在跑。用 `cmd-shift-s` Settle 或取回 agent 时运行 `hc label`；Herdr 显示了你没选的标签、清掉了未读的 done（`herdr.seen`）或 Woke 标记（`snoozed`）时，也用它还回去；这一轮失败或查看时有新工作结束 Snooze 时，运行 `hc label <agent> snoozed=`。
 - `t3-agents`：置顶一个 Snooze 中的 agent、结束它的 Snooze 时，运行 `hc label <agent> snoozed=`。
 - `t3-chrome`：macOS 上缩放变化时，改写已安装的 `layouts/herdr-t3.json` 里的窗口按钮位置，让按钮留在品牌栏的中线上。
-- `t3-files`：只读，在 space 所在的机器上执行：`git rev-parse`、`git status`、`git check-ignore` 和 `git ls-files`（带 `--no-optional-locks`，不会往 `.git` 里写东西），用 `sh` 列文件夹，在其他机器上也用它查文件大小、搜路径；不在 Git 里时用 `find`；其他机器上的图片用 `base64` 传回。显示的图片复制到 `cache/t3-files/`，mod 停止时删掉。右键菜单：Reveal in Finder 和 Open in default app 执行 `open`（Linux 上是 `xdg-open`）；Mention in agent 借剪贴板粘贴进 agent 的终端，然后恢复你原来的剪贴板。
+- `t3-files`：只读，在 space 所在的机器上执行：`git rev-parse`、`git status`、`git check-ignore` 和 `git ls-files`（带 `--no-optional-locks`，不会往 `.git` 里写东西），用 `sh` 列文件夹，在其他机器上也用它查文件大小、搜路径；不在 Git 里时用 `find`；其他机器上的图片用 `base64` 传回。显示的图片复制到 `cache/t3-files/`，mod 停止时删掉。右键菜单：Reveal in Finder（Windows 上为 Reveal in File Explorer）和 Open in default app（macOS 执行 `open`，Linux 执行 `xdg-open`，Windows 调起系统默认程序）；Mention in agent 借剪贴板粘贴进 agent 的终端，然后恢复你原来的剪贴板。
 - `t3-spaces`、`t3-agents`、`t3-inbox`、`t3-new-menu`、`t3-picker`：为每个 space 的图标，在 space 所在的位置（它的机器上）运行 `git rev-parse --show-toplevel`、`sh` 文件检测和 `base64`；找到的图标复制到 `cache/t3-icons/`。
 
 不发网络请求。

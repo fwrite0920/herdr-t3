@@ -45,17 +45,17 @@ Dragging, sweeping across rows, pins and the rest: [Everyday use](docs/user/guid
 
 ## Keys
 
-| Key | Does |
+| Key (macOS / Windows) | Does |
 | --- | --- |
-| `cmd-shift-b` | Switch the sidebar between Inbox and Lists |
-| `cmd-shift-s` | Settle the agent you're looking at and go Home, or bring it back |
-| `cmd-]` / `cmd-[` | Next or previous agent, in the sidebar's order |
-| `cmd-p` | Go to any pane |
-| `cmd-shift-h` | Go Home |
-| `cmd-shift-,` | The layout's settings |
-| `cmd-alt-b` | Show or hide the space panel, on the page last shown |
-| `cmd-shift-g` | Open Review, or close the panel showing it (Review extra) |
-| `cmd-t` | New tab here; at Home, pick the space first |
+| `cmd-shift-b` / `ctrl-shift-b` | Switch the sidebar between Inbox and Lists |
+| `cmd-shift-s` / `ctrl-shift-s` | Settle the agent you're looking at and go Home, or bring it back |
+| `cmd-]` / `ctrl-]`, `cmd-[` / `ctrl-[` | Next or previous agent, in the sidebar's order |
+| `cmd-p` / `ctrl-p` | Go to any pane |
+| `cmd-shift-h` / `ctrl-shift-h` | Go Home |
+| `cmd-shift-,` / `ctrl-shift-,` | The layout's settings |
+| `cmd-alt-b` / `ctrl-alt-b` | Show or hide the space panel, on the page last shown |
+| `cmd-shift-g` / `ctrl-shift-g` | Open Review, or close the panel showing it (Review extra) |
+| `cmd-t` / `ctrl-t` | New tab here; at Home, pick the space first |
 
 All of them: [Keys](docs/user/guide.md#keys).
 
@@ -75,7 +75,7 @@ It overwrites the layout and its mods and merges `keys.json`; your pins, settled
 - `t3-tabs`: `hc get` before closing a terminal, to see whether a program is running in it. `hc label` when `cmd-shift-s` settles or brings back an agent, and to give back an unread done (`herdr.seen`) or a Woke mark (`snoozed`) that Herdr cleared when it showed a tab you didn't pick, and `hc label <agent> snoozed=` when a failed turn or new work in view ends a snooze.
 - `t3-agents`: `hc label <agent> snoozed=` when pinning a snoozed agent ends its snooze.
 - `t3-chrome`: on macOS, when the zoom changes, it rewrites the window button position in the installed `layouts/herdr-t3.json`, so the buttons stay on the brand bar's middle line.
-- `t3-files`, read-only, where the space is (on its machine): `git rev-parse`, `git status`, `git check-ignore` and `git ls-files` (with `--no-optional-locks`, so nothing is written under `.git`), `sh` to list a folder or, on another machine, to check a file's size and search paths, `find` outside Git, `base64` for another machine's images. It copies images it shows into `cache/t3-files/` and deletes them when it stops. Right-click: Reveal in Finder and Open in default app run `open` (`xdg-open` on Linux); Mention in agent pastes into the agent's terminal through the clipboard, then puts your clipboard back.
+- `t3-files`, read-only, where the space is (on its machine): `git rev-parse`, `git status`, `git check-ignore` and `git ls-files` (with `--no-optional-locks`, so nothing is written under `.git`), `sh` to list a folder or, on another machine, to check a file's size and search paths, `find` outside Git, `base64` for another machine's images. It copies images it shows into `cache/t3-files/` and deletes them when it stops. Right-click: Reveal in Finder (Reveal in File Explorer on Windows) and Open in default app run `open` (`xdg-open` on Linux, default app protocol handler on Windows); Mention in agent pastes into the agent's terminal through the clipboard, then puts your clipboard back.
 - `t3-spaces`, `t3-agents`, `t3-inbox`, `t3-new-menu`, `t3-picker`: for each space's icon, `git rev-parse --show-toplevel`, `sh` file tests and `base64` where the space is (on its machine); a found icon is copied into `cache/t3-icons/`.
 
 No network requests.

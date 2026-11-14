@@ -17,6 +17,7 @@ for f in "$layout" "$keys"; do
 done
 # Herdr App starts on its own layout when this one names a mod it doesn't have, so don't install one that would.
 missing=$(jq -r '[.. | objects | .mod? | strings | select(startswith("frame-") | not)] | unique[]' "$src/layouts/herdr-t3.json" \
+  | tr -d '\r' \
   | while read -r m; do [ -d "$src/mods/$m" ] || [ -d "$app/mods/$m" ] || echo "$m"; done)
 [ -z "$missing" ] || { echo "the layout names mods that aren't here, nothing changed:" $missing >&2; exit 1; }
 

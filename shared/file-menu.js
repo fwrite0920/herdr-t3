@@ -16,13 +16,13 @@ export const MENU_W = 220, MENU_ROW = 28;
  */
 /** @param {{ page: string, dir?: boolean, remote?: boolean, platform?: string, agent?: any, reviewed?: boolean }} row */
 export function fileMenuItems({ page, dir = false, remote = false, platform, agent = null, reviewed = false }) {
-  const mac = platform === "macos";
+  const mac = platform === "macos", win = platform === "windows";
   return [
     { id: "copy-path", label: "Copy path", icon: "copy" },
     { id: "copy-relative", label: "Copy relative path", icon: "copy" },
     agent && { id: "mention", label: "Mention in agent", icon: "at-sign" },
-    !remote && mac && { id: "reveal", label: "Reveal in Finder", icon: "folder-open" },
-    !remote && !dir && (mac || platform === "linux") && { id: "open", label: "Open in default app", icon: "external-link" },
+    !remote && (mac || win) && { id: "reveal", label: mac ? "Reveal in Finder" : "Reveal in File Explorer", icon: "folder-open" },
+    !remote && !dir && { id: "open", label: "Open in default app", icon: "external-link" },
     page === "review" && { id: reviewed ? "unreview" : "review", label: reviewed ? "Mark unreviewed" : "Mark reviewed", icon: "square-check" },
   ].filter(Boolean);
 }
@@ -38,8 +38,14 @@ export function runCommon(id, { abs, rel, agent, platform }, cx) {
   if (id === "copy-path") cx.write_to_clipboard(abs);
   else if (id === "copy-relative") cx.write_to_clipboard(rel);
   else if (id === "mention") mention(rel, agent.address, cx);
-  else if (id === "reveal") exec("open", ["-R", abs]);
-  else if (id === "open") exec(platform === "macos" ? "open" : "xdg-open", [abs]);
+  else if (id === "reveal") {
+    if (platform === "windows") exec("explorer", [`/select,${abs.replace(/\//g, "\\")}`]);
+    else exec("open", ["-R", abs]);
+  }
+  else if (id === "open") {
+    if (platform === "windows") exec("rundll32", ["url.dll,FileProtocolHandler", abs]);
+    else exec(platform === "macos" ? "open" : "xdg-open", [abs]);
+  }
   else return false;
   return true;
 }

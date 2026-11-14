@@ -2,6 +2,16 @@
 
 [English](CHANGELOG.md) · 中文
 
+## 2026-11-14
+
+- 完整适配 Windows 平台：
+  - `keys.json` 补充完整的 Windows 快捷键映射（`ctrl-shift-b` 切换侧栏、`ctrl-shift-s` Settle、`ctrl-p` 快速跳转、`ctrl-w` / `ctrl-shift-w` / `ctrl-shift-x` 关闭标签与窗格、`ctrl-]` / `ctrl-[` 遍历 agent、`alt-1…9` 选 space 等），并对所有弹层（`mod:*`）补充 `ctrl-w` / `ctrl-shift-w` 关闭支持。
+  - 文件树与评审面板（Files & Review）在 Windows 上支持右键菜单「Reveal in File Explorer」和「Open in default app」。
+  - 修复 `scripts/update.sh` 和 `scripts/check-update.sh` 在 Windows 环境下因 `jq.exe` 输出换行符（CRLF）导致目录检测失败的问题。
+  - 修复 `extras/mods/pulls-review/bar.js` 在 Windows 反斜杠路径分隔符下判断 `.git` 文件变动失败的问题。
+  - 修复 `extras/mods/asciicn-wallpaper/check-filesystem.cjs` 在 Windows NTFS 文件系统上非法字符与权限检测失败的问题。
+  - 优化 `scripts/sync.sh` 在独立克隆场景下的防错保护。
+
 ## 2026-11-13
 
 - 精简并统一中英文布局配方，保持在 Gallery 的收录限制内；此前配方过大，导致布局未被收录。布局行为不变。

@@ -39,7 +39,7 @@ Each part in more detail than the [README](../../README.md).
 
 ## Keys
 
-The layout's own, in the `layout:herdr-t3` section of `keys.json` (an install merges them). They cover macOS's keys only: `keys.json` can't bind a key by platform, so on Linux and Windows Herdr's own keys (`ctrl-shift-w` closing a tab, `alt-1…` picking a space and the rest) still run Herdr's commands, skipping the layout's rules such as asking before a close and leaving Home out of the count. Bind them to the commands below in your own `keys.json`.
+The layout's own, in the `layout:herdr-t3` section of `keys.json` (an install merges them). The repo covers both macOS keys (`cmd-`) and Windows bindings (`ctrl-` / `alt-`), including close confirmation (`ctrl-w` / `ctrl-shift-w`), sidebar toggle (`ctrl-shift-b`), Settle (`ctrl-shift-s`), picker (`ctrl-p`), and space selection without counting Home (`alt-1…9`).
 
 | Key | Command | Does |
 | --- | --- | --- |

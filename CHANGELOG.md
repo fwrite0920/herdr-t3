@@ -2,6 +2,16 @@
 
 English · [中文](CHANGELOG.zh-CN.md)
 
+## 2026-11-14
+
+- Complete Windows platform compatibility:
+  - Added Windows keybindings in `keys.json` (`ctrl-shift-b` to toggle sidebar, `ctrl-shift-s` to Settle, `ctrl-p` for picker, `ctrl-w` / `ctrl-shift-w` / `ctrl-shift-x` to close tab and pane, `ctrl-]` / `ctrl-[` for agent navigation, `alt-1…9` for space selection, and `ctrl-w` / `ctrl-shift-w` to dismiss overlays across all `mod:*` sections).
+  - Added "Reveal in File Explorer" and "Open in default app" right-click actions on Windows in Files and Review panels.
+  - Fixed Windows CRLF carriage return parsing from `jq.exe` in `scripts/update.sh` and `scripts/check-update.sh`.
+  - Fixed `.git` directory regex in `extras/mods/pulls-review/bar.js` to support Windows backslash path separators.
+  - Fixed `extras/mods/asciicn-wallpaper/check-filesystem.cjs` for Windows NTFS file naming rules and symlink permission handling.
+  - Guarded standalone repo synchronization in `scripts/sync.sh`.
+
 ## 2026-11-13
 
 - Shortened and aligned the English and Chinese layout recipes to fit Gallery's collection limit; the previous recipe was too large to be listed. The layout behaves the same.
