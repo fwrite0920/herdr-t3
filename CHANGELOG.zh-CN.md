@@ -4,6 +4,16 @@
 
 ## 2026-11-14
 
+- 实时会话遥测检查器（`t3-sessions`）：
+  - 新增完整的实时 Agent 会话遥测检查面板（Live Session Inspector），像素级还原终端运行状态：
+    - `✦ SESSION`：任务名称、实时运行状态徽标（`🟣 WORKING · turn N · 0:11`）、模型推理强度（`xhigh`）。
+    - `✦ CONTEXT`：总 Token 消耗与上下文窗口水位（`102.5k / 1M +102.5k`）、百分比进度条、可折叠多色上下文构成细分条形图与图例（系统设定 ~24%、工具声明 ~54%、用户对话 ~1%、工具输出 ~21%）。
+    - `✦ USAGE`：输入与输出 Token 统计、Prompt 缓存命中率（`hit 98%`）与预估成本（`$0.006`）。
+    - `✦ ACTIVITY`：实时工具调用流水跟踪（`▶ run_command`、`✓ manage_task`）、已完成工具数统计、TTFT（首字延迟）与生成吞吐速度（`126 tok/s`）。
+    - `✦ GIT`：当前 Git 分支（`⑂ main`）与工作区文件修改状态计数。
+    - `✦ TOOLS`：可用工具总数与活跃数（`34 / 47`）、内置与扩展工具分类（`builtin 8 · ext 39`）及可展开的工具清单。
+    - `✦ WORKSPACE`：工作目录缩略路径、8位十六进制会话 ID、存储保存状态与历史会话条目数。
+  - 双模式顶栏切换：支持在「✦ Inspector」（实时遥测面板，附带呼吸灯提示）与「📜 History」（历史会话检索、#标签过滤与一键恢复）之间无缝切换。
 - Space Panel 页签设置开关与精简默认展示：
   - 在 T3 设置面板（`t3-chrome/settings.js`）新增「Space Panel」独立配置分栏，配备原生滑动开关，支持自由开启或关闭各个页签（`Files`、`Sessions`、`Changes`、`Favorites`、`Tools`、`Todos`）。
   - 默认仅展示核心精简页签（`[ Files ] [ Sessions ] [ Changes ]`），其余页签如 `Favorites`、`Tools`、`Todos` 等可根据需要在设置中一键开启。隐藏当前所在页签时会自动优雅回退至 `Files`。

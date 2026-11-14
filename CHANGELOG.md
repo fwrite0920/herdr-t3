@@ -4,6 +4,16 @@ English · [中文](CHANGELOG.zh-CN.md)
 
 ## 2026-11-14
 
+- Real-time Session Telemetry Inspector (`t3-sessions`):
+  - Added full live agent telemetry inspector matching the visual terminal telemetry panel:
+    - `✦ SESSION`: Task name, live status badge (`🟣 WORKING · turn N · 0:11`), model effort badge (`xhigh`).
+    - `✦ CONTEXT`: Total token usage (`102.5k / 1M +102.5k`), percentage bar, collapsible multi-color token breakdown bar and legend (System ~24%, Tools ~54%, Messages ~1%, Tool results ~21%).
+    - `✦ USAGE`: Input and output token counts, cache hit rate (`hit 98%`), and estimated cost (`$0.006`).
+    - `✦ ACTIVITY`: Live tool executions (`▶ run_command`, `✓ manage_task`), tool count, TTFT, and tokens/sec throughput.
+    - `✦ GIT`: Current branch (`⑂ main`) and clean/dirty file changes counter.
+    - `✦ TOOLS`: Total active tools (`34 / 47`), builtin vs. extension breakdown (`builtin 8 · ext 39`), and expandable tool names list.
+    - `✦ WORKSPACE`: Truncated CWD, 8-character hex session ID, storage status, and history count.
+  - Dual-mode header: seamlessly switch between `✦ Inspector` (real-time telemetry with live pulse badge) and `📜 History` (searchable session logs, tags, and one-click terminal resume).
 - Space Panel configurable tab toggles & clean defaults:
   - Added dedicated "Space Panel" section in Herdr T3 Settings (`t3-chrome/settings.js`) with native toggle switches to enable or disable individual tabs (`Files`, `Sessions`, `Changes`, `Favorites`, `Tools`, `Todos`).
   - Default visible tabs configured to a clean core set (`[ Files ] [ Sessions ] [ Changes ]`), while `Favorites`, `Tools`, and `Todos` can be toggled on demand. Hiding an active tab gracefully falls back to Files.
