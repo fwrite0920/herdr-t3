@@ -11,7 +11,7 @@ const load = (file) => fs.readFileSync(path.join(__dirname, file), "utf8")
   .replace(/^import [^;]*;\r?\n/gm, "").replace(/^export (async function|function|const) /gm, "$1 ").replace(/^export \{[\s\S]*?\};?\s*$/m, "");
 const context = vm.createContext({});
 vm.runInContext([load("vendor/ufuzzy.js"), load("file-icons-data.js"), load("file-icons.js"), load("file-tree.js"), load("model.js"),
-  "globalThis.m = { join, uFuzzy, fileIcon, folderIcon, FILE_NAMES, FILE_EXTENSIONS, FOLDER_NAMES, LIST, IGNORED, PROBE, REMOTE_SEARCH, RANKED, ancestors, parseListing, parseStatus, parseIgnored, markIgnored, folderEntries, treeRows, terms, narrows, filterPaths, rank, kindOf, languageOf, readProblem, failedRead, ticket };"].join("\n"), context);
+  "globalThis.m = { join, placeOf, uFuzzy, fileIcon, folderIcon, FILE_NAMES, FILE_EXTENSIONS, FOLDER_NAMES, LIST, IGNORED, PROBE, REMOTE_SEARCH, RANKED, ancestors, parseListing, parseStatus, parseIgnored, markIgnored, folderEntries, treeRows, terms, narrows, filterPaths, rank, kindOf, languageOf, readProblem, failedRead, ticket };"].join("\n"), context);
 const m = context.m;
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
@@ -79,7 +79,7 @@ function makePage({ page = "files", spaces = [space("s1", "/r", true)] } = {}) {
     Input: { new: element }, Editor: { new: element }, TextView: { markdown: element },
     InputState: { new: () => { let v = ""; return { on() {}, value: () => v, set_value(x) { v = x; } }; } },
     EditorState: { new: (o) => { const e = { wrap: o.soft_wrap, text: o.value, released: false, release() { this.released = true; return true; } }; w.made.push(e); return e; } },
-    spaces: () => w.spaces, agents: () => [], layout: () => layout,
+    spaces: () => w.spaces, panes: () => [], agents: () => [], layout: () => layout,
     theme: () => ({}), settings: () => ({ zoom: 1, font_family: "mono" }), window: () => ({ active: w.windowActive, platform: "macos" }), appHome: () => "/tmp/none",
     shared: (k) => shared[k], setShared: (k, v) => { wrote.push(k); shared[k] = v; },
     run() {}, notify() {}, exec,
@@ -416,8 +416,16 @@ async function resources() {
 
   // The shell scripts, run: listing, ignored, the remote probe and search, in a repo with awkward names.
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-files-check-"));
+  const shBin = (() => {
+    try { execFileSync("sh", ["-c", "exit 0"]); return "sh"; }
+    catch {
+      const gitSh = "C:\\Program Files\\Git\\bin\\sh.exe";
+      if (fs.existsSync(gitSh)) return gitSh;
+      return "sh";
+    }
+  })();
   try {
-    const sh = (script, args, cwd = dir) => execFileSync("sh", ["-c", script, "t3-files", ...args], { cwd, encoding: "latin1", stdio: ["ignore", "pipe", "ignore"] });
+    const sh = (script, args, cwd = dir) => execFileSync(shBin, ["-c", script, "t3-files", ...args], { cwd, encoding: "latin1", stdio: ["ignore", "pipe", "ignore"] });
     const git = (...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: dir });
     git("init", "-q");
     fs.mkdirSync(path.join(dir, "src/deep"), { recursive: true });

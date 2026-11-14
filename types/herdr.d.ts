@@ -30,3 +30,8 @@ declare module "gpui-shell" {
     y: number;
   }
 }
+
+declare module "fs/promises" {
+  export function stat(path: string): Promise<{ isFile(): boolean; isDirectory(): boolean }>;
+  export function access(path: string): Promise<void>;
+}

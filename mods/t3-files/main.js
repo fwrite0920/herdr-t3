@@ -3,19 +3,19 @@
 // One copy serves every space, here or on another machine: what each one shows is kept by its id.
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Editor, EditorState, TextView } from "gpui-base";
-import { spaces, nextCommand, exec, readTextFile, theme, settings, shared, setShared, appHome, window } from "herdr";
+import { spaces, panes, nextCommand, exec, readTextFile, theme, settings, shared, setShared, appHome, window } from "herdr";
 import * as fs from "fs/promises";
 import uFuzzy from "./vendor/ufuzzy.js";
 import { panelState, hidePanel } from "./panel.js";
 import { step, scrollList } from "./list.js";
 import { fileIcon } from "./file-icons.js";
-import { TREE_ROW, treeRows, rowAt, treeKey, treeList, treeRow, revealRow } from "./file-tree.js";
+import { TREE_ROW, treeRows, rowAt, treeKey, treeList, treeRow, revealRow, sortEntries } from "./file-tree.js";
 import { withNav, navToggle, foldAllButton, ghostButton, navOpen, setNavOpen, holdWidth } from "./nav-column.js";
 import { fileMenuItems, fileMenuView, agentFor, runCommon } from "./file-menu.js";
 import { migratePagePrefs, wrapLines, setWrapLines } from "./store.js";
 import { loadingState, emptyState, errorBar } from "./panel-states.js";
 import { LIST, IGNORED, PROBE, REMOTE_SEARCH, RANKED, join, parentOf, nameOf, ancestors, parseListing, parseStatus, parseIgnored, markIgnored, folderEntries, terms, narrows,
-  filterPaths, rank, kindOf, languageOf, readProblem, failedRead, ticket } from "./model.js";
+  filterPaths, rank, kindOf, languageOf, readProblem, failedRead, ticket, placeOf } from "./model.js";
 
 const MOD = "mods/t3-files";
 const RESULTS = 200, REMOTE_IMAGE = 512 * 1024, TEXT_MAX = 1024 * 1024;
@@ -35,8 +35,8 @@ const count = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 const zoom = () => Number(settings()?.zoom) || 1;
 
 // What one space's page knows and shows.
-function blank(sp) {
-  return { id: sp.id, root: sp.folder, on: sp.machine ?? null, git: undefined, entries: new Map(), expanded: new Set(), ignored: new Set(),
+function blank(sp, root = sp.folder ?? "") {
+  return { id: sp.id, root, on: sp.machine ?? null, git: undefined, entries: new Map(), expanded: new Set(), ignored: new Set(),
     marks: new Map(), dirs: new Set(), version: 0, file: null, view: null, lit: null, focus: null, query: "", at: -1, results: null, total: 0, paths: null };
 }
 
@@ -57,7 +57,10 @@ export default class Files extends View {
     this.cached = new Set();
     // The state being worked for, and a count that moves each time that changes (going).
     this.awake = null; this.gen = 0;
-    cx.spawn(async () => { await exec("rm", ["-rf", `${appHome()}/${CACHE}`]).catch(() => null); });
+    cx.spawn(async () => {
+      if (window()?.platform === "windows") await exec("powershell", ["-NoProfile", "-Command", `if (Test-Path '${appHome()}/${CACHE}') { Remove-Item -Recurse -Force '${appHome()}/${CACHE}' }`]).catch(() => null);
+      else await exec("rm", ["-rf", `${appHome()}/${CACHE}`]).catch(() => null);
+    });
     // A hidden copy isn't drawn, so this is what sees it go out of view.
     cx.timer.every(1000, (cx) => { this.sync(cx); this.poll(cx); });
     // `t3-files.open:<path from the space's folder>` and `t3-files.search:<words>`, for keys and scripts (the demo's);
@@ -86,8 +89,11 @@ export default class Files extends View {
   // A space's state, made the first time and made again when its folder moves; the latest one last. The FULL last keep all
   // they read; older ones only how they were being read, and read again when back.
   stateFor(sp) {
+    const ps = typeof panes === "function" ? panes() : [];
+    const rawRoot = sp.folder || placeOf(sp, ps) || "";
+    const root = rawRoot ? rawRoot.replace(/\\/g, "/") : "";
     let st = this.states.get(sp.id);
-    if (!st || st.root !== sp.folder || st.on !== (sp.machine ?? null)) { if (st) this.drop(st); st = blank(sp); }
+    if (!st || st.root !== root || st.on !== (sp.machine ?? null)) { if (st) this.drop(st); st = blank(sp, root); }
     else if ([...this.states.keys()].at(-1) === sp.id) return st;
     this.states.delete(sp.id);
     this.states.set(sp.id, st);
@@ -105,7 +111,7 @@ export default class Files extends View {
   // A space let go of, keeping its file, open folders and search's words.
   slim(st) {
     this.drop(st);
-    return Object.assign(blank({ id: st.id, folder: st.root, machine: st.on }), { file: st.file, expanded: new Set(st.expanded), focus: st.focus, query: st.query });
+    return Object.assign(blank({ id: st.id, folder: st.root, machine: st.on }, st.root), { file: st.file, expanded: new Set(st.expanded), focus: st.focus, query: st.query });
   }
 
   // It works only while it shows: the page in the open panel, the window in front, for the active space. Shown, it reads at
@@ -176,6 +182,43 @@ export default class Files extends View {
     const fresh = this.fresh(st, `list:${rel}`), dir = join(st.root, rel);
     if (!fresh()) return;
     const inIgnored = [rel, ...ancestors(rel)].some((p) => p && st.ignored.has(p));
+
+    if (!st.on && window()?.platform === "windows") {
+      let entries = null;
+      try {
+        const dirents = await fs.readdir(dir, { withFileTypes: true });
+        entries = sortEntries(dirents.filter((d) => d.name !== ".git").map((d) => ({ name: d.name, dir: d.isDirectory() })));
+      } catch {
+        const pr = await exec("powershell", ["-NoProfile", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); & { param($p) @(Get-ChildItem -LiteralPath $p -Force -ErrorAction Stop | Where-Object Name -ne '.git' | Select-Object -First 501 | ForEach-Object { @{ name=$_.Name; dir=($_.PSIsContainer -and (-not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $_.LinkType -or ($_.Target -and [IO.Directory]::Exists(([IO.Path]::Combine([IO.Path]::GetDirectoryName($_.FullName), $_.Target[0])))))) } }) | ConvertTo-Json -Compress } '" + dir.replace(/['‘’‚‛]/g, "$&$&") + "'"]).catch(() => null);
+        if (pr?.code === 0) {
+          try {
+            const res = JSON.parse(pr.stdout || "[]");
+            const list = Array.isArray(res) ? res : [res];
+            entries = sortEntries(list.map((e) => ({ name: e.name, dir: Boolean(e.dir) })));
+          } catch {}
+        }
+      }
+
+      if (!fresh()) return;
+      if (!entries) {
+        if (rel) { st.entries.delete(rel); st.expanded.delete(rel); } else st.error = "This folder can't be listed.";
+      } else {
+        st.entries.set(rel, entries);
+        if (!rel) st.error = null;
+        if (st.git && !inIgnored && entries.length) {
+          const paths = entries.map((e) => (rel ? `${rel}/` : "") + e.name + (e.dir ? "/" : ""));
+          const igRes = await exec("git", ["check-ignore", "--", ...paths], { cwd: st.root }).catch(() => null);
+          if (!fresh()) return;
+          if (igRes?.stdout) {
+            const found = new Set(igRes.stdout.split(/\r?\n/).filter(Boolean).map((p) => p.replace(/[/\\]+$/, "")));
+            markIgnored(st.ignored, rel, entries, found);
+          }
+        }
+      }
+      this.changed(st);
+      return;
+    }
+
     const [r, ig] = await Promise.all([
       exec("sh", ["-c", LIST, "files", dir], { on: st.on }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) })),
       st.git && !inIgnored ? exec("sh", ["-c", IGNORED, "files", dir, rel ? `${rel}/` : ""], { cwd: st.root, on: st.on }).catch(() => null) : null,
@@ -312,6 +355,9 @@ export default class Files extends View {
         const bin = /** @type {any} */ (globalThis).atob(r.stdout.replace(/\s+/g, "")), bytes = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
         await fs.writeFile(dest, bytes);
+      } else if (window()?.platform === "windows") {
+        const r = await exec("powershell", ["-NoProfile", "-Command", `Copy-Item -LiteralPath '${abs.replace(/'/g, "''")}' -Destination '${dest.replace(/'/g, "''")}'`]).catch(() => null);
+        if (r?.code !== 0) return { problem: "This image can't be read." };
       } else {
         const r = await exec("cp", [abs, dest]);
         if (r.code !== 0) return { problem: "This image can't be read." };
@@ -324,7 +370,7 @@ export default class Files extends View {
     try { text = await readTextFile(abs, { on: st.on }); }
     catch (e) { return { problem: readProblem(e) }; }
     if (text === null) return { problem: "This file isn't there anymore." };
-    if (st.on && text.includes("\uFFFD")) return { problem: "This file isn't UTF-8 text, so there's nothing to show." };
+    if ((st.on && text.includes("\uFFFD")) || text.includes("\0")) return { problem: "This file isn't UTF-8 text, so there's nothing to show." };
     return { text };
   }
 
@@ -361,11 +407,22 @@ export default class Files extends View {
         st.more = total >= RANKED;
       } else {
         if (!st.paths) {
-          const r = st.git
-            ? await exec("git", [...GIT, "ls-files", "-co", "--exclude-standard", "-z"], { cwd: st.root }).catch(() => null)
-            : await exec("sh", ["-c", "find . -name .git -prune -o -type f -print | sed 's|^\\./||' | head -n 200000"], { cwd: st.root }).catch(() => null);
+          let stdout = null;
+          if (st.git) {
+            const r = await exec("git", [...GIT, "ls-files", "-co", "--exclude-standard", "-z"], { cwd: st.root }).catch(() => null);
+            if (r?.code === 0) stdout = r.stdout;
+          }
+          if (stdout === null) {
+            if (window()?.platform === "windows") {
+              const r = await exec("powershell", ["-NoProfile", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); (Get-ChildItem -LiteralPath . -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '[\\\\/]\\.git([\\\\/]|$)' } | Select-Object -First 200000 | ForEach-Object { $_.FullName.Substring((Get-Location).Path.Length + 1).Replace('\\', '/') })"], { cwd: st.root }).catch(() => null);
+              if (r?.code === 0) stdout = r.stdout;
+            } else {
+              const r = await exec("sh", ["-c", "find . -name .git -prune -o -type f -print | sed 's|^\\./||' | head -n 200000"], { cwd: st.root }).catch(() => null);
+              if (r?.code === 0) stdout = r.stdout;
+            }
+          }
           if (!fresh()) return;
-          st.paths = (r?.stdout ?? "").split(st.git ? "\0" : "\n").filter(Boolean);
+          st.paths = (stdout ?? "").split(st.git && stdout ? "\0" : /\r?\n/).filter(Boolean);
           st.lower = st.paths.map((p) => p.toLowerCase());
           st.last = null;
         }
@@ -445,7 +502,7 @@ export default class Files extends View {
     return h_flex().id("t3-files-toolbar").h(40).flex_none().px(8).gap(8).items_center().border_b(1).border_color(t.border)
         // The first word 16 in, as Review's scope button's: the toolbar's 8 and an xs button's 8 (a crumb's own 4, and 4 more).
         .child(h_flex().flex_1().min_w(0).overflow_hidden().items_center().text_size(12).pl(4)
-          .when(Boolean(st.root), (el) => el.child(crumb(nameOf(st.root.replace(/\/$/, "")) || st.root, "", !st.file)))
+          .when(Boolean(st.root), (el) => el.child(crumb(nameOf(st.root.replace(/[/\\]+$/, "")) || st.root, "", !st.file)))
           .children(parts.flatMap((part, i) => [div().flex_none().text_color(t.dim).child("/"), crumb(part, parts.slice(0, i + 1).join("/"), i === parts.length - 1)])))
         .when(md, (el) => el.child(h_flex().flex_none().gap(2).child(tab("Preview", !code, "preview")).child(tab("Code", code, "code"))))
         // The page's buttons 4 apart, as Review's.

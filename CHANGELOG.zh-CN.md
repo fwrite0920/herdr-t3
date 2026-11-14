@@ -7,6 +7,9 @@
 - 完整适配 Windows 平台：
   - `keys.json` 补充完整的 Windows 快捷键映射（`ctrl-shift-b` 切换侧栏、`ctrl-shift-s` Settle、`ctrl-p` 快速跳转、`ctrl-w` / `ctrl-shift-w` / `ctrl-shift-x` 关闭标签与窗格、`ctrl-]` / `ctrl-[` 遍历 agent、`alt-1…9` 选 space 等），并对所有弹层（`mod:*`）补充 `ctrl-w` / `ctrl-shift-w` 关闭支持。
   - 文件树与评审面板（Files & Review）在 Windows 上支持右键菜单「Reveal in File Explorer」和「Open in default app」。
+  - 适配 `t3-files` 在 Windows 本地环境下的目录遍历、图片复制与文件检索，无需依赖外部 `sh` 或 MSYS2 工具。
+  - `t3-files` 引入空间运行目录动态回退（`placeOf`），支持未显式指定根目录的 WSL 与远程 space 正常展示文件树。
+  - 项目图标检索（`shared/project.js`）在 Windows 环境下采用原生 Node 文件系统查询。
   - 修复 `scripts/update.sh` 和 `scripts/check-update.sh` 在 Windows 环境下因 `jq.exe` 输出换行符（CRLF）导致目录检测失败的问题。
   - 修复 `extras/mods/pulls-review/bar.js` 在 Windows 反斜杠路径分隔符下判断 `.git` 文件变动失败的问题。
   - 修复 `extras/mods/asciicn-wallpaper/check-filesystem.cjs` 在 Windows NTFS 文件系统上非法字符与权限检测失败的问题。

@@ -3,6 +3,7 @@
 import { div, svg } from "gpui-kit";
 import { h_flex, v_flex, Select, Popup } from "gpui-base";
 import { theme, props, closeOverlay, run, shared, setShared, appHome, readTextFile, exec } from "herdr";
+import * as fs from "fs/promises";
 import { SETTINGS, t3Settings } from "./layout-settings.js";
 import { stopsInit, stop, focusRoot } from "./focus.js";
 import { menuJump } from "./list.js";
@@ -30,7 +31,8 @@ export function initSettings(view, cx) {
 // The mods that can be Home: `"home": true` in their mod.json.
 // The layout's own page reads Default, as its title is Home's own name; Terminal comes next.
 async function findHomeMods(view, cx) {
-  const dir = `${appHome()}/mods`, names = (await exec("ls", [dir]).catch(() => null))?.stdout.split("\n").filter(Boolean) ?? [];
+  const dir = `${appHome()}/mods`;
+  const names = (await exec("ls", [dir]).catch(() => null))?.stdout.split("\n").filter(Boolean) ?? (await fs.readdir(dir).catch(() => []));
   const found = (await Promise.all(names.map(async (name) => {
     try { return { name, ...JSON.parse(await readTextFile(`${dir}/${name}/mod.json`) ?? "{}") }; } catch { return null; }
   }))).filter((m) => m?.home);

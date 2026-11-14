@@ -3,7 +3,7 @@
 // draws spaces or opens a tab in one (t3-inbox, t3-agents, t3-pane, t3-picker, t3-spaces, t3-new-menu, t3-tabs, t3-menu).
 import { image, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { exec, readTextFile, appHome, settings, shared, setShared, spaces, panes, run } from "herdr";
+import { exec, readTextFile, appHome, settings, shared, setShared, spaces, panes, run, window } from "herdr";
 import { Buffer } from "buffer";
 import { createHash } from "crypto";
 import * as fs from "fs/promises";
@@ -82,7 +82,20 @@ function linkedIcon(source) {
 async function lookUp(on, dir) {
   const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd: dir, on });
   const root = (top.code === 0 && top.stdout.trim()) || dir;
-  const first = async (paths) => (await exec("sh", ["-c", 'for f; do [ -f "$f" ] && { printf %s "$f"; exit; }; done', "sh", ...paths], { cwd: root, on })).stdout || null;
+  const isWin = !on && window()?.platform === "windows";
+  const first = async (paths) => {
+    if (isWin) {
+      for (const p of paths) {
+        try {
+          const s = await fs.stat(`${root}/${p}`);
+          if (s.isFile()) return p;
+        } catch {}
+      }
+      return null;
+    }
+    const r = await exec("sh", ["-c", 'for f; do [ -f "$f" ] && { printf %s "$f"; exit; }; done', "sh", ...paths], { cwd: root, on }).catch(() => null);
+    return r?.stdout || null;
+  };
   let hit = await first(PLACES);
   for (const page of PAGES) {
     if (hit) break;
@@ -91,12 +104,23 @@ async function lookUp(on, dir) {
     if (href && !href.split("/").includes("..")) hit = await first([`public/${href}`, href]);
   }
   if (!hit) return null;
-  const r = await exec("sh", ["-c", 'base64 < "$1"', "sh", hit], { cwd: root, on });
-  if (r.code !== 0) return null;
-  const bytes = Buffer.from(r.stdout.replace(/\s+/g, ""), "base64");
+  let bytes = null;
+  if (isWin) {
+    const data = await fs.readFile(`${root}/${hit}`).catch(() => null);
+    bytes = data ? Buffer.from(data) : null;
+  } else {
+    const r = await exec("sh", ["-c", 'base64 < "$1"', "sh", hit], { cwd: root, on }).catch(() => null);
+    if (r?.code === 0) bytes = Buffer.from(r.stdout.replace(/\s+/g, ""), "base64");
+  }
+  if (!bytes) return null;
   // Named by its content: a changed icon is a new file, so nothing keeps showing the old one.
   const name = `cache/t3-icons/${createHash("sha256").update(bytes).digest("hex").slice(0, 16)}${hit.slice(hit.lastIndexOf(".")).toLowerCase()}`;
-  if (!(await fs.exists(`${appHome()}/${name}`))) {
+  let exists = false;
+  try {
+    await fs.access(`${appHome()}/${name}`);
+    exists = true;
+  } catch {}
+  if (!exists) {
     await fs.mkdir(`${appHome()}/cache/t3-icons`, { recursive: true });
     await fs.writeFile(`${appHome()}/${name}`, bytes);
   }

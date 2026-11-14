@@ -4,10 +4,22 @@ import { sortEntries } from "./file-tree.js";
 
 export const RANKED = 1000; // a search ranks at most this many matches; past it, the first ones as found
 
+/** Where a space is now: its active tab's pane cwd, else its folder. */
+export function placeOf(s, ps) {
+  const tabs = new Set((s?.tabs ?? []).map((c) => c.id));
+  return ps?.find((p) => tabs.has(p.tab) && p.cwd)?.cwd || s?.folder || "";
+}
+
 /** `a/b`: either may be "" (the space's folder, or a path from it). */
-export const join = (a, b) => !a ? b : !b ? a : `${a.replace(/\/$/, "")}/${b}`;
-export const parentOf = (p) => p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
-export const nameOf = (p) => p.slice(p.lastIndexOf("/") + 1);
+export const join = (a, b) => !a ? b : !b ? a : `${a.replace(/[/\\]+$/, "")}/${b.replace(/^[/\\]+/, "")}`;
+export const parentOf = (p) => {
+  const at = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+  return at >= 0 ? p.slice(0, at) : "";
+};
+export const nameOf = (p) => {
+  const at = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+  return at >= 0 ? p.slice(at + 1) : p;
+};
 /** The folders above a path, from the top: `a/b/c` → `a`, `a/b`. */
 export const ancestors = (p) => { const out = []; for (let at = p.indexOf("/"); at > 0; at = p.indexOf("/", at + 1)) out.push(p.slice(0, at)); return out; };
 

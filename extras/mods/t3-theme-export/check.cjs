@@ -42,7 +42,7 @@ const exported = (host) => JSON.parse(host.file);
   await sleep(1);
   host.shown = "C";
   view.render();
-  await sleep(40);
+  for (let i = 0; i < 20 && exported(host).name !== "C"; i++) await sleep(10);
   assert.equal(exported(host).name, "C");
 
   // A failed write isn't taken for written: the next render writes it.
