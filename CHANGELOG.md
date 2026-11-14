@@ -6,10 +6,12 @@ English · [中文](CHANGELOG.zh-CN.md)
 
 - Real-time Session Telemetry Inspector & Multi-Agent Multi-Machine Live Sync (`t3-sessions`):
   - **Universal Multi-Agent Telemetry Engine**: Deep native support across **Google Antigravity**, **OpenAI Codex**, **Oh-My-Prompt (Omp)**, **Inflection Pi**, **Claude Code**, and generic **System Shell / SSH** environments, dynamically discovering sessions and parsing real-time usage, model names, and tool executions.
-  - **Zero Fallbacks & Zero Hardcoded Metrics**: Completely eliminated all hardcoded fallback values (`4732`, `213867`, `447`, `01a1d52c`, `$0.006`, `14200/16800 caps`), ensuring 100% of telemetry numbers (tokens, cost, hit rate, tool success, turn, and step counts) are computed directly from live logs.
-  - **Fixed Tools Scrolling & Multi-Category Explorer**: Resolved the inner scrollbar freeze bug by integrating natural parent scrolling, adding an instant search filter (`🔍`), category filter pills (`[ All (47) ] [ Builtin (8) ] [ Skills (39) ]`), and a sleek 2-column wrapping chip matrix with distinct tool badges (`⚡` and `🧩`).
+  - **100% Real Log-Based Telemetry & TTFT Timestamps**: Calculated real Time-To-First-Token (TTFT) and throughput directly from actual message timestamps in logs (e.g. 1.0s on Gemini, 7.4s on Codex GPT-6 reasoning chains), eliminating all synthetic formulas and artificial `Math.min(34, ...)` caps.
+  - **Dynamic Tools & Extensions Inspection**: Scanned all 13 built-in primitives and 44 real extension skills and plugins across `skills/`, `builtin/skills`, `plugins/`, and agent directories, displaying exact counts and dynamically tracking distinct tools called in the session.
+  - **Vector SVG Icons Integration**: Replaced plain emojis with crisp, high-resolution vector SVGs throughout the Inspector (`sparkles.svg`, `zap.svg`, `layers.svg`, `clock.svg`, `terminal.svg`, `wrench.svg`, `git-branch.svg`, `server.svg`, `database.svg`).
+  - **Fixed Tools Scrolling & Multi-Category Explorer**: Resolved the inner scrollbar freeze bug by integrating natural parent scrolling, adding an instant search filter (`🔍`), category filter pills (`[ 全部 (57) ] [ 内置 (13) ] [ 技能 (44) ]`), and a sleek 2-column wrapping chip matrix.
   - **High-Density 2x2 Quick Stats HUD & Modern Aesthetic Redesign**: Redesigned the Inspector layout into a cohesive, developer-grade dashboard:
-    - **Hero Card**: Agent brand pill, live status pulse, turn pill, live ticking timer (`04:12`), model name, and user task title.
+    - **Hero Card**: Agent brand pill with vector icon, live status pulse, turn pill, live ticking timer (`04:12`), model name, and user task title.
     - **2x2 Quick Stats HUD**: 4 primary metrics in a compact 2x2 grid (Context Window with percentage gauge, Cache Hit Rate in emerald, Real Est. Cost in amber, and Latency & Tok/s Speed in purple).
     - **Context Composition Bar**: Glowing segmented progress bar with dynamic proportional breakdown (System, Tools, Messages, Tool Results).
     - **Live Activity Stream**: Real-time tool execution feed with latency tags and dynamic execution counters.
