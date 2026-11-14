@@ -3,7 +3,7 @@
 // One copy serves every space, here or on another machine: what each one shows is kept by its id.
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Editor, EditorState, TextView } from "gpui-base";
-import { spaces, panes, nextCommand, exec, readTextFile, theme, settings, shared, setShared, appHome, window } from "herdr";
+import { spaces, panes, focused, nextCommand, exec, readTextFile, theme, settings, shared, setShared, appHome, window } from "herdr";
 import * as fs from "fs/promises";
 import uFuzzy from "./vendor/ufuzzy.js";
 import { panelState, hidePanel } from "./panel.js";
@@ -90,7 +90,10 @@ export default class Files extends View {
   // they read; older ones only how they were being read, and read again when back.
   stateFor(sp) {
     const ps = typeof panes === "function" ? panes() : [];
-    const rawRoot = sp.folder || placeOf(sp, ps) || "";
+    const f = typeof focused === "function" ? focused() : null;
+    const tabs = new Set((sp?.tabs ?? []).map((c) => c.id));
+    const focusPane = (f?.pane && tabs.has(f.tab)) ? ps.find((p) => p.pane === f.pane && p.cwd) : null;
+    const rawRoot = focusPane?.cwd || placeOf(sp, ps) || sp?.folder || "";
     const root = rawRoot ? rawRoot.replace(/\\/g, "/") : "";
     let st = this.states.get(sp.id);
     if (!st || st.root !== root || st.on !== (sp.machine ?? null)) { if (st) this.drop(st); st = blank(sp, root); }

@@ -9,6 +9,7 @@ English · [中文](CHANGELOG.zh-CN.md)
   - Added "Reveal in File Explorer" and "Open in default app" right-click actions on Windows in Files and Review panels.
   - Adapted `t3-files` for native Windows file tree enumeration, image copying, and search without requiring external `sh` or MSYS2 tools.
   - Enabled dynamic space working directory fallback (`placeOf`) in `t3-files` to correctly display file trees for WSL and remote spaces without an explicit space root folder.
+  - Prioritized live active pane working directory over static space folder in `t3-files`, so the file tree follows the active working drive and directory (e.g. D: drive instead of default C: user home).
   - Updated project favicon lookup (`shared/project.js`) to use native Node filesystem queries on Windows.
   - Fixed Windows CRLF carriage return parsing from `jq.exe` in `scripts/update.sh` and `scripts/check-update.sh`.
   - Fixed `.git` directory regex in `extras/mods/pulls-review/bar.js` to support Windows backslash path separators.
