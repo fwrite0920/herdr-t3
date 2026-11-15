@@ -106,7 +106,7 @@ export function inboxRowView(view, t, model, actions, drag) {
     // time in monospace children, one per part, so spacing and width don't hang on the interface font and
     // a monospace space (a full cell) doesn't open "1h 5m" wider than the 4px gaps.
     const pill = (color, mark, label, time) => h_flex().id(`state-${a.address}`).h(20).px(5).gap(4).flex_none().rounded(4).bg(color + "18").items_center().font_medium().text_color(color)
-      .child(mark).child(div().child(label))
+      .child(mark).when(Boolean(label), (el) => el.child(div().child(label)))
       .when(Boolean(time), (el) => el.children(time.split(" ").map((part) => div().font_family(settings().font_family ?? "JetBrains Mono").child(part))));
     // It wakes where it was, so this carries the weight, as T3's; a click dismisses it, and it stays on hover.
     const wokeMark = woke(a) && tip(view, t, `woke-${a.address}`, "Dismiss Woke notification", stop(view, t, `woke-${a.address}`, h_flex().id(`woke-${a.address}`).h(20).gap(4).flex_none().items_center().font_medium().text_color(t.blocked)
@@ -124,7 +124,7 @@ export function inboxRowView(view, t, model, actions, drag) {
     // The state or the time, faded out on hover where Settle fades in over it, as T3's corner.
     const word = running(a)
         ? pill(t.working, svg("mods/t3-inbox/icons/working.svg").size(15).flex_none().text_color(t.working).spin(1100),
-          "Working", started(a) > 0 && started(a) < Infinity ? took(started(a), now) : null)
+          null, started(a) > 0 && started(a) < Infinity ? took(started(a), now) : null)
         : st === "blocked"
           ? pill(t.blocked, svg("mods/t3-inbox/icons/alert-circle.svg").size(14).flex_none().text_color(t.blocked), "Needs you")
           : wokeMark
