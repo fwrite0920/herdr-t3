@@ -6,7 +6,8 @@
 import { View, div, svg } from "gpui-kit";
 import { foldArrow, planMotion, flying, leavingRows } from "./motion.js";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, machines, panes, agents, focused, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, props, layout, nextCommand } from "herdr";
+import { spaces, machines, panes, agents, terminals, focused, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, props, layout, nextCommand } from "herdr";
+import { ownStatus, subAgents, treeStatus } from "./tree.js";
 import { projectMark, tint } from "./project.js";
 import { repoFacts } from "./repos.js";
 import { dragGone, glow, hoverKept, tip, tipMark, POINTER_WATCH, pointerMoved } from "./tip.js";
@@ -378,10 +379,13 @@ export default class Spaces extends View {
     // end, and folded, the count; dim, brightening when hovered.
     const foldId = `space-fold-${w.id}`;
     const rowId = `space-${w.id}`;
-    const spaceAgents = agents().filter((a) => a.space === w.id);
-    const spaceStatus = spaceAgents.some((a) => a.status === "blocked") ? "blocked"
-      : spaceAgents.some((a) => a.status === "working") ? "working"
-      : spaceAgents.some((a) => a.status === "done") ? "done"
+    const list = agents(), all = terminals(), under = subAgents(list, all);
+    const spaceStatuses = list
+      .filter((a) => a.space === w.id)
+      .map((a) => treeStatus(ownStatus(a.status, a.address, all), under(a.address)));
+    const spaceStatus = spaceStatuses.includes("blocked") ? "blocked"
+      : spaceStatuses.includes("working") ? "working"
+      : spaceStatuses.includes("done") ? "done"
       : null;
     const statusDot = spaceStatus === "working"
       ? svg("mods/t3-spaces/icons/working.svg").size(11).flex_none().text_color(t.working).spin(1100)
