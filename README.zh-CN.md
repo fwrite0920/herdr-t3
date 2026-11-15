@@ -24,7 +24,7 @@
 - **窄标签、带框窗格**，照 T3 Code 的外观。
 - **其他机器**：它们的 space 按机器分组，Inbox 卡片带机器标记；Lists 中悬停 Agents 行查看机器名。
 - **Files**：在窗口右侧的面板里只读浏览 space 的文件夹：文件树贴窗口外沿，选中的文件显示在它旁边。切换标签时面板不动，换到别的 space 时跟着换。隐藏时停止文件刷新，每页只缓存最近三个 space 的完整数据。
-- **Sessions（巡检与会话）**：右侧面板内置的实时 Agent 遥测与历史浏览器。支持 Google Antigravity、OpenAI Codex、Oh-My-Prompt、Pi 等多 Agent 协议；呈现 2x2 HUD 仪表盘（上下文余量/告警、缓存命中率、累计/当轮费用、速度与延迟）、Token 四色动态构成、实时调用动态流；展开工具库时高亮已调用的工具（翡翠绿 `ACTIVE` 徽标与独立“已调用”过滤）；自动识别当前主机（LOCAL / WSL / 远端 SSH），切端连续累计运行时长不归零。
+- **Sessions（巡检与会话）**：右侧面板内置的实时 Agent 遥测与历史浏览器。支持 Google Antigravity、OpenAI Codex、Oh-My-Prompt、Pi 等多 Agent 协议；呈现 2x2 HUD 仪表盘（上下文余量/告警、缓存命中率、累计/当轮费用、速度与延迟）、Token 四色动态构成、实时调用动态流；展开工具库时高亮已调用的工具（翡翠绿 `ACTIVE` 徽标与独立“已调用”过滤）；自动识别当前主机（LOCAL / WSL / 远端 SSH），切端连续累计运行时长不归零；全新的历史会话浏览器支持多 Agent 分类切换、时间段分组与一键终端恢复。
 - **Review**（可选）：同一个面板的另一页，看当前 worktree 待评审的内容。Files 和 Review 各记文件、阅读位置、换行和树宽，切页恢复各自的状态。
 
 每项的详细说明见[使用指南](docs/user/guide.zh-CN.md)。

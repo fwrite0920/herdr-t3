@@ -2,6 +2,15 @@
 
 [English](CHANGELOG.md) · 中文
 
+## 2026-11-15
+
+- 历史会话恢复报错修复与分类美化升级（`t3-sessions`）：
+  - **修复恢复会话点击报错**：将不存在的 `run("pane.new")` 命令修正为 Herdr 原生 `run("terminal.open", { argv, folder, place: "tab" })`，彻底消除点击历史条目时的报错；完整适配 Antigravity (`agy --conversation <UUID>`)、Codex (本地及 WSL Linux 环境执行)、Claude Code、Inflection Pi 与 OMP 的会话参数。
+  - **多 Agent 体系分类标签栏**：顶部新增 Agent 分类切换栏（「全部」、「Antigravity」、「Codex」、「Claude」、「Pi」、「OMP」），附带专属品牌色徽章、矢量图标与动态数量角标。
+  - **时间段分类与分组展示**：将会话按时间维度分为「今天」、「昨天」、「近 7 天」、「更早」，配合精致的时间分组栏、数量徽标与分割线呈现清晰的时间脉络。
+  - **会话卡片全面视觉美化**：重构会话条目为卡片式布局，增加 Agent 徽标、标题、元数据行（时间图标、项目路径、WSL 标签）、行内标签管理，并在右上角提供一键「恢复 ↗」终端按钮。
+  - **精准项目路径与标题识别**：清洗工具参数中的引号与文件名残留，使 Antigravity 会话准确匹配所属工程根目录，可在「当前项目」下立即展示。
+
 ## 2026-11-14
 
 - 完善安装指南文档与多平台指引（`README.md` 与 `README.zh-CN.md`）：

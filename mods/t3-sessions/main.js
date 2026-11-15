@@ -7,12 +7,41 @@ const MOD = "mods/t3-sessions";
 
 const PI = "pi", CC = "cc", AGY = "agy", CDX = "codex", OMP = "omp";
 const AGENTS = {
-  [PI]: { label: "pi", color: "ansi5", argv: (id) => ["pi", "--session", id] },
-  [CC]: { label: "cc", color: "ansi3", argv: (id) => ["claude", "--resume", id] },
-  [AGY]: { label: "agy", color: "ansi4", argv: (_id) => ["agy"] },
-  [CDX]: { label: "cdx", color: "ansi2", argv: (id) => ["codex", "--resume", id] },
-  [OMP]: { label: "omp", color: "ansi3", argv: (id) => ["omp", "--session", id] },
+  [PI]: { name: "Inflection Pi", label: "Pi", color: "#a855f7", icon: "mods/t3-sessions/icons/zap.svg", argv: (id, file) => ["pi", "--session", id || file] },
+  [CC]: { name: "Claude Code", label: "Claude", color: "#f59e0b", icon: "mods/t3-sessions/icons/sparkles.svg", argv: (id, file) => ["claude", "--resume", id || file] },
+  [AGY]: { name: "Google Antigravity", label: "Antigravity", color: "#818cf8", icon: "mods/t3-sessions/icons/sparkles.svg", argv: (id, file) => file || id ? ["agy", "--conversation", file || id] : ["agy"] },
+  [CDX]: { name: "OpenAI Codex", label: "Codex", color: "#10b981", icon: "mods/t3-sessions/icons/terminal.svg", argv: (id, file) => ["codex", "resume", id || file] },
+  [OMP]: { name: "Oh-My-Prompt", label: "OMP", color: "#38bdf8", icon: "mods/t3-sessions/icons/terminal.svg", argv: (id, file) => ["omp", "--session", id || file] },
 };
+
+function groupSessions(list) {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfYesterday = startOfToday - 86400000;
+  const startOf7Days = startOfToday - 6 * 86400000;
+
+  const groups = [
+    { id: "today", label: "今天", items: [] },
+    { id: "yesterday", label: "昨天", items: [] },
+    { id: "week", label: "近 7 天", items: [] },
+    { id: "earlier", label: "更早", items: [] }
+  ];
+
+  for (const s of list) {
+    const t = s.mtime || 0;
+    if (t >= startOfToday) {
+      groups[0].items.push(s);
+    } else if (t >= startOfYesterday) {
+      groups[1].items.push(s);
+    } else if (t >= startOf7Days) {
+      groups[2].items.push(s);
+    } else {
+      groups[3].items.push(s);
+    }
+  }
+
+  return groups.filter((g) => g.items.length > 0);
+}
 
 const norm = (p) => (p ? p.replace(/\\/g, "/").replace(/\/+$/, "") : "");
 
@@ -503,6 +532,7 @@ process.stdout.write(JSON.stringify(telemetry));
 const SCAN_NODE = `
 const fs = require('fs');
 const os = require('os');
+const NL = String.fromCharCode(10);
 
 function norm(p) { return p ? p.replace(/\\\\/g, '/') : ''; }
 
@@ -523,11 +553,11 @@ function scanPi(h) {
           try {
             const stat = fs.statSync(fp);
             const head = fs.readFileSync(fp, 'utf8').slice(0, 16384);
-            const first = head.split('\\n')[0];
+            const first = head.split(NL)[0];
             const o = JSON.parse(first || '{}');
             const ident = o.id || file.replace(/\\.jsonl$/, '').split('_').pop() || file;
             let title = '';
-            for (const line of head.split('\\n')) {
+            for (const line of head.split(NL)) {
               if (!line.trim()) continue;
               try {
                 const row = JSON.parse(line);
@@ -565,7 +595,7 @@ function scanOmp(h) {
             const stat = fs.statSync(fp);
             const head = fs.readFileSync(fp, 'utf8').slice(0, 16384);
             let title = '', ident = file.replace(/\\.jsonl$/, '').split('_').pop() || file, cwd = '';
-            for (const line of head.split('\\n')) {
+            for (const line of head.split(NL)) {
               if (!line.trim()) continue;
               try {
                 const row = JSON.parse(line);
@@ -601,11 +631,11 @@ function scanClaude(h) {
           try {
             const stat = fs.statSync(fp);
             const head = fs.readFileSync(fp, 'utf8').slice(0, 16384);
-            const first = head.split('\\n')[0];
+            const first = head.split(NL)[0];
             const o = JSON.parse(first || '{}');
             const ident = file.replace(/\\.jsonl$/, '');
             let title = '';
-            for (const line of head.split('\\n')) {
+            for (const line of head.split(NL)) {
               if (!line.trim()) continue;
               try {
                 const row = JSON.parse(line);
@@ -642,7 +672,7 @@ function scanAgy(h) {
           fs.closeSync(fd);
           const data = buf.toString('utf8');
           let title = '', cwd = '';
-          for (const line of data.split('\\n')) {
+          for (const line of data.split(NL)) {
             if (!line.trim()) continue;
             try {
               const o = JSON.parse(line);
@@ -653,18 +683,20 @@ function scanAgy(h) {
                   const eReq = c.indexOf('</' + 'USER_REQUEST>', sReq);
                   if (eReq !== -1) title = c.slice(sReq + 14, eReq).trim();
                 }
-                if (!title && c) title = c.trim().slice(0, 200);
+                if (!title && c) title = c.replace(/<[^>]+>/g, '').trim().slice(0, 200);
               }
               if (!cwd && o.tool_calls) {
                 for (const tc of o.tool_calls) {
                   const args = tc.args || tc.function?.arguments;
                   const a = typeof args === 'string' ? JSON.parse(args) : args;
-                  const p = a?.Cwd || a?.Path;
-                  if (p && typeof p === 'string' && !p.includes('.gemini') && !p.includes('AppData')) {
-                    const parts = norm(p).split('/');
+                  const rawP = a?.Cwd || a?.Path || a?.Workspace;
+                  if (rawP && typeof rawP === 'string' && !rawP.includes('.gemini') && !rawP.includes('AppData')) {
+                    const cleanP = rawP.replace(/^["']|["']$/g, '').trim().replace(/\\\\/g, '/');
+                    const parts = cleanP.split('/').filter(Boolean);
                     if (parts.length >= 2) {
                       if (/\\.[a-zA-Z0-9]+$/.test(parts[parts.length - 1])) parts.pop();
                       cwd = parts.join('/');
+                      if (cleanP.startsWith('/') && !cwd.startsWith('/')) cwd = '/' + cwd;
                       break;
                     }
                   }
@@ -673,7 +705,7 @@ function scanAgy(h) {
               if (title && cwd) break;
             } catch {}
           }
-          out.push({ agent: 'agy', id: id.slice(0, 8), file: id, cwd, mtime: stat.mtimeMs, title: title.slice(0, 200) });
+          out.push({ agent: 'agy', id: id.slice(0, 8), file: id, cwd: norm(cwd), mtime: stat.mtimeMs, title: (title || 'Antigravity Session').slice(0, 200) });
         } catch {}
       }
     }
@@ -699,7 +731,7 @@ function scanCodexDirs(base, prefix = '') {
             fs.closeSync(fd);
             const head = buf.toString('utf8');
             let title = '', cwd = '';
-            for (const line of head.split('\\n')) {
+            for (const line of head.split(NL)) {
               try {
                 const o = JSON.parse(line);
                 if (o.type === 'session_meta' && o.payload?.cwd) cwd = o.payload.cwd;
@@ -708,7 +740,7 @@ function scanCodexDirs(base, prefix = '') {
               } catch {}
             }
             const id = item.replace(/\\.jsonl$/, '').split('-').pop();
-            out.push({ agent: 'codex', id: prefix ? prefix + '/' + id : id, file: item, cwd, mtime: stat.mtimeMs, title: title.slice(0, 200) || 'Codex Session' });
+            out.push({ agent: 'codex', id: prefix ? prefix + '/' + id : id, file: item, cwd: norm(cwd), mtime: stat.mtimeMs, title: (title.slice(0, 200) || 'Codex Session') });
           } catch {}
         }
       }
@@ -787,6 +819,7 @@ export default class Sessions extends View {
     this.error = null;
     this.loading = false;
     this.showAll = false;
+    this.historyAgentFilter = "all";
     this.tagOnly = null;
     this.filter = "";
     this.tagging = null;
@@ -871,7 +904,7 @@ export default class Sessions extends View {
         const res = await exec("node", ["-e", SCAN_NODE, h]).catch(() => null);
         if (res && res.stdout) {
           const combined = JSON.parse(res.stdout);
-          this.sessions = combined.filter((s) => s.title || s.cwd).sort((a, b) => b.mtime - a.mtime).slice(0, 300);
+          this.sessions = combined.filter((s) => s.title || s.cwd || s.id).sort((a, b) => b.mtime - a.mtime).slice(0, 300);
           this.error = null;
         } else {
           this.sessions = [];
@@ -910,6 +943,7 @@ export default class Sessions extends View {
     const q = raw.replace(/#[^\s#]+/g, " ").trim().toLowerCase();
     return this.sessions.filter((s) => {
       if (!this.showAll && root && s.cwd && !pathMatches(root, s.cwd)) return false;
+      if (this.historyAgentFilter !== "all" && s.agent !== this.historyAgentFilter) return false;
       const own = this.tagsOf(s).map((x) => String(x).toLowerCase());
       if (this.tagOnly && !own.includes(String(this.tagOnly).toLowerCase())) return false;
       if (wanted.some((tag) => !own.some((x) => x.includes(tag)))) return false;
@@ -919,11 +953,28 @@ export default class Sessions extends View {
   }
 
   resume(session) {
+    if (!session) return;
     const agent = AGENTS[session.agent];
     if (!agent) return;
-    const argv = agent.argv(session.id || session.file);
-    const cwd = session.cwd || home();
-    run("pane.new", { cwd, argv });
+    let argv = [];
+    let folder = session.cwd || home();
+    if (session.agent === "codex" && String(session.id).startsWith("wsl/")) {
+      const cleanId = String(session.id).replace(/^wsl\//, "");
+      argv = ["wsl", "-d", "Ubuntu-24.04", ...(session.cwd ? ["--cd", session.cwd] : []), "codex", "resume", cleanId];
+      folder = undefined;
+    } else if (typeof agent.argv === "function") {
+      argv = agent.argv(session.id, session.file);
+    }
+    if (!argv || !argv.length) return;
+    try {
+      run("terminal.open", {
+        argv,
+        place: "tab",
+        ...(folder ? { folder } : {})
+      });
+    } catch (e) {
+      console.error("Failed to resume session:", e);
+    }
   }
 
   startTag(session, cx) {
@@ -966,31 +1017,103 @@ export default class Sessions extends View {
         .child("✕"));
   }
 
+  categoryTab(id, label, iconPath, count, color, t) {
+    const active = this.historyAgentFilter === id;
+    return h_flex().h(24).px(8).gap(5).items_center().rounded(5).cursor_pointer()
+      .when(active, (el) => el.bg(t.raised).border_1().border_color(t.border).text_color(t.foreground))
+      .when(!active, (el) => el.text_color(t.muted).hover((s) => s.text_color(t.foreground).bg(t.hover)))
+      .on_click((_e, cx) => {
+        this.historyAgentFilter = id;
+        cx.notify();
+      })
+      .when(Boolean(iconPath), (el) => el.child(svg(iconPath).size(11).text_color(color || t.foreground).flex_none()))
+      .child(div().text_size(11).font_medium().child(label))
+      .when(count > 0, (el) => el.child(
+        div().px(4).py(0.5).rounded(3).text_size(9.5).font_medium()
+          .when(active, (s) => s.bg(t.background).text_color(color || t.accent))
+          .when(!active, (s) => s.bg(t.raised).text_color(t.dim))
+          .child(String(count))
+      ));
+  }
+
+  historySectionHeader(label, count, t) {
+    return h_flex().w_full().items_center().gap(6).pt(6).pb(2).px(4)
+      .child(svg("mods/t3-sessions/icons/clock.svg").size(11).text_color(t.dim).flex_none())
+      .child(div().text_size(11).font_bold().text_color(t.muted).child(label))
+      .child(div().px(4).py(0.5).rounded(3).bg(t.raised).text_size(9.5).text_color(t.dim).child(String(count)))
+      .child(div().flex_1().h(1).bg(t.border));
+  }
+
   row(session, i, t, short, root) {
-    const tags = this.tagsOf(session), agent = AGENTS[session.agent] || { label: session.agent, color: "ansi4" };
+    const tags = this.tagsOf(session);
+    const agent = AGENTS[session.agent] || { label: session.agent, color: "#818cf8", icon: "mods/t3-sessions/icons/sparkles.svg" };
     const tagging = this.tagging === this.keyOf(session);
     const away = session.cwd && root && !pathMatches(root, session.cwd);
-    return div().id(`session-${i}`).flex().flex_col().flex_none().w_full().min_w(0).gap(4).px(10).py(8).rounded(7)
-      .when(!tagging, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)).on_click(() => this.resume(session)))
-      .when(tagging, (el) => el.bg(t.selected))
-      .child(h_flex().w_full().min_w(0).gap(8).items_center()
-        .child(div().id(`agent-${i}`).min_w(26).h(16).px(4).flex_none().flex().items_center().justify_center().rounded(4).bg(t.raised).text_size(9.5).font_medium().text_color(t[agent.color] || t.accent).child(agent.label))
-        .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_medium().text_color(t.foreground).child(session.title || "(无标题)"))
-        .when(!tagging, (el) => el.child(div().id(`tag-add-${i}`).size(18).flex_none().flex().items_center().justify_center().rounded(4).text_size(11).text_color(t.dim)
-          .hover((s) => s.text_color(t.accent).bg(t.raised))
-          .on_click((_e, cx) => { cx.stop_propagation(); this.startTag(session, cx); })
-          .child("+"))))
-      .child(h_flex().w_full().min_w(0).pl(34).gap(6).items_center()
-        .child(div().flex_none().text_size(11).text_color(t.dim).child(when(session.mtime)))
-        .child(div().flex_none().text_size(11).text_color(t.dim).child("·"))
-        .child(div().flex_1().min_w(0).truncate().text_size(11).when(Boolean(away), (el) => el.text_color(t.dim)).child(short(session.cwd) || "未记录目录")))
-      .when(tagging, (el) => el.child(h_flex().w_full().min_w(0).pl(34).gap(4).items_center()
-        .child(Input.new(this.tagInputFor(this.keyOf(session))).flex_1().min_w(0).h(24).text_size(11).text_color(t.foreground))
-        .child(div().id("tag-save").h(24).px(8).flex_none().flex().items_center().rounded(5).bg(t.raised).cursor_pointer().text_size(11).text_color(t.accent)
-          .hover((s) => s.bg(t.hover)).on_click((_e, cx) => { cx.stop_propagation(); this.commitTag(cx); }).child("保存"))))
-      .when(!tagging && tags.length > 0, (el) => el.child(h_flex().w_full().min_w(0).pl(34).gap(4).items_center().overflow_hidden()
-        .children(tags.slice(0, 6).map((tag, j) => this.tagChip(session, tag, j, i, t)))
-        .when(tags.length > 6, (el) => el.child(div().flex_none().text_size(10).text_color(t.dim).child(`+${tags.length - 6}`)))));
+    const isWsl = String(session.id).startsWith("wsl/") || String(session.cwd).startsWith("/home");
+
+    return div().id(`session-${i}`).flex().flex_col().flex_none().w_full().min_w(0).gap(5).p(8).rounded(7)
+      .bg(t.raised)
+      .border_1()
+      .border_color(tagging ? t.accent : t.border)
+      .when(!tagging, (el) => el.cursor_pointer()
+        .hover((s) => s.bg(t.hover).border_color(t.border))
+        .on_click(() => this.resume(session)))
+      // Row 1: Agent Pill + Title + Quick Action "恢复"
+      .child(h_flex().w_full().min_w(0).gap(6).items_center()
+        // Agent badge
+        .child(h_flex().h(18).px(5).gap(3).flex_none().items_center().rounded(4).bg(t.background).border_1().border_color(t.border)
+          .child(svg(agent.icon || "mods/t3-sessions/icons/sparkles.svg").size(10).text_color(agent.color).flex_none())
+          .child(div().text_size(9.5).font_medium().text_color(agent.color).child(agent.label)))
+        // Title
+        .child(div().flex_1().min_w(0).truncate().text_size(12.5).font_medium().text_color(t.foreground)
+          .child(session.title || "(无标题会话)"))
+        // Quick Resume Button
+        .when(!tagging, (el) => el.child(
+          h_flex().id(`btn-resume-${i}`).h(18).px(6).gap(3).flex_none().items_center().rounded(4)
+            .bg(t.background).border_1().border_color(t.border)
+            .hover((s) => s.bg(t.hover).border_color(t.accent))
+            .on_click((_e, cx) => {
+              cx.stop_propagation();
+              this.resume(session);
+            })
+            .child(svg("mods/t3-sessions/icons/terminal.svg").size(10).text_color(agent.color).flex_none())
+            .child(div().text_size(10).font_medium().text_color(t.foreground).child("恢复 ↗"))
+        )))
+      // Row 2: Metadata (Time · Folder · WSL · Add Tag)
+      .child(h_flex().w_full().min_w(0).gap(5).items_center().text_size(11).text_color(t.dim)
+        .child(svg("mods/t3-sessions/icons/clock.svg").size(10.5).text_color(t.dim).flex_none())
+        .child(div().flex_none().child(when(session.mtime)))
+        .child(div().flex_none().child("·"))
+        .child(svg("mods/t3-sessions/icons/folder.svg").size(10.5).text_color(t.dim).flex_none())
+        .child(div().flex_1().min_w(0).truncate()
+          .when(Boolean(away), (el) => el.text_color(t.dim))
+          .when(!away, (el) => el.text_color(t.muted))
+          .child(short(session.cwd) || "全局 / 未记录目录"))
+        .when(isWsl, (el) => el.child(
+          div().px(3).py(0.5).rounded(3).bg(t.background).border_1().border_color(t.border).text_size(9).font_medium().text_color(t.dim).child("WSL")
+        ))
+        .when(!tagging, (el) => el.child(
+          h_flex().id(`tag-add-${i}`).h(16).px(4).gap(2).flex_none().items_center().rounded(3)
+            .hover((s) => s.bg(t.hover).text_color(t.accent))
+            .on_click((_e, cx) => { cx.stop_propagation(); this.startTag(session, cx); })
+            .child(svg("mods/t3-sessions/icons/tag.svg").size(9).text_color(t.dim).flex_none())
+            .child(div().text_size(9.5).child("+标签"))
+        )))
+      // Row 3: Tag editor (when tagging is active)
+      .when(tagging, (el) => el.child(
+        h_flex().w_full().min_w(0).gap(4).items_center().pt(2)
+          .child(Input.new(this.tagInputFor(this.keyOf(session))).flex_1().min_w(0).h(24).text_size(11).text_color(t.foreground))
+          .child(div().id("tag-save").h(24).px(8).flex_none().flex().items_center().rounded(4).bg(t.background).border_1().border_color(t.border).cursor_pointer().text_size(11).text_color(t.accent)
+            .hover((s) => s.bg(t.hover)).on_click((_e, cx) => { cx.stop_propagation(); this.commitTag(cx); }).child("保存"))
+          .child(div().id("tag-cancel").h(24).px(6).flex_none().flex().items_center().rounded(4).cursor_pointer().text_size(11).text_color(t.dim)
+            .hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => { cx.stop_propagation(); this.tagging = null; cx.notify(); }).child("取消"))
+      ))
+      // Row 4: Tag chips (when tags exist and not tagging)
+      .when(!tagging && tags.length > 0, (el) => el.child(
+        h_flex().w_full().min_w(0).gap(4).items_center().overflow_hidden().pt(1)
+          .children(tags.slice(0, 6).map((tag, j) => this.tagChip(session, tag, j, i, t)))
+          .when(tags.length > 6, (el) => el.child(div().flex_none().text_size(10).text_color(t.dim).child(`+${tags.length - 6}`)))
+      ));
   }
 
   sectionHead(title, color, iconPath, t) {
@@ -1304,21 +1427,146 @@ export default class Sessions extends View {
 
   renderHistory(t, short, root) {
     const list = this.visible(root);
-    const counts = { [PI]: 0, [CC]: 0, [AGY]: 0, [CDX]: 0, [OMP]: 0 };
-    for (const s of list) if (counts[s.agent] !== undefined) counts[s.agent]++;
+    const groups = groupSessions(list);
+
+    // Calculate agent category counts based on current project scope & search query
+    const raw = this.filter.trim();
+    const wanted = [...raw.matchAll(/#([^\s#]+)/g)].map((m) => m[1].toLowerCase());
+    const q = raw.replace(/#[^\s#]+/g, " ").trim().toLowerCase();
+    const scopedList = this.sessions.filter((s) => {
+      if (!this.showAll && root && s.cwd && !pathMatches(root, s.cwd)) return false;
+      const own = this.tagsOf(s).map((x) => String(x).toLowerCase());
+      if (this.tagOnly && !own.includes(String(this.tagOnly).toLowerCase())) return false;
+      if (wanted.some((tag) => !own.some((x) => x.includes(tag)))) return false;
+      if (!q) return true;
+      return `${s.title} ${own.join(" ")} ${s.cwd}`.toLowerCase().includes(q);
+    });
+
+    const counts = { all: scopedList.length, [AGY]: 0, [CDX]: 0, [CC]: 0, [PI]: 0, [OMP]: 0 };
+    for (const s of scopedList) {
+      if (counts[s.agent] !== undefined) counts[s.agent]++;
+    }
+
+    // Collect all popular tags for tag filtering bar
+    const tagCounts = new Map();
+    for (const s of scopedList) {
+      for (const tag of this.tagsOf(s)) {
+        tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+      }
+    }
+    const popularTags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
 
     return v_flex().id("sessions-history").flex_1().min_h(0)
-      .child(h_flex().h(34).flex_none().px(10).gap(8).items_center().border_b(1).border_color(t.border)
-        .child(Input.new(this.input).flex_1().h_full().text_size(12).text_color(t.foreground))
-        .child(div().flex_none().text_size(11).text_color(t.dim).child(`pi ${counts[PI]} · cdx ${counts[CDX]} · agy ${counts[AGY]} · omp ${counts[OMP]}`))
-        .child(div().id("btn-refresh-hist").px(6).py(2).rounded(4).bg(t.raised).text_size(11).text_color(t.muted).cursor_pointer()
-          .hover((s) => s.text_color(t.foreground).bg(t.hover))
-          .on_click((_e, cx) => { this.refreshHistory(cx); })
-          .child("⟳ 刷新")))
-      .child(v_flex().id("session-list").flex_1().min_h(0).p(6).gap(3).overflow_y_scrollbar()
-        .children(list.map((s, i) => this.row(s, i, t, short, root))))
-      .when(!list.length, (el) => el.child(div().p(16).text_size(12).text_color(t.dim)
-        .child(this.error || (this.loading ? "Loading sessions…" : !root ? "当前 space 没有目录" : "当前项目暂无历史会话 (点击右上角可切换所有项目)"))));
+      // Search and Filter Bar
+      .child(v_flex().flex_none().px(10).pt(8).pb(6).gap(6).border_b(1).border_color(t.border)
+        // Search Input + Scope Toggle + Refresh
+        .child(h_flex().h(28).gap(6).items_center()
+          .child(h_flex().flex_1().h_full().px(8).items_center().rounded(6).bg(t.raised).border_1().border_color(t.border)
+            .child(Input.new(this.input).flex_1().h_full().text_size(11.5).text_color(t.foreground))
+            .when(Boolean(this.filter), (el) => el.child(
+              div().id("btn-clear-search").cursor_pointer().text_size(10).text_color(t.dim).hover((s) => s.text_color(t.foreground))
+                .on_click((_e, cx) => {
+                  this.filter = "";
+                  this.input.set_value("");
+                  cx.notify();
+                })
+                .child("✕")
+            )))
+          // Current Project / All Projects Switch Pill
+          .child(h_flex().id("btn-scope-toggle").h_full().px(7).gap(4).items_center().rounded(5).cursor_pointer()
+            .bg(this.showAll ? t.raised : t.background)
+            .border_1().border_color(t.border)
+            .hover((s) => s.border_color(t.accent))
+            .on_click((_e, cx) => {
+              this.showAll = !this.showAll;
+              cx.notify();
+            })
+            .child(svg(this.showAll ? "mods/t3-sessions/icons/server.svg" : "mods/t3-sessions/icons/folder.svg").size(11).text_color(this.showAll ? t.accent : t.muted).flex_none())
+            .child(div().text_size(11).font_medium().text_color(this.showAll ? t.accent : t.foreground).child(this.showAll ? "全局" : (short(root) || "当前项目"))))
+          // Refresh Button
+          .child(div().id("btn-refresh-hist").h_full().px(7).flex_none().flex().items_center().rounded(5).bg(t.raised).border_1().border_color(t.border).text_size(11).text_color(t.muted).cursor_pointer()
+            .hover((s) => s.text_color(t.foreground).bg(t.hover))
+            .on_click((_e, cx) => { this.refreshHistory(cx); })
+            .child("⟳")))
+
+        // Agent Category Tabs (分类标签栏)
+        .child(h_flex().w_full().gap(4).items_center().overflow_x_scrollbar().pb(1)
+          .child(this.categoryTab("all", "全部", null, counts.all, null, t))
+          .when(counts[AGY] > 0 || this.historyAgentFilter === AGY, (el) => el.child(
+            this.categoryTab(AGY, "Antigravity", "mods/t3-sessions/icons/sparkles.svg", counts[AGY], "#818cf8", t)
+          ))
+          .when(counts[CDX] > 0 || this.historyAgentFilter === CDX, (el) => el.child(
+            this.categoryTab(CDX, "Codex", "mods/t3-sessions/icons/terminal.svg", counts[CDX], "#10b981", t)
+          ))
+          .when(counts[CC] > 0 || this.historyAgentFilter === CC, (el) => el.child(
+            this.categoryTab(CC, "Claude", "mods/t3-sessions/icons/sparkles.svg", counts[CC], "#f59e0b", t)
+          ))
+          .when(counts[PI] > 0 || this.historyAgentFilter === PI, (el) => el.child(
+            this.categoryTab(PI, "Pi", "mods/t3-sessions/icons/zap.svg", counts[PI], "#a855f7", t)
+          ))
+          .when(counts[OMP] > 0 || this.historyAgentFilter === OMP, (el) => el.child(
+            this.categoryTab(OMP, "OMP", "mods/t3-sessions/icons/terminal.svg", counts[OMP], "#38bdf8", t)
+          ))
+        )
+
+        // Popular Tags bar (if any) or Active Tag Filter
+        .when(Boolean(this.tagOnly) || popularTags.length > 0, (el) => el.child(
+          h_flex().w_full().gap(4).items_center().pt(1)
+            .child(svg("mods/t3-sessions/icons/tag.svg").size(10).text_color(t.dim).flex_none())
+            .when(Boolean(this.tagOnly), (el2) => el2.child(
+              h_flex().h(18).px(6).gap(3).items_center().rounded(4).bg(t.background).border_1().border_color(t.accent).text_size(10.5).text_color(t.accent)
+                .child(div().child(`#${this.tagOnly}`))
+                .child(div().text_size(9).text_color(t.dim).hover((s) => s.text_color(t.ansi1))
+                  .on_click((_e, cx) => { cx.stop_propagation(); this.tagOnly = null; cx.notify(); }).child("✕"))
+            ))
+            .children(popularTags.filter(([tag]) => tag !== this.tagOnly).map(([tag, count]) =>
+              h_flex().h(18).px(5).gap(2).items_center().rounded(4).bg(t.raised).cursor_pointer().text_size(10).text_color(t.dim)
+                .hover((s) => s.bg(t.hover).text_color(t.foreground))
+                .on_click((_e, cx) => { cx.stop_propagation(); this.tagOnly = tag; cx.notify(); })
+                .child(div().child(`#${tag}`))
+                .child(div().text_size(9).text_color(t.dim).child(String(count)))
+            ))
+        ))
+      )
+
+      // Session List with Chronological Grouping
+      .when(list.length > 0, (el) => el.child(
+        v_flex().id("session-list").flex_1().min_h(0).p(8).gap(6).overflow_y_scrollbar()
+          .children(groups.map((group) =>
+            v_flex().w_full().gap(4)
+              .child(this.historySectionHeader(group.label, group.items.length, t))
+              .children(group.items.map((s, i) => this.row(s, i, t, short, root)))
+          ))
+      ))
+
+      // Empty State
+      .when(list.length === 0, (el) => el.child(
+        v_flex().flex_1().items_center().justify_center().p(24).gap(8)
+          .child(svg("mods/t3-sessions/icons/file-text.svg").size(28).text_color(t.dim))
+          .child(div().font_medium().text_size(13).text_color(t.foreground)
+            .child(this.loading ? "正在加载历史会话…" : "暂无匹配的历史会话"))
+          .child(div().text_size(11.5).text_color(t.dim).text_center()
+            .child(this.error || (this.loading ? "正在扫描本地 Agent 会话日志…" : !this.showAll ? "当前项目目录下暂无历史会话，点击下方按钮切换查看所有项目会话。" : "未找到符合当前分类或搜索条件的会话记录。")))
+          .when(!this.showAll && !this.loading, (el2) => el2.child(
+            h_flex().mt(4).px(10).py(4).rounded(5).bg(t.raised).border_1().border_color(t.border).cursor_pointer()
+              .hover((s) => s.bg(t.hover).border_color(t.accent))
+              .on_click((_e, cx) => { this.showAll = true; cx.notify(); })
+              .child(svg("mods/t3-sessions/icons/server.svg").size(11).text_color(t.accent).mr(4))
+              .child(div().text_size(11.5).font_medium().text_color(t.foreground).child("查看所有项目会话"))
+          ))
+          .when(this.showAll && Boolean(this.filter || this.historyAgentFilter !== "all" || this.tagOnly), (el2) => el2.child(
+            h_flex().mt(4).px(10).py(4).rounded(5).bg(t.raised).border_1().border_color(t.border).cursor_pointer()
+              .hover((s) => s.bg(t.hover))
+              .on_click((_e, cx) => {
+                this.filter = "";
+                this.input.set_value("");
+                this.historyAgentFilter = "all";
+                this.tagOnly = null;
+                cx.notify();
+              })
+              .child(div().text_size(11.5).font_medium().text_color(t.accent).child("清除所有筛选条件"))
+          ))
+      ));
   }
 
   render() {
@@ -1352,12 +1600,7 @@ export default class Sessions extends View {
             .text_color(this.showAll ? t.accent : t.dim)
             .hover((s) => s.text_color(t.accent))
             .on_click((_e, cx) => { this.showAll = !this.showAll; cx.notify(); })
-            .child(this.showAll ? "所有项目 (切回当前)" : (short(root) || "当前项目") + " ▾"))
-          .when(Boolean(this.tagOnly), (el2) => el2.child(
-            h_flex().id("sess-tagonly").h(22).px(6).gap(4).flex_none().items_center().rounded(5).bg(t.raised).text_size(11).text_color(t.accent)
-              .child(div().max_w(80).truncate().child(`#${this.tagOnly}`))
-              .child(div().text_size(10).text_color(t.dim).hover((s) => s.text_color(t.ansi1))
-                .on_click(() => { this.tagOnly = null; }).child("✕"))))))
+            .child(this.showAll ? "🌐 全局模式" : (short(root) ? "📂 " + short(root) : "当前项目")))))
 
       .child(this.viewMode === "inspector" ? this.renderInspector(t, short, root) : this.renderHistory(t, short, root));
   }

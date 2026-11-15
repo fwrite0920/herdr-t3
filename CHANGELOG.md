@@ -2,6 +2,15 @@
 
 English · [中文](CHANGELOG.zh-CN.md)
 
+## 2026-11-15
+
+- History Session Resume Bug Fix & Categorization Redesign (`t3-sessions`):
+  - **Fixed Session Resume Execution**: Corrected the invocation from the nonexistent `run("pane.new")` to Herdr's native `run("terminal.open", { argv, folder, place: "tab" })`, eliminating runtime click errors when resuming history. Properly handles full conversation IDs for Antigravity (`agy --conversation <UUID>`), Codex (`codex resume` or WSL Linux execution), Claude Code, Inflection Pi, and OMP.
+  - **Multi-Agent Categorization Tabs**: Added dedicated agent category tabs (`全部`, `Antigravity`, `Codex`, `Claude`, `Pi`, `OMP`) with brand color styling, SVG vector icons, and dynamic badge counters.
+  - **Chronological Time Grouping**: Grouped history items into clear chronological segments (`今天`, `昨天`, `近 7 天`, `更早`) with elegant divider headers, count badges, and clock icons.
+  - **Beautified Session Cards**: Redesigned session rows into modern cards featuring agent badges, truncated titles, metadata icons (clock, folder path, WSL indicator), in-place tag management, and a dedicated 1-click "恢复 ↗" terminal resume button.
+  - **Universal Path & Title Resolution**: Stripped quotation artifacts and filenames from parsed tool arguments so Antigravity sessions accurately associate with their project root and appear under the current project filter.
+
 ## 2026-11-14
 
 - Detailed Installation Documentation & Multi-Platform Guidance (`README.md` & `README.zh-CN.md`):
