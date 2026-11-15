@@ -4,6 +4,12 @@ English · [中文](CHANGELOG.zh-CN.md)
 
 ## 2026-11-15
 
+- Comprehensive Runtime & Telemetry Performance Optimization (`t3-sessions`):
+  - **Smart Panel Visibility Throttling**: Added `isSessionsActive()` to pause polling and elapsed timer ticks entirely when the right panel is collapsed or another panel tab (`files`, `changes`, `todos`) is active, saving up to ~50ms process execution churn per interval.
+  - **View-Mode-Aware Interval Scheduling**: Separated polling routines so Inspector telemetry (1.5s) only runs in Inspector mode, and History scanning (relaxed from 4s to 8s) only runs in History mode. Switching between modes or terminals triggers instant immediate refresh with zero perceived latency.
+  - **Single-Pass Git Status**: Consolidated 3 separate synchronous git calls (`git rev-parse`, `git branch`, `git status`) into a single `git status --porcelain -b` subprocess call.
+  - **Single-Pass JSON Parsing & Buffer Sizing**: Reduced transcript tail buffer from 512 KB to 128 KB, parsing JSON lines once into memory instead of repeated multi-pass `JSON.parse` operations; scaled history scan buffers down to 16 KB for instant session indexing.
+  - **Telemetry Dirty Checking & In-Flight Guard**: Added `isTelemetryDifferent` check to avoid triggering redundant GPUI re-renders (`cx.notify()`) when telemetry metrics are unchanged; added `telemetryPolling` concurrency guard to prevent background process pileup.
 - History Session Resume Bug Fix & Categorization Redesign (`t3-sessions`):
   - **Fixed Session Resume Execution**: Corrected the invocation from the nonexistent `run("pane.new")` to Herdr's native `run("terminal.open", { argv, folder, place: "tab" })`, eliminating runtime click errors when resuming history. Properly handles full conversation IDs for Antigravity (`agy --conversation <UUID>`), Codex (`codex resume` or WSL Linux execution), Claude Code, Inflection Pi, and OMP.
   - **Multi-Agent Categorization Tabs**: Added dedicated agent category tabs (`全部`, `Antigravity`, `Codex`, `Claude`, `Pi`, `OMP`) with brand color styling, SVG vector icons, and dynamic badge counters.

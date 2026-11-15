@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { spaces, panes, focused, terminals, agents, run, exec, shared, setShared, home, notify, theme } from "herdr";
+import { spaces, panes, focused, terminals, agents, run, exec, shared, setShared, home, notify, theme, layout } from "herdr";
 
 const TAGS = "t3.sessions.tags";
 const MOD = "mods/t3-sessions";
@@ -41,6 +41,37 @@ function groupSessions(list) {
   }
 
   return groups.filter((g) => g.items.length > 0);
+}
+
+function isSessionsActive() {
+  const root = typeof layout === "function" ? layout() : null;
+  if (!root) return true;
+  const find = (node, id) => (node?.id === id ? node : (node?.children ?? []).reduce((hit, c) => hit ?? find(c, id), null));
+  const panel = find(root, "panel");
+  if (panel && panel.hidden) return false;
+  const body = find(root, "panel-body");
+  if (body && body.active && body.active !== "sessions") return false;
+  return true;
+}
+
+function isTelemetryDifferent(prev, next) {
+  if (!prev) return true;
+  return (
+    prev.inTok !== next.inTok ||
+    prev.outTok !== next.outTok ||
+    prev.cacheTok !== next.cacheTok ||
+    prev.stepCount !== next.stepCount ||
+    prev.turn !== next.turn ||
+    prev.sessionTitle !== next.sessionTitle ||
+    prev.gitBranch !== next.gitBranch ||
+    prev.gitClean !== next.gitClean ||
+    prev.gitChanges !== next.gitChanges ||
+    prev.usedToolsCount !== next.usedToolsCount ||
+    prev.recentTools?.length !== next.recentTools?.length ||
+    prev.model !== next.model ||
+    prev.effort !== next.effort ||
+    prev.agent !== next.agent
+  );
 }
 
 const norm = (p) => (p ? p.replace(/\\/g, "/").replace(/\/+$/, "") : "");
@@ -135,12 +166,16 @@ let gitBranch = "no repo", gitClean = true, gitChanges = "—";
 try {
   const gCmd = isRemote && machine !== "wsl" ? ["exec", "--on", machine, "git -C " + cwd] : isWsl ? ["exec", "--on", "wsl", "git -C " + cwd] : ["-C", cwd];
   const gBin = isRemote || isWsl ? "hc" : "git";
-  const runG = (sub) => execFileSync(gBin, isRemote || isWsl ? [gCmd[0], gCmd[1], gCmd[2], gCmd[3] + " " + sub] : [gCmd[0], gCmd[1], ...sub.split(" ")], { timeout: 1200, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  if (runG("rev-parse --is-inside-work-tree") === "true") {
-    gitBranch = runG("branch --show-current") || "master";
-    const st = runG("status --porcelain");
-    gitClean = !st;
-    gitChanges = st ? st.split(NL).filter(Boolean).length + " changes" : "clean";
+  const args = isRemote || isWsl ? [gCmd[0], gCmd[1], gCmd[2], gCmd[3] + " status --porcelain -b"] : [gCmd[0], gCmd[1], "status", "--porcelain", "-b"];
+  const out = execFileSync(gBin, args, { timeout: 1200, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  if (out) {
+    const lines = out.split(NL);
+    const bLine = lines[0] || "";
+    const m = bLine.match(/^##\s*([^\s.]+)/);
+    gitBranch = m ? m[1] : (bLine.replace(/^##\s*/, "") || "master");
+    const changed = lines.slice(1).filter(Boolean);
+    gitClean = changed.length === 0;
+    gitChanges = changed.length > 0 ? changed.length + " changes" : "clean";
   }
 } catch {}
 
@@ -166,7 +201,7 @@ let telemetry = {
   breakdown: { sys: 0, sysPct: 0, tools: 0, toolsPct: 0, msg: 0, msgPct: 0, res: 0, resPct: 0 }
 };
 
-function readTailLines(file, maxBytes = 262144) {
+function readTailLines(file, maxBytes = 131072) {
   try {
     const stat = fs.statSync(file);
     if (stat.size <= maxBytes) return fs.readFileSync(file, "utf8").trim().split(NL);
@@ -203,65 +238,66 @@ if (agentType === "antigravity") {
       if (matchedId) {
         telemetry.sessionId = matchedId.slice(0, 8);
         const tPath = bDir + "/" + matchedId + "/.system_generated/logs/transcript.jsonl";
-        const lines = readTailLines(tPath, 524288);
-        if (lines.length > 0) {
-          telemetry.stepCount = lines.length;
+        const rawLines = readTailLines(tPath, 131072);
+        if (rawLines.length > 0) {
+          telemetry.stepCount = rawLines.length;
+          const lines = [];
+          for (const l of rawLines) {
+            if (!l.trim()) continue;
+            try { lines.push(JSON.parse(l)); } catch {}
+          }
           let lastPlanner = null, turnTools = [], totalToolsOk = 0;
           const usedTools = new Set(), readFiles = new Set(), editedFiles = new Set();
           let cumIn = 0, cumCache = 0, cumOut = 0, ttfts = [], speeds = [];
 
           for (let i = 0; i < lines.length - 1; i++) {
-            try {
-              const a = JSON.parse(lines[i]), b = JSON.parse(lines[i + 1]);
-              if (a.type === "USER_INPUT" && b.type === "PLANNER_RESPONSE") {
-                const diff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-                if (diff > 0 && diff < 60000) {
-                  ttfts.push(diff);
-                  if (b.output_tokens && diff > 500) speeds.push(Math.round(b.output_tokens / (diff / 1000)));
-                }
+            const a = lines[i], b = lines[i + 1];
+            if (a.type === "USER_INPUT" && b.type === "PLANNER_RESPONSE") {
+              const diff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+              if (diff > 0 && diff < 60000) {
+                ttfts.push(diff);
+                if (b.output_tokens && diff > 500) speeds.push(Math.round(b.output_tokens / (diff / 1000)));
               }
-            } catch {}
+            }
           }
 
           for (let i = 0; i < lines.length; i++) {
-            try {
-              const o = JSON.parse(lines[i]);
-              if (o.type === "USER_INPUT") {
-                const c = typeof o.content === "string" ? o.content : JSON.stringify(o.content || "");
-                msgChars += c.length;
+            const o = lines[i];
+            if (o.type === "USER_INPUT") {
+              const c = typeof o.content === "string" ? o.content : JSON.stringify(o.content || "");
+              msgChars += c.length;
+            }
+            if (o.type === "PLANNER_RESPONSE") {
+              lastPlanner = o;
+              if (o.model) {
+                const mm = o.model.match(/-(xhigh|high|medium|low)$/i);
+                if (mm) { telemetry.effort = mm[1].toLowerCase(); telemetry.model = o.model.slice(0, mm.index); }
+                else telemetry.model = o.model;
               }
-              if (o.type === "PLANNER_RESPONSE") {
-                lastPlanner = o;
-                if (o.model) {
-                  const mm = o.model.match(/-(xhigh|high|medium|low)$/i);
-                  if (mm) { telemetry.effort = mm[1].toLowerCase(); telemetry.model = o.model.slice(0, mm.index); }
-                  else telemetry.model = o.model;
-                }
-                if (o.input_tokens) { cumIn += o.input_tokens; cumCache += (o.cache_read_tokens || 0); cumOut += (o.output_tokens || 0); }
-                if (o.content) msgChars += String(o.content).length;
-                if (o.thinking) msgChars += String(o.thinking).length;
-                if (o.tool_calls) {
-                  for (const tc of o.tool_calls) {
-                    toolsChars += JSON.stringify(tc).length;
-                    usedTools.add(tc.name);
-                    const p = tc.args?.Path || tc.args?.path || tc.args?.file_path;
-                    if (p) { if (tc.name === "read_file") readFiles.add(p); else if (tc.name === "write_file" || tc.name === "edit_file") editedFiles.add(p); }
-                    if (i >= lines.length - 10) turnTools.push({ name: tc.name, start: o.created_at, end: null, ms: "0s", status: "running" });
-                  }
+              if (o.input_tokens) { cumIn += o.input_tokens; cumCache += (o.cache_read_tokens || 0); cumOut += (o.output_tokens || 0); }
+              if (o.content) msgChars += String(o.content).length;
+              if (o.thinking) msgChars += String(o.thinking).length;
+              if (o.tool_calls) {
+                for (const tc of o.tool_calls) {
+                  toolsChars += JSON.stringify(tc).length;
+                  usedTools.add(tc.name);
+                  const p = tc.args?.Path || tc.args?.path || tc.args?.file_path;
+                  if (p) { if (tc.name === "read_file") readFiles.add(p); else if (tc.name === "write_file" || tc.name === "edit_file") editedFiles.add(p); }
+                  if (i >= lines.length - 10) turnTools.push({ name: tc.name, start: o.created_at, end: null, ms: "0s", status: "running" });
                 }
               }
-              if (o.type === "GENERIC" || o.source === "TOOL") {
-                totalToolsOk++;
-                const c = typeof o.content === "string" ? o.content : JSON.stringify(o.content || "");
-                resChars += c.length;
-                if (turnTools.length > 0 && turnTools[turnTools.length - 1].status === "running") {
-                  const last = turnTools[turnTools.length - 1];
-                  last.end = o.created_at; last.status = "ok";
-                  const dur = Math.max(0, new Date(o.created_at).getTime() - new Date(last.start).getTime());
-                  last.ms = dur >= 1000 ? (dur / 1000).toFixed(1) + "s" : dur + "ms";
-                }
+            }
+            if (o.type === "GENERIC" || o.source === "TOOL") {
+              totalToolsOk++;
+              const c = typeof o.content === "string" ? o.content : JSON.stringify(o.content || "");
+              resChars += c.length;
+              if (turnTools.length > 0 && turnTools[turnTools.length - 1].status === "running") {
+                const last = turnTools[turnTools.length - 1];
+                last.end = o.created_at; last.status = "ok";
+                const dur = Math.max(0, new Date(o.created_at).getTime() - new Date(last.start).getTime());
+                last.ms = dur >= 1000 ? (dur / 1000).toFixed(1) + "s" : dur + "ms";
               }
-            } catch {}
+            }
           }
 
           telemetry.toolsOk = totalToolsOk || (turnNum * 2);
@@ -333,7 +369,7 @@ if (agentType === "antigravity") {
     try {
       const im = latestFile.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
       if (im) telemetry.sessionId = im[1].slice(0, 8);
-      const lines = readTailLines(latestFile, 524288);
+      const lines = readTailLines(latestFile, 131072);
       telemetry.stepCount = lines.length;
 
       const recentCmds = [];
@@ -667,7 +703,7 @@ function scanAgy(h) {
         try {
           const stat = fs.statSync(transcript);
           const fd = fs.openSync(transcript, 'r');
-          const buf = Buffer.alloc(Math.min(stat.size, 65536));
+          const buf = Buffer.alloc(Math.min(stat.size, 16384));
           fs.readSync(fd, buf, 0, buf.length, 0);
           fs.closeSync(fd);
           const data = buf.toString('utf8');
@@ -726,7 +762,7 @@ function scanCodexDirs(base, prefix = '') {
         else if (item.endsWith('.jsonl')) {
           try {
             const fd = fs.openSync(full, 'r');
-            const buf = Buffer.alloc(Math.min(stat.size, 131072));
+            const buf = Buffer.alloc(Math.min(stat.size, 16384));
             fs.readSync(fd, buf, 0, buf.length, 0);
             fs.closeSync(fd);
             const head = buf.toString('utf8');
@@ -759,7 +795,7 @@ process.stdout.write(JSON.stringify(list));
 
 export default class Sessions extends View {
   init(_props, cx) {
-    this.viewMode = "inspector"; // "inspector" | "history"
+    this.viewMode = shared("t3.sessions.mode") || "inspector"; // "inspector" | "history"
     this.breakdownOpen = true;
     this.toolsOpen = true;
     this.toolCategory = "all"; // "all" | "builtin" | "ext"
@@ -832,32 +868,45 @@ export default class Sessions extends View {
     this.pollTelemetry(cx);
     this.refreshHistory(cx);
 
-    // 1-second interval to tick the elapsed timer live (0:01, 0:02, 0:03...)
+    // 1-second interval to tick the elapsed timer live (only when active and in inspector view)
     cx.timer.every(1000, (cx) => {
-      cx.notify();
+      if (isSessionsActive() && this.viewMode === "inspector") {
+        cx.notify();
+      }
     });
 
-    // 1.5-second telemetry polling
-    cx.timer.every(1500, (cx) => this.pollTelemetry(cx));
+    // 1.5-second telemetry polling (only when active and in inspector view)
+    cx.timer.every(1500, (cx) => {
+      if (isSessionsActive() && this.viewMode === "inspector") {
+        this.pollTelemetry(cx);
+      }
+    });
 
-    // 4-second real-time history refresh
-    cx.timer.every(4000, (cx) => this.refreshHistory(cx));
+    // 8-second real-time history refresh (only when active and in history view)
+    cx.timer.every(8000, (cx) => {
+      if (isSessionsActive() && this.viewMode === "history") {
+        this.refreshHistory(cx);
+      }
+    });
 
     this.watch = null;
     cx.timer.every(1000, (cx) => {
+      if (!isSessionsActive()) return;
       const { cwd } = currentPlace();
       const f = typeof focused === "function" ? focused() : null;
       const cur = f?.terminal || f?.agent || cwd;
       if (cur !== this.watch) {
         this.watch = cur;
-        this.pollTelemetry(cx);
-        this.refreshHistory(cx);
+        if (this.viewMode === "inspector") this.pollTelemetry(cx);
+        else this.refreshHistory(cx);
         cx.notify();
       }
     });
   }
 
   pollTelemetry(cx) {
+    if (this.telemetryPolling) return;
+    this.telemetryPolling = true;
     cx.spawn(async (cx) => {
       try {
         const h = norm(home());
@@ -885,13 +934,19 @@ export default class Sessions extends View {
           try {
             const t = JSON.parse(res.stdout);
             if (t) {
+              const prev = this.telemetryByTerm.get(termAddr);
+              const changed = isTelemetryDifferent(prev, t);
               this.telemetryByTerm.set(termAddr, t);
-              this.telemetry = { ...this.telemetry, ...t };
-              cx.notify();
+              if (changed) {
+                this.telemetry = { ...this.telemetry, ...t };
+                cx.notify();
+              }
             }
           } catch {}
         }
-      } catch {}
+      } catch {} finally {
+        this.telemetryPolling = false;
+      }
     });
   }
 
@@ -1583,7 +1638,7 @@ export default class Sessions extends View {
           .child(div().id("btn-inspector").px(8).py(3).rounded(4).cursor_pointer().text_size(11.5).font_medium()
             .when(this.viewMode === "inspector", (el) => el.bg(t.background).text_color(t.foreground).border_1().border_color(t.border))
             .when(this.viewMode !== "inspector", (el) => el.text_color(t.muted).hover((s) => s.text_color(t.foreground)))
-            .on_click((_e, cx) => { this.viewMode = "inspector"; setShared("t3.sessions.mode", "inspector"); cx.notify(); })
+            .on_click((_e, cx) => { this.viewMode = "inspector"; setShared("t3.sessions.mode", "inspector"); this.pollTelemetry(cx); cx.notify(); })
             .child("✦ Inspector"))
           .child(div().id("btn-history").px(8).py(3).rounded(4).cursor_pointer().text_size(11.5).font_medium()
             .when(this.viewMode === "history", (el) => el.bg(t.background).text_color(t.foreground).border_1().border_color(t.border))

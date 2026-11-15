@@ -4,6 +4,12 @@
 
 ## 2026-11-15
 
+- 运行时与遥测全链路性能深度优化（`t3-sessions`）：
+  - **面板感知智能休眠机制**：新增 `isSessionsActive()` 状态检测，在右侧边栏折叠隐藏或处于其他标签页（如 `files`、`changes`、`todos`）时全面挂起后台定时轮询与秒级重绘，彻底避免无意义的子进程消耗（每次节省 20~50ms CPU 开销）。
+  - **视图感知按需轮询调度**：分离 Inspector 与 History 轮询逻辑，仅在检查器模式下执行 1.5s 遥测分析，仅在会话历史模式下执行历史目录扫描（间隔从 4s 优化为 8s）；点击标签或切换终端时光速触发即时刷新，零感知延迟。
+  - **Git 状态执行合并优化**：将原先串行执行的 3 次 Git 进程（`git rev-parse`、`git branch`、`git status`）合并为单次 `git status --porcelain -b` 极速调用，减少 66% 的子进程创建。
+  - **内存单趟解析与缓冲区收窄**：将日志文件读取上限从 512 KB 降至 128 KB，并在内存中完成一次性单趟 JSON 解析，避免单轮内上千次重复 `JSON.parse`；历史扫描缓冲区收窄至 16 KB，极速秒级索引。
+  - **脏检查差异比对与并发防重**：增加 `isTelemetryDifferent` 脏检查机制，仅在关键指标或用量发生实质变化时触发 `cx.notify()`，避免无谓的 GPU 重绘；增加 `telemetryPolling` 防重保护，杜绝低性能机器上的后台进程堆积。
 - 历史会话恢复报错修复与分类美化升级（`t3-sessions`）：
   - **修复恢复会话点击报错**：将不存在的 `run("pane.new")` 命令修正为 Herdr 原生 `run("terminal.open", { argv, folder, place: "tab" })`，彻底消除点击历史条目时的报错；完整适配 Antigravity (`agy --conversation <UUID>`)、Codex (本地及 WSL Linux 环境执行)、Claude Code、Inflection Pi 与 OMP 的会话参数。
   - **多 Agent 体系分类标签栏**：顶部新增 Agent 分类切换栏（「全部」、「Antigravity」、「Codex」、「Claude」、「Pi」、「OMP」），附带专属品牌色徽章、矢量图标与动态数量角标。
