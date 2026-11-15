@@ -80,9 +80,15 @@ function isSessionsActive() {
 function isTelemetryDifferent(prev, next) {
   if (!prev) return true;
   return (
+    prev.sessionId !== next.sessionId ||
+    prev.cwd !== next.cwd ||
     prev.inTok !== next.inTok ||
     prev.outTok !== next.outTok ||
     prev.cacheTok !== next.cacheTok ||
+    prev.totalCtx !== next.totalCtx ||
+    prev.hitRate !== next.hitRate ||
+    prev.sessionCost !== next.sessionCost ||
+    prev.turnCost !== next.turnCost ||
     prev.stepCount !== next.stepCount ||
     prev.turn !== next.turn ||
     prev.sessionTitle !== next.sessionTitle ||
@@ -97,6 +103,7 @@ function isTelemetryDifferent(prev, next) {
     prev.recentTools?.[0]?.status !== next.recentTools?.[0]?.status ||
     prev.recentTools?.[0]?.ms !== next.recentTools?.[0]?.ms ||
     prev.recentTools?.[0]?.detail !== next.recentTools?.[0]?.detail ||
+    prev.breakdown?.msgPct !== next.breakdown?.msgPct ||
     prev.model !== next.model ||
     prev.provider !== next.provider ||
     prev.effort !== next.effort ||
@@ -115,14 +122,89 @@ function pathMatches(a, b) {
   return false;
 }
 
-function currentPlace() {
+function isKnownAgentKey(k) {
+  return /^(antigravity|agy|codex|omp|pi|claude|cc)$/i.test(String(k || ""));
+}
+
+function resolveActiveTarget() {
   const sp = spaces().find((s) => s.active);
-  const ps = typeof panes === "function" ? panes() : [];
+  const activeTab = sp?.tabs?.find((c) => c.active) || sp?.tabs?.[0] || null;
+  const allPanes = typeof panes === "function" ? panes() : [];
+  const allAgents = typeof agents === "function" ? agents() : [];
+  const allTerms = typeof terminals === "function" ? terminals() : [];
   const f = typeof focused === "function" ? focused() : null;
-  const tabs = new Set((sp?.tabs ?? []).map((c) => c.id));
-  const focusPane = f?.pane && tabs.has(f.tab) ? ps.find((p) => p.pane === f.pane && p.cwd) : null;
-  const cwd = focusPane?.cwd || ps.find((p) => tabs.has(p.tab) && p.cwd)?.cwd || sp?.folder || "";
-  return { cwd: norm(cwd), on: sp?.machine ?? null, space: sp };
+
+  const tabPanes = allPanes.filter((p) => p.tab === activeTab?.id);
+  const activePane = tabPanes.find((p) => p.pane === f?.pane)
+    || tabPanes.find((p) => p.focused)
+    || tabPanes.find((p) => p.mod === "mods/chat" || p.terminal)
+    || tabPanes[0]
+    || null;
+
+  if (activePane?.mod === "mods/chat" && activePane?.item) {
+    return {
+      termAddr: "chat:" + activePane.item,
+      appHint: "chat",
+      cwd: norm(activePane.cwd || sp?.folder || ""),
+      curAgent: null,
+      curTerm: null,
+      tabTerm: null,
+      activePane,
+      chatTab: activePane.tab,
+      space: sp
+    };
+  }
+
+  let termAddr = activePane?.terminal
+    || (activeTab?.terminals?.some((x) => x.terminal === f?.terminal) ? f.terminal : null)
+    || activeTab?.terminals?.[0]?.terminal
+    || null;
+  let tabTerm = activeTab?.terminals?.find((x) => x.terminal === termAddr) || activeTab?.terminals?.[0] || null;
+  let curAgent = termAddr ? allAgents.find((a) => a.address === termAddr) : null;
+  let curTerm = termAddr ? allTerms.find((k) => k.address === termAddr) : null;
+  let appHint = curAgent?.program?.key || activePane?.program?.key || curTerm?.program?.key || tabTerm?.app || "";
+
+  // If the current tab is a plain shell (no agent running in it), inspect an agent terminal in the same space if one exists
+  if (!isKnownAgentKey(appHint) && !curAgent && sp?.tabs) {
+    for (const tb of sp.tabs) {
+      for (const tt of (tb.terminals || [])) {
+        const candAgent = allAgents.find((a) => a.address === tt.terminal);
+        const candTerm = allTerms.find((k) => k.address === tt.terminal);
+        const candApp = candAgent?.program?.key || candTerm?.program?.key || tt.app || "";
+        if (isKnownAgentKey(candApp) || candAgent) {
+          termAddr = tt.terminal;
+          tabTerm = tt;
+          curAgent = candAgent || null;
+          curTerm = candTerm || null;
+          appHint = candApp || "agent";
+          break;
+        }
+      }
+      if (isKnownAgentKey(appHint) || curAgent) break;
+    }
+  }
+
+  if (!isKnownAgentKey(appHint) && !curAgent) {
+    appHint = "shell";
+  }
+
+  const cwd = norm(curTerm?.cwd || activePane?.cwd || curAgent?.cwd || sp?.folder || "");
+  return {
+    termAddr: termAddr || "t12",
+    appHint,
+    cwd,
+    curAgent,
+    curTerm,
+    tabTerm,
+    activePane,
+    chatTab: null,
+    space: sp
+  };
+}
+
+function currentPlace() {
+  const target = resolveActiveTarget();
+  return { cwd: target.cwd, on: target.space?.machine ?? null, space: target.space };
 }
 
 function when(millis) {
@@ -145,340 +227,6 @@ function maskSecrets(s) {
     .replace(/\b(sk-[a-zA-Z0-9_-]{8,}|ghp_[a-zA-Z0-9]{10,}|gho_[a-zA-Z0-9]{10,}|AIza[0-9A-Za-z_-]{16,})\b/g, (m) => m.slice(0, 6) + "…***")
     .replace(/\bBearer\s+[A-Za-z0-9._-]{10,}/gi, "Bearer ***");
 }
-
-// Universal Multi-Agent & Multi-Machine Telemetry Scanner (Antigravity, Codex, Omp, Pi, Shell, SSH)
-const SCAN_NODE = `
-const fs = require('fs');
-const os = require('os');
-const NL = String.fromCharCode(10);
-
-function norm(p) { return p ? p.replace(/\\\\/g, '/') : ''; }
-
-const h = (process.argv[1] || os.homedir()).replace(/\\\\/g, '/');
-const cacheFile = norm(os.tmpdir()) + '/herdr-t3-sessions-cache-v2.json';
-let cache = {};
-let cacheDirty = false;
-try { cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8')); } catch { cache = {}; }
-function cached(fp, mtime, build) {
-  const hit = cache[fp];
-  if (hit && hit.mtime === mtime && hit.item) return hit.item;
-  const item = build();
-  cache[fp] = { mtime, item };
-  cacheDirty = true;
-  return item;
-}
-
-function readHead(fp, size, maxBytes = 16384) {
-  const len = Math.min(size, maxBytes);
-  if (len <= 0) return '';
-  const fd = fs.openSync(fp, 'r');
-  try {
-    const buf = Buffer.allocUnsafe(len);
-    const n = fs.readSync(fd, buf, 0, len, 0);
-    return buf.toString('utf8', 0, n);
-  } finally {
-    fs.closeSync(fd);
-  }
-}
-
-function scanPi(h) {
-  const out = [];
-  const base = h + '/.pi/agent/sessions';
-  try {
-    const subs = fs.readdirSync(base);
-    for (const sub of subs) {
-      const dir = base + '/' + sub;
-      try {
-        const files = fs.readdirSync(dir);
-        for (const file of files) {
-          if (!file.endsWith('.jsonl')) continue;
-          const fp = dir + '/' + file;
-          try {
-            const stat = fs.statSync(fp);
-            out.push(cached(fp, stat.mtimeMs, () => {
-              const head = readHead(fp, stat.size);
-              const first = head.split(NL)[0];
-              const o = JSON.parse(first || '{}');
-              const ident = o.id || file.replace(/\\.jsonl$/, '').split('_').pop() || file;
-              let title = '';
-              for (const line of head.split(NL)) {
-                if (!line.trim()) continue;
-                try {
-                  const row = JSON.parse(line);
-                  if (row.type === 'session_info' && row.name) { title = row.name; break; }
-                  const msg = row.message || {};
-                  if ((row.type === 'user' || msg.role === 'user') && !title) {
-                    const c = msg.content || row.content;
-                    title = typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => x?.text || '').join(' ') : '';
-                    if (title.trim()) break;
-                  }
-                } catch {}
-              }
-              return { agent: 'pi', id: ident, file, cwd: norm(o.cwd || ''), mtime: stat.mtimeMs, title: title.trim().slice(0, 200) };
-            }));
-          } catch {}
-        }
-      } catch {}
-    }
-  } catch {}
-  return out;
-}
-
-function scanOmp(h) {
-  const out = [];
-  const base = h + '/.omp/agent/sessions';
-  try {
-    const subs = fs.readdirSync(base);
-    for (const sub of subs) {
-      const dir = base + '/' + sub;
-      try {
-        const files = fs.readdirSync(dir);
-        for (const file of files) {
-          if (!file.endsWith('.jsonl')) continue;
-          const fp = dir + '/' + file;
-          try {
-            const stat = fs.statSync(fp);
-            out.push(cached(fp, stat.mtimeMs, () => {
-              const head = readHead(fp, stat.size);
-              let title = '', ident = file.replace(/\\.jsonl$/, '').split('_').pop() || file, cwd = '';
-              for (const line of head.split(NL)) {
-                if (!line.trim()) continue;
-                try {
-                  const row = JSON.parse(line);
-                  if (row.type === 'title' && row.title) title = row.title;
-                  if (row.type === 'session') {
-                    if (row.id) ident = row.id;
-                    if (row.cwd) cwd = norm(row.cwd);
-                  }
-                  if (title && cwd) break;
-                } catch {}
-              }
-              return { agent: 'omp', id: ident, file, cwd, mtime: stat.mtimeMs, title: title.trim().slice(0, 200) || 'Omp Session' };
-            }));
-          } catch {}
-        }
-      } catch {}
-    }
-  } catch {}
-  return out;
-}
-
-function scanClaude(h) {
-  const out = [];
-  const base = h + '/.claude/projects';
-  try {
-    const subs = fs.readdirSync(base);
-    for (const sub of subs) {
-      const dir = base + '/' + sub;
-      try {
-        const files = fs.readdirSync(dir);
-        for (const file of files) {
-          if (!file.endsWith('.jsonl')) continue;
-          const fp = dir + '/' + file;
-          try {
-            const stat = fs.statSync(fp);
-            out.push(cached(fp, stat.mtimeMs, () => {
-              const head = readHead(fp, stat.size);
-              const first = head.split(NL)[0];
-              const o = JSON.parse(first || '{}');
-              const ident = file.replace(/\\.jsonl$/, '');
-              let title = '';
-              for (const line of head.split(NL)) {
-                if (!line.trim()) continue;
-                try {
-                  const row = JSON.parse(line);
-                  const msg = row.message || {};
-                  if (row.type === 'user' || msg.role === 'user') {
-                    const c = msg.content || row.content;
-                    title = typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => x?.text || '').join(' ') : '';
-                    if (title.trim()) break;
-                  }
-                } catch {}
-              }
-              return { agent: 'cc', id: ident, file, cwd: norm(o.cwd || ''), mtime: stat.mtimeMs, title: title.trim().slice(0, 200) };
-            }));
-          } catch {}
-        }
-      } catch {}
-    }
-  } catch {}
-  return out;
-}
-
-function scanAgy(h) {
-  const out = [];
-  const base = h + '/.gemini/antigravity-cli/brain';
-  try {
-    const dirs = fs.readdirSync(base);
-    for (const id of dirs) {
-      const transcript = base + '/' + id + '/.system_generated/logs/transcript.jsonl';
-      if (fs.existsSync(transcript)) {
-        try {
-          const stat = fs.statSync(transcript);
-          const fd = fs.openSync(transcript, 'r');
-          const buf = Buffer.alloc(Math.min(stat.size, 16384));
-          fs.readSync(fd, buf, 0, buf.length, 0);
-          fs.closeSync(fd);
-          const data = buf.toString('utf8');
-          let title = '', cwd = '';
-          for (const line of data.split(NL)) {
-            if (!line.trim()) continue;
-            try {
-              const o = JSON.parse(line);
-              if (o.type === 'USER_INPUT' && !title) {
-                const c = typeof o.content === 'string' ? o.content : '';
-                const sReq = c.indexOf('<USER_REQUEST>');
-                if (sReq !== -1) {
-                  const eReq = c.indexOf('</' + 'USER_REQUEST>', sReq);
-                  if (eReq !== -1) title = c.slice(sReq + 14, eReq).trim();
-                }
-                if (!title && c) title = c.replace(/<[^>]+>/g, '').trim().slice(0, 200);
-              }
-              if (!cwd && o.tool_calls) {
-                for (const tc of o.tool_calls) {
-                  const args = tc.args || tc.function?.arguments;
-                  const a = typeof args === 'string' ? JSON.parse(args) : args;
-                  const rawP = a?.Cwd || a?.Path || a?.Workspace;
-                  if (rawP && typeof rawP === 'string' && !rawP.includes('.gemini') && !rawP.includes('AppData')) {
-                    const cleanP = rawP.replace(/^["']|["']$/g, '').trim().replace(/\\\\/g, '/');
-                    const parts = cleanP.split('/').filter(Boolean);
-                    if (parts.length >= 2) {
-                      if (/\\.[a-zA-Z0-9]+$/.test(parts[parts.length - 1])) parts.pop();
-                      cwd = parts.join('/');
-                      if (cleanP.startsWith('/') && !cwd.startsWith('/')) cwd = '/' + cwd;
-                      break;
-                    }
-                  }
-                }
-              }
-              if (title && cwd) break;
-            } catch {}
-          }
-          out.push({ agent: 'agy', id: id.slice(0, 8), file: id, cwd: norm(cwd), mtime: stat.mtimeMs, title: (title || 'Antigravity Session').slice(0, 200) });
-        } catch {}
-      }
-    }
-  } catch {}
-  return out;
-}
-
-function scanCodexDirs(base, prefix = '', wslDistro = '') {
-  const out = [];
-  if (!fs.existsSync(base)) return out;
-  try {
-    function walk(dir, depth = 0) {
-      if (depth > 4) return;
-      for (const item of fs.readdirSync(dir)) {
-        const full = dir + '/' + item;
-        const stat = fs.statSync(full);
-        if (stat.isDirectory()) walk(full, depth + 1);
-        else if (item.endsWith('.jsonl')) {
-          try {
-            out.push(cached(full, stat.mtimeMs, () => {
-              const head = readHead(full, stat.size, 131072);
-              let title = '', cwd = '';
-              for (const line of head.split(NL)) {
-                if (!line.trim()) continue;
-                try {
-                  const o = JSON.parse(line);
-                  if ((o.type === 'session_meta' || o.type === 'turn_context') && o.payload?.cwd && !cwd) cwd = o.payload.cwd;
-                  if (o.payload?.item?.type === 'UserMessage' && !title) {
-                    const c = o.payload.item.content;
-                    title = Array.isArray(c) ? c.map((x) => x?.text || '').join(' ').trim() : String(c || o.payload.item.text || '').trim();
-                  }
-                  if (title && cwd) break;
-                } catch {}
-              }
-              const um = item.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-              const id = um ? um[1] : item.replace(/\\.jsonl$/, '').split('-').pop();
-              return { agent: 'codex', id: prefix ? prefix + '/' + id : id, file: item, cwd: norm(cwd), mtime: stat.mtimeMs, title: (title.slice(0, 200) || 'Codex Session'), ...(wslDistro ? { wslDistro } : {}) };
-            }));
-          } catch {}
-        }
-      }
-    }
-    walk(base);
-  } catch {}
-  return out;
-}
-
-const wslCodex = [];
-if (process.platform === 'win32') {
-  try {
-    const { execFileSync } = require('child_process');
-    const rawD = execFileSync('wsl.exe', ['-l', '-q'], { timeout: 1200, stdio: ['ignore', 'pipe', 'ignore'] }).toString('utf16le').replace(/\\0/g, '');
-    const distros = rawD.split(/\\r?\\n/).map((s) => s.trim()).filter(Boolean);
-    for (const distro of distros) {
-      const homeBase = '//wsl.localhost/' + distro + '/home';
-      try {
-        for (const user of fs.readdirSync(homeBase)) {
-          wslCodex.push(...scanCodexDirs(homeBase + '/' + user + '/.codex/sessions', 'wsl', distro));
-        }
-      } catch {}
-    }
-  } catch {}
-}
-const localCodex = scanCodexDirs(h + '/.codex/sessions');
-
-const remoteList = [];
-try {
-  const { execFileSync } = require('child_process');
-  const lsOut = execFileSync('hc', ['ls'], { timeout: 1200, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-  const lsObj = JSON.parse(lsOut);
-  const remotes = (lsObj.machines || []).filter((m) => m.state === 'connected' && m.name && m.name !== 'wsl');
-  if (remotes.length > 0) {
-    const py = [
-      'import os,json',
-      'home=os.path.expanduser("~")',
-      'out=[]',
-      'def head_read(fp,mb=131072):',
-      '  with open(fp,"r",encoding="utf-8",errors="ignore") as f: return f.read(mb)',
-      'cb=home+"/.codex/sessions"',
-      'if os.path.isdir(cb):',
-      '  for r,_ds,fs in os.walk(cb):',
-      '    for fn in fs:',
-      '      if not fn.endswith(".jsonl"): continue',
-      '      fp=os.path.join(r,fn)',
-      '      try:',
-      '        mt=os.path.getmtime(fp)*1000',
-      '        cwd=""; title=""',
-      '        for ln in head_read(fp).splitlines():',
-      '          if not ln.strip(): continue',
-      '          try:',
-      '            o=json.loads(ln)',
-      '            if o.get("type") in ("session_meta","turn_context") and (o.get("payload") or {}).get("cwd") and not cwd: cwd=o["payload"]["cwd"]',
-      '            it=(o.get("payload") or {}).get("item") or {}',
-      '            if it.get("type")=="UserMessage" and not title:',
-      '              c=it.get("content")',
-      '              title=" ".join(x.get("text","") for x in c).strip() if isinstance(c,list) else str(c or it.get("text","")).strip()',
-      '            if cwd and title: break',
-      '          except Exception: pass',
-      '        sid=fn[:-6].split("-")[-1]',
-      '        import re',
-      '        m=re.search(r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",fn,re.I)',
-      '        if m: sid=m.group(1)',
-      '        out.append({"agent":"codex","id":sid,"file":fn,"cwd":cwd,"mtime":mt,"title":(title[:200] or "Codex Session")})',
-      '      except Exception: pass',
-      'print(json.dumps(out))'
-    ].join('\\n');
-    const b64 = Buffer.from(py).toString('base64');
-    const cmd = 'echo ' + b64 + ' | base64 -d | python3 -';
-    for (const rm of remotes.slice(0, 4)) {
-      try {
-        const rout = execFileSync('hc', ['exec', '--on', rm.name, cmd], { timeout: 2200, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-        const arr = JSON.parse(rout.trim() || '[]');
-        for (const it of arr) {
-          remoteList.push({ ...it, id: rm.name + '/' + it.id, machine: rm.name });
-        }
-      } catch {}
-    }
-  }
-} catch {}
-
-const list = [...scanPi(h), ...scanOmp(h), ...scanClaude(h), ...scanAgy(h), ...wslCodex, ...localCodex, ...remoteList];
-if (cacheDirty) { try { fs.writeFileSync(cacheFile, JSON.stringify(cache)); } catch {} }
-process.stdout.write(JSON.stringify(list));
-`;
 
 export default class Sessions extends View {
   init(_props, cx) {
@@ -541,7 +289,7 @@ export default class Sessions extends View {
     this.sessions = [];
     this.error = null;
     this.loading = false;
-    this.showAll = false;
+    this.showAll = true;
     this.historyAgentFilter = "all";
     this.tagOnly = null;
     this.filter = "";
@@ -579,9 +327,8 @@ export default class Sessions extends View {
     this.watch = null;
     cx.timer.every(1000, (cx) => {
       if (!isSessionsActive()) return;
-      const { cwd } = currentPlace();
-      const f = typeof focused === "function" ? focused() : null;
-      const cur = f?.terminal || f?.agent || cwd;
+      const target = resolveActiveTarget();
+      const cur = `${target.termAddr}:${target.appHint}:${target.cwd}`;
       if (cur !== this.watch) {
         this.watch = cur;
         if (this.viewMode === "inspector") this.pollTelemetry(cx);
@@ -597,26 +344,12 @@ export default class Sessions extends View {
     cx.spawn(async (cx) => {
       try {
         const h = norm(home());
-        const f = typeof focused === "function" ? focused() : null;
-        const allPanes = typeof panes === "function" ? panes() : [];
-        const activePane = allPanes.find((p) => p.pane === f?.pane);
-        const allAgents = typeof agents === "function" ? agents() : [];
-        const allTerms = typeof terminals === "function" ? terminals() : [];
+        const target = resolveActiveTarget();
+        const termAddr = target.termAddr;
+        const cwd = target.cwd;
+        const appHint = target.appHint || "";
 
-        let termAddr = f?.terminal || activePane?.terminal || f?.agent;
-        if (!termAddr && f?.tab) {
-          termAddr = (allAgents.find((a) => a.tab === f.tab && a.pane === f.pane) || allAgents.find((a) => a.tab === f.tab))?.address;
-        }
-        if (!termAddr) {
-          termAddr = allAgents[0]?.address || allTerms[0]?.address || "t12";
-        }
-
-        const { cwd } = currentPlace();
-        let errLog = null;
-        const res = await exec("node", [h + "/.config/herdr-app/mods/t3-sessions/scan-telemetry.cjs", h, cwd || "", termAddr]).catch((e) => {
-          errLog = String(e);
-          return null;
-        });
+        const res = await exec("node", [h + "/.config/herdr-app/mods/t3-sessions/scan-telemetry.cjs", h, cwd || "", termAddr, appHint]).catch(() => null);
         if (res && res.stdout) {
           try {
             const t = JSON.parse(res.stdout);
@@ -643,7 +376,7 @@ export default class Sessions extends View {
     cx.spawn(async (cx) => {
       try {
         const h = norm(home());
-        const res = await exec("node", ["-e", SCAN_NODE, h]).catch(() => null);
+        const res = await exec("node", [h + "/.config/herdr-app/mods/t3-sessions/scan-history.cjs", h]).catch(() => null);
         if (res && res.stdout) {
           const combined = JSON.parse(res.stdout);
           this.sessions = combined.filter((s) => s.title || s.cwd || s.id).sort((a, b) => b.mtime - a.mtime).slice(0, 300);
@@ -874,50 +607,45 @@ export default class Sessions extends View {
   }
 
   renderInspector(t, short, root) {
-    // Read real-time agent/terminal from Herdr
-    const f = typeof focused === "function" ? focused() : null;
-    const allPanes = typeof panes === "function" ? panes() : [];
-    const activePane = allPanes.find((p) => p.pane === f?.pane);
-    const allAgents = typeof agents === "function" ? agents() : [];
-    const allTerms = typeof terminals === "function" ? terminals() : [];
-
-    let curTermAddr = f?.terminal || activePane?.terminal || f?.agent;
-    if (!curTermAddr && f?.tab) {
-      curTermAddr = (allAgents.find((a) => a.tab === f.tab && a.pane === f.pane) || allAgents.find((a) => a.tab === f.tab))?.address;
-    }
-    if (!curTermAddr) {
-      curTermAddr = allAgents[0]?.address || allTerms[0]?.address || "t12";
-    }
-
+    const target = resolveActiveTarget();
+    const curTermAddr = target.termAddr;
     if (this.lastTermAddr !== curTermAddr) {
       this.lastTermAddr = curTermAddr;
     }
 
-    const curAgent = allAgents.find((a) => a.address === curTermAddr) || allAgents.find((a) => a.focused) || allAgents[0];
-    const curTerm = allTerms.find((k) => k.address === curTermAddr) || allTerms[0];
+    const curAgent = target.curAgent;
+    const curTerm = target.curTerm;
+    const tabTerm = target.tabTerm;
+    const activePane = target.activePane;
 
     // Priority telemetry: active terminal cache or general fallback
     const tel = this.telemetryByTerm.get(curTermAddr) || this.telemetry;
 
-    // Live agent status & turn from Herdr
+    // Live agent status & turn from Herdr (never confuse terminal process 'live' with agent 'working')
     const aAny = /** @type {any} */ (curAgent);
     const kAny = /** @type {any} */ (curTerm);
-    const rawState = curAgent?.status || kAny?.status?.state || (kAny?.state === "live" ? "working" : "idle");
-    const state = String(rawState).toUpperCase();
+    const chatSt = target.chatTab ? shared("mods/chat.status")?.[target.chatTab] : null;
+    const rawState = chatSt
+      || curAgent?.status
+      || tabTerm?.status
+      || (typeof kAny?.status === "string" ? kAny.status : kAny?.status?.state)
+      || "idle";
+    const normSt = String(rawState).toLowerCase();
+    const state = normSt === "working" ? "WORKING" : (normSt === "blocked" || normSt === "error") ? "BLOCKED" : "IDLE";
     const isWorking = state === "WORKING";
-    const turn = kAny?.turn ?? aAny?.turn ?? tel.turn ?? 1;
+    const turn = Math.max(kAny?.turn ?? 0, aAny?.turn ?? 0, tel.turn ?? 0) || 1;
 
     // Session Title
     let taskName = tel.sessionTitle;
-    if (!taskName || /pwsh|powershell|cmd|bash|zsh/i.test(taskName)) {
-      taskName = kAny?.status?.msg || curAgent?.title || curAgent?.tab_name || "(unnamed)";
+    if (!taskName || /pwsh|powershell|cmd|bash|zsh|^[a-z0-9_-]+@[a-z0-9_-]+:/i.test(taskName)) {
+      taskName = kAny?.status?.msg || curAgent?.title || curAgent?.tab_name || tel.sessionTitle || "Terminal Session";
     }
-    if (/pwsh|powershell|cmd|bash|zsh/i.test(taskName)) {
-      taskName = curTermAddr.startsWith("wsl") ? "test-bench-scheduler" : (tel.sessionTitle || "Terminal Session");
+    if (/pwsh|powershell|cmd|bash|zsh|^[a-z0-9_-]+@[a-z0-9_-]+:/i.test(taskName)) {
+      taskName = (tel.cwd || target.cwd || "").split("/").pop() || "Terminal Session";
     }
 
     // Actual project directory
-    const activeCwd = tel.cwd || kAny?.foreground?.cwd || activePane?.cwd || aAny?.cwd || root;
+    const activeCwd = tel.cwd || target.cwd || kAny?.foreground?.cwd || activePane?.cwd || aAny?.cwd || root;
 
     // Independent timer per terminal (switching does NOT reset to 0)
     let tInfo = this.termTimers.get(curTermAddr);
@@ -1013,7 +741,7 @@ export default class Sessions extends View {
             .child(svg("mods/t3-sessions/icons/git-branch.svg").size(11).text_color(tel.gitBranch === "no repo" ? t.dim : pal.gold).flex_none())
             .child(div().text_color(t.muted).child("Git")))
           .child(h_flex().gap(4).items_center().min_w(0).flex_1().justify_end()
-            .child(div().min_w(0).truncate().font_bold().text_color(tel.gitBranch === "no repo" ? t.dim : pal.gold).child(tel.gitBranch === "no repo" ? "—" : `⑂ ${tel.gitBranch}`))
+            .child(div().min_w(0).truncate().font_bold().text_color(tel.gitBranch === "no repo" ? t.dim : pal.gold).child(tel.gitBranch === "no repo" ? "—" : tel.gitBranch))
             .child(div().flex_none().text_color(tel.gitChanges === "—" ? t.dim : tel.gitClean ? pal.green : pal.gold)
               .child(`(${tel.gitChanges === "—" ? "not a git repo" : tel.gitClean ? "clean" : tel.gitChanges})`))))
         .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
@@ -1396,16 +1124,18 @@ export default class Sessions extends View {
       // Top Mode Switch Toolbar
       .child(h_flex().id("t3-sessions-toolbar").h(40).flex_none().px(10).gap(8).items_center().border_b(1).border_color(t.border)
         .child(h_flex().gap(3).p(2).rounded(6).bg(t.raised)
-          .child(div().id("btn-inspector").px(8).py(3).rounded(4).cursor_pointer().text_size(11.5).font_medium()
+          .child(h_flex().id("btn-inspector").px(8).py(3).gap(5).items_center().rounded(4).cursor_pointer().text_size(11.5).font_medium()
             .when(this.viewMode === "inspector", (el) => el.bg(t.background).text_color(t.foreground).border_1().border_color(t.border))
             .when(this.viewMode !== "inspector", (el) => el.text_color(t.muted).hover((s) => s.text_color(t.foreground)))
             .on_click((_e, cx) => { this.viewMode = "inspector"; setShared("t3.sessions.mode", "inspector"); this.pollTelemetry(cx); cx.notify(); })
-            .child("✦ Inspector"))
-          .child(div().id("btn-history").px(8).py(3).rounded(4).cursor_pointer().text_size(11.5).font_medium()
+            .child(svg("mods/t3-sessions/icons/sparkles.svg").size(11).text_color(this.viewMode === "inspector" ? t.accent : t.muted).flex_none())
+            .child("Inspector"))
+          .child(h_flex().id("btn-history").px(8).py(3).gap(5).items_center().rounded(4).cursor_pointer().text_size(11.5).font_medium()
             .when(this.viewMode === "history", (el) => el.bg(t.background).text_color(t.foreground).border_1().border_color(t.border))
             .when(this.viewMode !== "history", (el) => el.text_color(t.muted).hover((s) => s.text_color(t.foreground)))
             .on_click((_e, cx) => { this.viewMode = "history"; setShared("t3.sessions.mode", "history"); this.refreshHistory(cx); cx.notify(); })
-            .child(`📜 History (${this.sessions.length})`)))
+            .child(svg("mods/t3-sessions/icons/clock.svg").size(11).text_color(this.viewMode === "history" ? t.accent : t.muted).flex_none())
+            .child(`History (${this.sessions.length})`)))
         .child(div().flex_1())
         .when(this.viewMode === "inspector", (el) => el.child(
           h_flex().gap(4).items_center().text_size(10.5).font_medium().text_color(paletteOf(t).green)

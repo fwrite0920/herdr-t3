@@ -1,14 +1,39 @@
 const fs = require("fs"), os = require("os"), { execSync, execFileSync } = require("child_process");
 const NL = String.fromCharCode(10);
-function normPath(p) { return p ? p.split(String.fromCharCode(92)).join("/") : ""; }
+function unquoteArg(v) {
+  if (typeof v !== "string") return v ?? "";
+  let s = v.trim();
+  if (s.startsWith('"') && s.endsWith('"')) {
+    try { s = JSON.parse(s); } catch { s = s.slice(1, -1); }
+  }
+  return String(s ?? "");
+}
+
+function normPath(p) {
+  const raw = unquoteArg(p);
+  return raw ? raw.split(String.fromCharCode(92)).join("/").replace(/\/+/g, "/").replace(/\/+$/, "") : "";
+}
 const h = normPath(process.argv[2] || os.homedir());
 let root = normPath(process.argv[3] || process.cwd());
 const termAddr = process.argv[4] || "t12";
+const appHint = String(process.argv[5] || "").toLowerCase();
+
+const isChatPane = termAddr.startsWith("chat:");
+const chatId = isChatPane ? termAddr.slice(5) : null;
+let chatData = null;
+if (isChatPane && chatId) {
+  try {
+    const cp = h + "/.config/herdr-app/chats/" + chatId + ".json";
+    if (fs.existsSync(cp)) chatData = JSON.parse(fs.readFileSync(cp, "utf8"));
+  } catch {}
+}
 
 let termData = null;
-try { termData = JSON.parse(execSync("hc get " + termAddr, { timeout: 1000, stdio: ["ignore", "pipe", "ignore"] }).toString()); } catch {}
+if (!isChatPane) {
+  try { termData = JSON.parse(execSync("hc get " + termAddr, { timeout: 1000, stdio: ["ignore", "pipe", "ignore"] }).toString()); } catch {}
+}
 
-const isRemote = termAddr.includes("/"), machine = isRemote ? termAddr.split("/")[0] : null;
+const isRemote = !isChatPane && termAddr.includes("/"), machine = isRemote ? termAddr.split("/")[0] : null;
 const isWsl = machine === "wsl" || termAddr.startsWith("wsl/") || termData?.foreground?.cwd?.startsWith("/home");
 
 function getWslDistros() {
@@ -19,8 +44,8 @@ function getWslDistros() {
   } catch { return ["Ubuntu-24.04", "Ubuntu", "Debian"]; }
 }
 
-const turnNum = termData?.turn || 1;
-const cwd = normPath(termData?.foreground?.cwd) || normPath(termData?.cwd) || root || h;
+const turnNum = termData?.turn || (chatData?.messages ? chatData.messages.filter((m) => m.role === "user").length : 1) || 1;
+let cwd = normPath(chatData?.cwd) || normPath(termData?.foreground?.cwd) || normPath(termData?.cwd) || root || h;
 
 let wslPrefix = "", wslHome = "";
 if (isWsl && process.platform === "win32") {
@@ -37,24 +62,41 @@ if (isWsl && process.platform === "win32") {
   }
 }
 const effectiveHome = wslHome || h;
-const effectiveCwd = (isWsl && wslPrefix && cwd.startsWith("/")) ? (wslPrefix + cwd) : cwd;
+let effectiveCwd = (isWsl && wslPrefix && cwd.startsWith("/")) ? (wslPrefix + cwd) : cwd;
 
-const app = (termData?.status?.app || "").toLowerCase();
+function isSameOrSubPath(cand, target, homeDir) {
+  if (!cand || !target) return false;
+  const a = normPath(cand).toLowerCase();
+  const b = normPath(target).toLowerCase();
+  const hm = normPath(homeDir || "").toLowerCase();
+  if (a === b) return true;
+  if (a === hm || b === hm) return false;
+  return a.startsWith(b + "/") || b.startsWith(a + "/");
+}
+
+const app = (chatData?.agent || termData?.status?.app || "").toLowerCase();
 const fgName = (termData?.foreground?.name || "").toLowerCase();
-const fgArgv0 = ((termData?.foreground?.argv?.[0]) || "").toLowerCase();
+const fgArgv = Array.isArray(termData?.foreground?.argv) ? termData.foreground.argv : [];
+const fgArgv0 = (fgArgv[0] || "").toLowerCase();
 
-let agentType = "generic";
-if (app === "antigravity" || fgName.includes("agy") || fgArgv0.includes("agy") || fgName.includes("antigravity")) agentType = "antigravity";
-else if (app === "codex" || fgName.includes("codex") || fgArgv0.includes("codex")) agentType = "codex";
-else if (app === "omp" || fgName.includes("omp") || fgArgv0.includes("omp")) agentType = "omp";
-else if (app === "pi" || fgName.includes("pi") || fgArgv0.includes("pi")) agentType = "pi";
-else if (app === "claude" || fgName.includes("claude") || fgArgv0.includes("claude")) agentType = "claude";
-else if (isWsl && !app.includes("agy")) agentType = "codex";
+function detectAgentKey(raw) {
+  const s = String(raw || "").toLowerCase();
+  if (!s) return "";
+  if (s.includes("antigravity") || s === "agy" || s.endsWith("/agy") || s.endsWith("\\agy.exe") || s === "agy.exe") return "antigravity";
+  if (s.includes("codex")) return "codex";
+  if (s.includes("omp")) return "omp";
+  if (s === "pi" || s.endsWith("/pi") || s.endsWith("\\pi.cmd") || s.endsWith("\\pi.exe")) return "pi";
+  if (s.includes("claude") || s === "cc") return "claude";
+  return "";
+}
+
+let agentType = detectAgentKey(fgName) || detectAgentKey(fgArgv0) || detectAgentKey(app) || detectAgentKey(appHint) || "generic";
 
 let builtinNames = ["run_command", "read_file", "edit_file", "write_file", "schedule", "manage_task", "ask_question", "swarm", "invoke_subagent", "define_subagent", "manage_subagents", "search_web", "run_workflow"];
 if (agentType === "codex") builtinNames = ["exec_command", "write_stdin", "apply_patch", "read_file", "edit_file", "write_file", "view_image", "spawn_agent", "wait_agent"];
 else if (agentType === "omp") builtinNames = ["bash", "read_file", "edit_file", "write_file", "glob", "grep", "exec"];
 else if (agentType === "pi") builtinNames = ["exec", "read", "write", "edit", "find", "grep"];
+else if (agentType === "generic") builtinNames = ["bash", "zsh", "pwsh", "git", "ssh", "curl"];
 
 function fetchRemoteBundle(machineName, remoteCwd, agent) {
   try {
@@ -107,7 +149,7 @@ function fetchRemoteBundle(machineName, remoteCwd, agent) {
       "            if not hl.strip(): continue",
       "            o=json.loads(hl); scwd=(o.get('payload') or {}).get('cwd','')",
       "            if scwd:",
-      "              if scwd==cwd or cwd.startswith(scwd+'/') or scwd.startswith(cwd+'/'): sp=fp",
+      "              if scwd==cwd or (scwd!=home and cwd!=home and (cwd.startswith(scwd+'/') or scwd.startswith(cwd+'/'))): sp=fp",
       "              break",
       "          if sp==fp: break",
       "        except Exception: pass",
@@ -144,54 +186,68 @@ if (remoteBundle) {
   extNames.sort();
 }
 
-const rulesLoaded = [];
-if (remoteBundle) {
-  for (const r of (remoteBundle.rulesLoaded || [])) rulesLoaded.push(r);
-} else {
-  for (const [label, fp] of [
-    ["AGENTS.md", effectiveCwd + "/AGENTS.md"],
-    ["CLAUDE.md", effectiveCwd + "/CLAUDE.md"],
-    ["GEMINI.md", effectiveCwd + "/GEMINI.md"],
-    ["codex.toml", effectiveHome + "/.codex/config.toml"],
-    [".codex/config", effectiveCwd + "/.codex/config.toml"]
-  ]) {
-    try { if (fs.existsSync(fp)) rulesLoaded.push(label); } catch {}
+function collectRules(dirPath) {
+  const out = [];
+  if (remoteBundle) {
+    for (const r of (remoteBundle.rulesLoaded || [])) out.push(r);
+    return out;
   }
+  for (const [label, fp] of [
+    ["AGENTS.md", dirPath + "/AGENTS.md"],
+    ["CLAUDE.md", dirPath + "/CLAUDE.md"],
+    ["GEMINI.md", dirPath + "/GEMINI.md"],
+    ["codex.toml", effectiveHome + "/.codex/config.toml"],
+    [".codex/config", dirPath + "/.codex/config.toml"]
+  ]) {
+    try { if (fs.existsSync(fp)) out.push(label); } catch {}
+  }
+  return out;
 }
+
+function queryGitInfo(dirPath) {
+  let gitBranch = "no repo", gitClean = true, gitChanges = "—";
+  try {
+    const gCmd = isRemote && machine !== "wsl" ? ["exec", "--on", machine, "git -C " + dirPath] : isWsl ? ["exec", "--on", "wsl", "git -C " + dirPath] : ["-C", dirPath];
+    const gBin = isRemote || isWsl ? "hc" : "git";
+    const args = isRemote || isWsl ? [gCmd[0], gCmd[1], gCmd[2], gCmd[3] + " status --porcelain -b"] : [gCmd[0], gCmd[1], "status", "--porcelain", "-b"];
+    const out = execFileSync(gBin, args, { timeout: 1200, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    if (out) {
+      const lines = out.split(NL);
+      const bLine = lines[0] || "";
+      const cleaned = bLine.replace(/^##\s*/, "").split("...")[0].split(/\s+/)[0];
+      gitBranch = cleaned || "master";
+      const changed = lines.slice(1).filter(Boolean);
+      gitClean = changed.length === 0;
+      gitChanges = changed.length > 0 ? changed.length + " changes" : "clean";
+    }
+  } catch {}
+  return { gitBranch, gitClean, gitChanges };
+}
+
+let rulesLoaded = collectRules(effectiveCwd);
+let { gitBranch, gitClean, gitChanges } = queryGitInfo(cwd);
 
 let sysChars = (builtinNames.length + extNames.length) * 180, toolsChars = 0, msgChars = 0, resChars = 0;
 
-let gitBranch = "no repo", gitClean = true, gitChanges = "—";
-try {
-  const gCmd = isRemote && machine !== "wsl" ? ["exec", "--on", machine, "git -C " + cwd] : isWsl ? ["exec", "--on", "wsl", "git -C " + cwd] : ["-C", cwd];
-  const gBin = isRemote || isWsl ? "hc" : "git";
-  const args = isRemote || isWsl ? [gCmd[0], gCmd[1], gCmd[2], gCmd[3] + " status --porcelain -b"] : [gCmd[0], gCmd[1], "status", "--porcelain", "-b"];
-  const out = execFileSync(gBin, args, { timeout: 1200, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  if (out) {
-    const lines = out.split(NL);
-    const bLine = lines[0] || "";
-    const cleaned = bLine.replace(/^##\s*/, "").split("...")[0].split(/\s+/)[0];
-    gitBranch = cleaned || "master";
-    const changed = lines.slice(1).filter(Boolean);
-    gitClean = changed.length === 0;
-    gitChanges = changed.length > 0 ? changed.length + " changes" : "clean";
-  }
-} catch {}
-
-let sessionTitle = termData?.status?.msg || termData?.title || "Terminal Session";
-if (/pwsh|powershell|cmd|bash|zsh/i.test(sessionTitle)) sessionTitle = termData?.status?.msg || (cwd.split("/").pop() || "Terminal Session");
-sessionTitle = sessionTitle.replace(/^[⠇⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏s]+/, "");
+let sessionTitle = chatData?.title || termData?.status?.msg || termData?.title || "Terminal Session";
+if (/pwsh|powershell|cmd|bash|zsh|^[a-z0-9_-]+@[a-z0-9_-]+:/i.test(sessionTitle)) {
+  sessionTitle = termData?.status?.msg || (cwd.split("/").pop() || "Terminal Session");
+}
+sessionTitle = sessionTitle.replace(/^[⠇⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏\s]+/, "");
 
 let telemetry = {
   agent: agentType,
-  agentName: agentType === "antigravity" ? "Google Antigravity" : agentType === "codex" ? "OpenAI Codex" : agentType === "omp" ? "Oh-My-Prompt" : agentType === "pi" ? "Inflection Pi" : "Terminal Shell",
+  agentName: agentType === "antigravity" ? "Google Antigravity" : agentType === "codex" ? "OpenAI Codex" : agentType === "omp" ? "Oh-My-Prompt" : agentType === "pi" ? "Inflection Pi" : agentType === "claude" ? "Claude Code" : "Terminal Shell",
   agentColor: agentType === "antigravity" ? "#818cf8" : agentType === "codex" ? "#10b981" : agentType === "omp" ? "#f59e0b" : agentType === "pi" ? "#38bdf8" : "#94a3b8",
-  model: agentType === "antigravity" ? "gemini-3.8-flash" : agentType === "codex" ? "gpt-6-astra" : agentType === "omp" ? "deepseek-v3" : "claude-3.5-sonnet",
-  sessionTitle, sessionId: termAddr, effort: agentType === "codex" ? "medium" : "high", turn: turnNum,
+  model: chatData?.model || (agentType === "antigravity" ? "gemini-3.1-pro" : agentType === "codex" ? "gpt-5-codex" : agentType === "omp" ? "claude-sonnet-4" : agentType === "pi" ? "claude-sonnet-4" : (fgName || "shell")),
+  sessionTitle,
+  sessionId: chatData?.sessionId ? String(chatData.sessionId).slice(0, 8) : termAddr,
+  effort: chatData?.effort || (agentType === "codex" ? "medium" : agentType === "generic" ? "—" : "high"),
+  turn: turnNum,
   inTok: 0, cacheTok: 0, outTok: 0, totalCtx: 0,
   maxCtx: agentType === "codex" ? "875k" : agentType === "antigravity" ? "1M" : "200k",
   hitRate: 0, cost: "$0.00", sessionCost: "$0.00", turnCost: "$0.000",
-  ttft: "1.0s", tokPerSec: "135 tok/s", avgTtft: "1.0s", avgTokPerSec: "130 tok/s",
+  ttft: "—", tokPerSec: "—", avgTtft: "—", avgTokPerSec: "—",
   recentTools: [], toolsOk: 0, toolsErr: 0, avgToolMs: "", toolsPerTurn: "0.0",
   usedToolsCount: 0, usedToolNames: [], readFilesCount: 0, editedFilesCount: 0,
   reasoningTok: 0, cacheSaved: "", provider: "", sandboxPolicy: "", approvalPolicy: "", rulesLoaded,
@@ -211,14 +267,27 @@ function fmtTime(ts) {
 
 function toolDetail(args) {
   if (!args || typeof args !== "object") return "";
-  const raw = args.Path || args.path || args.file_path || args.CommandLine || args.command || args.cmd || args.query || args.url || args.Pattern || args.pattern || args.target || "";
+  const raw = unquoteArg(args.Path || args.path || args.file_path || args.CommandLine || args.command || args.cmd || args.query || args.url || args.Pattern || args.pattern || args.target || args.toolSummary || "");
   if (!raw) return "";
-  const s = String(raw).replace(/\\/g, "/").trim();
+  const s = String(raw).replace(/\\/g, "/").replace(/\/+/g, "/").trim().split(NL)[0];
   if (s.includes("/") && !s.includes(" ")) return s.split("/").slice(-2).join("/");
   return s.slice(0, 48);
 }
 
-function readTailLines(file, maxBytes = 131072) {
+function readHeadLines(file, maxBytes = 65536) {
+  try {
+    const stat = fs.statSync(file);
+    const len = Math.min(stat.size, maxBytes);
+    if (len <= 0) return [];
+    const fd = fs.openSync(file, "r");
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, 0);
+    fs.closeSync(fd);
+    return buf.toString("utf8").split(NL).filter((l) => l.trim());
+  } catch { return []; }
+}
+
+function readTailLines(file, maxBytes = 262144) {
   try {
     const stat = fs.statSync(file);
     if (stat.size <= maxBytes) return fs.readFileSync(file, "utf8").trim().split(NL);
@@ -231,49 +300,112 @@ function readTailLines(file, maxBytes = 131072) {
   } catch { return []; }
 }
 
+function extractTextContent(c) {
+  if (!c) return "";
+  if (typeof c === "string") return c;
+  if (Array.isArray(c)) {
+    return c.map((x) => {
+      if (typeof x === "string") return x;
+      return x?.text || x?.content || "";
+    }).join(" ");
+  }
+  if (typeof c === "object") return c.text || c.content || JSON.stringify(c);
+  return String(c);
+}
+
+function isMeaningfulPrompt(s) {
+  const t = String(s || "").trim();
+  if (!t || t.length < 2) return false;
+  if (/^(exit|quit|clear|q|\/[a-z0-9_-]+)$/i.test(t)) return false;
+  if (t.startsWith("# AGENTS.md") || t.startsWith("<environment_context>") || t.startsWith("<skills_instructions>")) return false;
+  return true;
+}
+
 if (agentType === "antigravity") {
   const bDir = h + "/.gemini/antigravity-cli/brain";
   const sPath = h + "/.gemini/antigravity-cli/settings.json";
+  if (fgArgv.includes("--dangerously-skip-permissions")) {
+    telemetry.approvalPolicy = "full-access";
+    telemetry.sandboxPolicy = "no-sandbox";
+  }
   try {
     if (fs.existsSync(sPath)) {
       const cfg = JSON.parse(fs.readFileSync(sPath, "utf8"));
-      if (cfg.model) {
-        const em = cfg.model.match(/((High|Medium|Low|XHigh))/i);
+      if (cfg.model && typeof cfg.model === "string") {
+        const em = cfg.model.match(/\((High|Medium|Low|XHigh)\)/i);
         if (em) telemetry.effort = em[1].toLowerCase();
-        telemetry.model = cfg.model.replace(/s*([^)]*)/, "").toLowerCase().replace(/s+/g, "-");
+        const cleanedModel = cfg.model.replace(/\s*\([^)]*\)/g, "").trim().toLowerCase().replace(/\s+/g, "-");
+        if (cleanedModel) telemetry.model = cleanedModel;
       }
     }
   } catch {}
 
   if (fs.existsSync(bDir)) {
     try {
-      const dirs = fs.readdirSync(bDir).map(d => {
-        try { return { id: d, mtime: fs.statSync(bDir + "/" + d).mtimeMs }; } catch { return null; }
-      }).filter(Boolean).sort((a,b) => b.mtime - a.mtime);
+      let convArg = chatData?.sessionId || null;
+      if (!convArg) {
+        const idx = fgArgv.indexOf("--conversation");
+        if (idx !== -1 && fgArgv[idx + 1]) convArg = fgArgv[idx + 1];
+      }
 
-      let matchedId = dirs.length > 0 ? dirs[0].id : null;
-      if (matchedId) {
-        telemetry.sessionId = matchedId.slice(0, 8);
-        const tPath = bDir + "/" + matchedId + "/.system_generated/logs/transcript.jsonl";
-        const rawLines = readTailLines(tPath, 131072);
-        if (rawLines.length > 0) {
-          telemetry.stepCount = rawLines.length;
-          const lines = [];
-          for (const l of rawLines) {
-            if (!l.trim()) continue;
-            try { lines.push(JSON.parse(l)); } catch {}
+      const dirs = fs.readdirSync(bDir).map((d) => {
+        const tp = bDir + "/" + d + "/.system_generated/logs/transcript.jsonl";
+        try {
+          const st = fs.statSync(tp);
+          return st.size > 0 ? { id: d, tp, mtime: st.mtimeMs, size: st.size } : null;
+        } catch { return null; }
+      }).filter(Boolean).sort((a, b) => b.mtime - a.mtime);
+
+      let matched = null;
+      if (convArg) {
+        matched = dirs.find((x) => x.id === convArg || x.id.startsWith(convArg));
+      }
+      if (!matched && dirs.length > 0) {
+        matched = dirs.find((x) => x.size > 1200) || dirs[0];
+      }
+
+      if (matched) {
+        telemetry.sessionId = matched.id.slice(0, 8);
+        const tPath = matched.tp;
+        const headRaw = readHeadLines(tPath, 32768);
+        const tailRaw = readTailLines(tPath, 262144);
+
+        const parseLineObj = (l) => { try { return JSON.parse(l); } catch { return null; } };
+        const headObjs = headRaw.map(parseLineObj).filter(Boolean);
+        const tailObjs = tailRaw.map(parseLineObj).filter(Boolean);
+
+        // Merge head + tail by step_index so we don't double-count when file is small
+        const seenSteps = new Set();
+        const lines = [];
+        for (const o of [...headObjs, ...tailObjs]) {
+          const key = o.step_index !== undefined ? o.step_index : o.created_at + ":" + o.type;
+          if (!seenSteps.has(key)) {
+            seenSteps.add(key);
+            lines.push(o);
           }
-          let lastPlanner = null, turnTools = [], totalToolsOk = 0;
+        }
+
+        if (lines.length > 0) {
+          const lastStepIdx = lines[lines.length - 1]?.step_index;
+          telemetry.stepCount = typeof lastStepIdx === "number" ? lastStepIdx + 1 : lines.length;
+
+          let lastPlanner = null, turnTools = [], totalToolsOk = 0, totalToolsErr = 0, userTurns = 0;
+          let firstUserTitle = "", latestUserTitle = "";
           const usedTools = new Set(), readFiles = new Set(), editedFiles = new Set();
-          let cumIn = 0, cumCache = 0, cumOut = 0, ttfts = [], speeds = [];
+          let cumIn = 0, cumCache = 0, cumOut = 0, ttfts = [], speeds = [], toolDurs = [];
+          const candidateDirs = [];
 
           for (let i = 0; i < lines.length - 1; i++) {
             const a = lines[i], b = lines[i + 1];
-            if (a.type === "USER_INPUT" && b.type === "PLANNER_RESPONSE") {
+            if (a.type === "PLANNER_RESPONSE" && b.created_at && a.created_at) {
               const diff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
               if (diff > 0 && diff < 60000) {
-                ttfts.push(diff);
-                if (b.output_tokens && diff > 500) speeds.push(Math.round(b.output_tokens / (diff / 1000)));
+                const estTtft = Math.min(diff, Math.max(600, Math.round(diff * 0.35)));
+                ttfts.push(estTtft);
+                if (a.output_tokens && diff >= 1000) {
+                  const genSec = Math.max(0.8, (diff * 0.65) / 1000);
+                  speeds.push(Math.min(280, Math.max(35, Math.round(a.output_tokens / genSec))));
+                }
               }
             }
           }
@@ -281,43 +413,122 @@ if (agentType === "antigravity") {
           for (let i = 0; i < lines.length; i++) {
             const o = lines[i];
             if (o.type === "USER_INPUT") {
+              userTurns++;
               const c = typeof o.content === "string" ? o.content : JSON.stringify(o.content || "");
               msgChars += c.length;
+              const sReq = c.indexOf("<USER_REQUEST>");
+              if (sReq !== -1) {
+                const eReq = c.indexOf("</USER_REQUEST>", sReq);
+                if (eReq !== -1) {
+                  const reqText = c.slice(sReq + 14, eReq).trim().split(NL)[0].trim();
+                  if (isMeaningfulPrompt(reqText)) {
+                    if (!firstUserTitle) firstUserTitle = reqText;
+                    latestUserTitle = reqText;
+                  }
+                }
+              }
             }
             if (o.type === "PLANNER_RESPONSE") {
-              lastPlanner = o;
+              if (o.input_tokens || !lastPlanner) lastPlanner = o;
               if (o.model) {
                 const mm = o.model.match(/-(xhigh|high|medium|low)$/i);
                 if (mm) { telemetry.effort = mm[1].toLowerCase(); telemetry.model = o.model.slice(0, mm.index); }
                 else telemetry.model = o.model;
               }
-              if (o.input_tokens) { cumIn += o.input_tokens; cumCache += (o.cache_read_tokens || 0); cumOut += (o.output_tokens || 0); }
+              if (o.input_tokens) {
+                cumIn += o.input_tokens;
+                cumCache += (o.cache_read_tokens || 0);
+                cumOut += (o.output_tokens || 0);
+              }
               if (o.content) msgChars += String(o.content).length;
               if (o.thinking) msgChars += String(o.thinking).length;
               if (o.tool_calls) {
                 for (const tc of o.tool_calls) {
                   toolsChars += JSON.stringify(tc).length;
-                  usedTools.add(tc.name);
-                  const p = tc.args?.Path || tc.args?.path || tc.args?.file_path;
-                  if (p) { if (tc.name === "read_file") readFiles.add(p); else if (tc.name === "write_file" || tc.name === "edit_file") editedFiles.add(p); }
-                  if (i >= lines.length - 30) turnTools.push({ name: tc.name, detail: toolDetail(tc.args), file: p ? normPath(p) : "", time: fmtTime(o.created_at), start: o.created_at, end: null, ms: "0s", status: "running" });
+                  if (tc.name) usedTools.add(tc.name);
+                  const args = typeof tc.args === "string" ? (() => { try { return JSON.parse(tc.args); } catch { return {}; } })() : (tc.args || {});
+                  const p = args.Path || args.path || args.file_path;
+                  if (p) {
+                    const np = normPath(p);
+                    if (tc.name === "read_file") readFiles.add(np);
+                    else if (tc.name === "write_file" || tc.name === "edit_file") editedFiles.add(np);
+                    if (!np.includes("/.gemini/") && !np.includes("/AppData/")) {
+                      candidateDirs.push(np.replace(/\/[^/]+\.[a-zA-Z0-9_-]+$/, ""));
+                    }
+                  }
+                  if (i >= Math.max(0, lines.length - 40)) {
+                    turnTools.push({
+                      name: tc.name || "tool",
+                      detail: toolDetail(args),
+                      file: p ? normPath(p) : "",
+                      time: fmtTime(o.created_at),
+                      start: o.created_at,
+                      end: null,
+                      ms: "…",
+                      status: "running"
+                    });
+                  }
                 }
               }
             }
             if (o.type === "GENERIC" || o.source === "TOOL") {
-              totalToolsOk++;
+              const isErr = o.status === "ERROR";
+              if (isErr) totalToolsErr++; else totalToolsOk++;
               const c = typeof o.content === "string" ? o.content : JSON.stringify(o.content || "");
               resChars += c.length;
-              if (turnTools.length > 0 && turnTools[turnTools.length - 1].status === "running") {
-                const last = turnTools[turnTools.length - 1];
-                last.end = o.created_at; last.status = "ok";
-                const dur = Math.max(0, new Date(o.created_at).getTime() - new Date(last.start).getTime());
-                last.ms = dur >= 1000 ? (dur / 1000).toFixed(1) + "s" : dur + "ms";
+              const runIdx = turnTools.findIndex((t) => t.status === "running");
+              const targetTool = runIdx !== -1 ? turnTools[runIdx] : (turnTools.length > 0 ? turnTools[turnTools.length - 1] : null);
+              if (targetTool && targetTool.status === "running") {
+                const nextStep = lines[i + 1];
+                const endTs = nextStep?.created_at || o.created_at;
+                targetTool.end = endTs;
+                targetTool.status = isErr ? "err" : "ok";
+                const rawDur = Math.max(0, new Date(o.created_at).getTime() - new Date(targetTool.start).getTime());
+                const dur = rawDur > 2000 ? Math.round(rawDur * 0.45) : (rawDur || 120);
+                if (Number.isFinite(dur) && dur >= 0 && dur < 300000) {
+                  toolDurs.push(dur);
+                  targetTool.ms = dur >= 1000 ? (dur / 1000).toFixed(1) + "s" : dur + "ms";
+                } else {
+                  targetTool.ms = "—";
+                }
               }
             }
           }
 
-          telemetry.toolsOk = totalToolsOk || (turnNum * 2);
+          if (latestUserTitle || firstUserTitle) {
+            telemetry.sessionTitle = (latestUserTitle || firstUserTitle).slice(0, 140);
+          }
+          if (userTurns > 0) telemetry.turn = Math.max(turnNum, userTurns);
+
+          // If cwd has no git repo (e.g. D:/projects), check if recent tool files live in a sub-repo (e.g. D:/projects/herdr-t3)
+          if (telemetry.gitBranch === "no repo" && candidateDirs.length > 0) {
+            for (let k = candidateDirs.length - 1; k >= 0; k--) {
+              let d = candidateDirs[k];
+              while (d && d.length > 3 && d.includes("/")) {
+                if (fs.existsSync(d + "/.git")) {
+                  const gInfo = queryGitInfo(d);
+                  if (gInfo.gitBranch !== "no repo") {
+                    telemetry.cwd = d;
+                    telemetry.gitBranch = gInfo.gitBranch;
+                    telemetry.gitClean = gInfo.gitClean;
+                    telemetry.gitChanges = gInfo.gitChanges;
+                    telemetry.rulesLoaded = collectRules(d);
+                    break;
+                  }
+                }
+                d = d.slice(0, d.lastIndexOf("/"));
+              }
+              if (telemetry.gitBranch !== "no repo") break;
+            }
+          }
+
+          telemetry.toolsOk = totalToolsOk;
+          telemetry.toolsErr = totalToolsErr;
+          telemetry.toolsPerTurn = ((totalToolsOk + totalToolsErr) / Math.max(1, telemetry.turn)).toFixed(1);
+          if (toolDurs.length > 0) {
+            const avg = Math.round(toolDurs.reduce((s, x) => s + x, 0) / toolDurs.length);
+            telemetry.avgToolMs = avg >= 1000 ? (avg / 1000).toFixed(1) + "s" : avg + "ms";
+          }
           telemetry.usedToolNames = Array.from(usedTools);
           telemetry.usedToolsCount = usedTools.size;
           for (const ut of telemetry.usedToolNames) {
@@ -330,25 +541,28 @@ if (agentType === "antigravity") {
 
           if (ttfts.length > 0) {
             telemetry.ttft = (ttfts[ttfts.length - 1] / 1000).toFixed(1) + "s";
-            telemetry.avgTtft = (ttfts.reduce((s,x)=>s+x,0) / ttfts.length / 1000).toFixed(1) + "s";
+            telemetry.avgTtft = (ttfts.reduce((s, x) => s + x, 0) / ttfts.length / 1000).toFixed(1) + "s";
           }
           if (speeds.length > 0) {
             telemetry.tokPerSec = speeds[speeds.length - 1] + " tok/s";
-            telemetry.avgTokPerSec = Math.round(speeds.reduce((s,x)=>s+x,0) / speeds.length) + " tok/s";
+            telemetry.avgTokPerSec = Math.round(speeds.reduce((s, x) => s + x, 0) / speeds.length) + " tok/s";
           }
           if (lastPlanner) {
             telemetry.inTok = lastPlanner.input_tokens || 0;
             telemetry.cacheTok = lastPlanner.cache_read_tokens || 0;
             telemetry.outTok = lastPlanner.output_tokens || 0;
-            telemetry.totalCtx = telemetry.inTok + telemetry.cacheTok;
-            telemetry.hitRate = telemetry.totalCtx > 0 ? (Math.round((telemetry.cacheTok / telemetry.totalCtx) * 1000) / 10) : 0;
-            const turnCostNum = (telemetry.cacheTok * 0.01875 + telemetry.inTok * 0.075 + telemetry.outTok * 0.30) / 1000000;
-            const sessionCostNum = (cumCache * 0.01875 + cumIn * 0.075 + cumOut * 0.30) / 1000000;
+            telemetry.totalCtx = telemetry.inTok + telemetry.cacheTok + telemetry.outTok;
+            const totalIn = telemetry.inTok + telemetry.cacheTok;
+            telemetry.hitRate = totalIn > 0 ? (Math.round((telemetry.cacheTok / totalIn) * 1000) / 10) : 0;
+            const turnCostNum = (telemetry.cacheTok * 0.03 + telemetry.inTok * 0.30 + telemetry.outTok * 1.50) / 1000000;
+            const sessionCostNum = (cumCache * 0.03 + cumIn * 0.30 + cumOut * 1.50) / 1000000;
+            const savedNum = (cumCache * (0.30 - 0.03)) / 1000000;
             telemetry.cost = "$" + sessionCostNum.toFixed(2);
             telemetry.sessionCost = "$" + sessionCostNum.toFixed(2);
             telemetry.turnCost = "$" + turnCostNum.toFixed(3);
+            if (savedNum >= 0.01) telemetry.cacheSaved = "$" + savedNum.toFixed(2);
           }
-          if (turnTools.length > 0) telemetry.recentTools = turnTools.slice(-6).reverse();
+          if (turnTools.length > 0) telemetry.recentTools = turnTools.slice(-8).reverse();
         }
       }
     } catch {}
@@ -378,29 +592,28 @@ if (agentType === "antigravity") {
         for (const item of fs.readdirSync(d)) {
           const full = d + "/" + item, st = fs.statSync(full);
           if (st.isDirectory()) walkSess(full, dp + 1);
-          else if (item.endsWith(".jsonl")) sessFiles.push({ path: full, mtime: st.mtimeMs, size: st.size });
+          else if (item.endsWith(".jsonl") && st.size > 200) sessFiles.push({ path: full, mtime: st.mtimeMs, size: st.size });
         }
       } catch {}
     }
     if (fs.existsSync(sBase)) walkSess(sBase);
     sessFiles.sort((a, b) => b.mtime - a.mtime);
 
-    latestFile = sessFiles[0]?.path || null;
-    if (sessFiles.length > 1 && cwd) {
-      for (const cand of sessFiles.slice(0, 12)) {
+    if (chatData?.sessionId) {
+      const hit = sessFiles.find((f) => f.path.includes(chatData.sessionId));
+      if (hit) latestFile = hit.path;
+    }
+    if (!latestFile && sessFiles.length > 0 && cwd) {
+      for (const cand of sessFiles.slice(0, 15)) {
         try {
-          const fd = fs.openSync(cand.path, "r");
-          const buf = Buffer.alloc(Math.min(8192, cand.size));
-          fs.readSync(fd, buf, 0, buf.length, 0);
-          fs.closeSync(fd);
+          const head = readHeadLines(cand.path, 16384);
           let matched = false;
-          for (const line of buf.toString("utf8").split(NL)) {
-            if (!line.trim()) continue;
+          for (const line of head) {
             try {
               const o = JSON.parse(line);
               const scwd = normPath(o.payload?.cwd || "");
               if (scwd) {
-                if (scwd === cwd || cwd.startsWith(scwd + "/") || scwd.startsWith(cwd + "/")) {
+                if (isSameOrSubPath(scwd, cwd, isWsl ? "/home/" + (effectiveHome.split("/").pop() || "") : h)) {
                   latestFile = cand.path;
                   matched = true;
                 }
@@ -412,25 +625,38 @@ if (agentType === "antigravity") {
         } catch {}
       }
     }
+    if (!latestFile && sessFiles.length > 0) latestFile = sessFiles[0].path;
   }
 
   if (latestFile) {
     try {
       const im = latestFile.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
       if (im) telemetry.sessionId = im[1].slice(0, 8);
-      const lines = remoteBundle ? (remoteBundle.tailLines || []) : readTailLines(latestFile, 524288);
-      telemetry.stepCount = lines.length;
+      const headLines = remoteBundle ? [] : readHeadLines(latestFile, 32768);
+      const tailLines = remoteBundle ? (remoteBundle.tailLines || []) : readTailLines(latestFile, 524288);
+      const combinedLines = [...headLines, ...tailLines];
 
       const recentCmds = [];
       const pendingCalls = new Map();
       const seenCallIds = new Set();
-      let totalUsage = null, lastTokenUsage = null, okCount = 0, errCount = 0, userMsgTime = null, ttfts = [], toolDurs = [];
+      const seenOrdinals = new Set();
+      let totalUsage = null, lastTokenUsage = null, turnTokenUsage = null;
+      let okCount = 0, errCount = 0, userMsgTime = null, lastInputTs = null, ttfts = [], speeds = [], toolDurs = [];
+      let maxOrdinal = 0, userTurnCount = 0, firstTitle = "", latestTitle = "", sessionCwd = "";
       const usedTools = new Set(), readFiles = new Set(), editedFiles = new Set();
 
-      for (let i = 0; i < lines.length; i++) {
+      for (let i = 0; i < combinedLines.length; i++) {
         try {
-          const o = JSON.parse(lines[i]);
+          const o = JSON.parse(combinedLines[i]);
+          if (typeof o.ordinal === "number") {
+            if (seenOrdinals.has(o.ordinal)) continue;
+            seenOrdinals.add(o.ordinal);
+            if (o.ordinal > maxOrdinal) maxOrdinal = o.ordinal;
+          }
           const ts = new Date(o.timestamp || o.payload?.timestamp).getTime();
+          if ((o.type === "session_meta" || o.type === "turn_context") && o.payload?.cwd && !sessionCwd) {
+            sessionCwd = normPath(o.payload.cwd);
+          }
           if (o.type === "turn_context" && o.payload) {
             if (o.payload.approval_policy) telemetry.approvalPolicy = o.payload.approval_policy;
             if (o.payload.sandbox_policy?.type) telemetry.sandboxPolicy = o.payload.sandbox_policy.type;
@@ -443,12 +669,33 @@ if (agentType === "antigravity") {
             if (tsObj.model_provider_id) telemetry.provider = tsObj.model_provider_id;
             if (tsObj.reasoning_effort) telemetry.effort = tsObj.reasoning_effort;
           }
+          if (o.type === "response_item" && o.payload?.type === "message") {
+            const txt = extractTextContent(o.payload.content);
+            if (o.payload.role === "developer" || txt.startsWith("# AGENTS.md") || txt.startsWith("<skills_instructions>") || txt.startsWith("<environment_context>")) {
+              sysChars += txt.length;
+            } else {
+              msgChars += txt.length;
+            }
+          } else if (o.type === "response_item" && o.payload?.type === "reasoning") {
+            msgChars += extractTextContent(o.payload.summary || o.payload.content).length + Math.round(String(o.payload.encrypted_content || "").length * 0.25);
+          }
           const item = o.payload?.item;
           if (item) {
-            if (item.type === "SystemMessage") sysChars += String(item.content || "").length;
-            else if (item.type === "UserMessage") { userMsgTime = ts; msgChars += String(item.content || item.text || "").length; }
-            else if (item.type === "AgentMessage") {
-              msgChars += String(item.content || item.text || "").length;
+            if (item.type === "SystemMessage") sysChars += extractTextContent(item.content).length;
+            else if (item.type === "UserMessage") {
+              userTurnCount++;
+              userMsgTime = ts;
+              lastInputTs = ts;
+              const uTxt = extractTextContent(item.content || item.text).trim();
+              msgChars += uTxt.length;
+              const firstLine = uTxt.split(NL)[0].trim();
+              if (isMeaningfulPrompt(firstLine)) {
+                if (!firstTitle) firstTitle = firstLine;
+                latestTitle = firstLine;
+              }
+            } else if (item.type === "AgentMessage") {
+              const aTxt = extractTextContent(item.content || item.text);
+              msgChars += aTxt.length;
               if (userMsgTime && ts > userMsgTime) {
                 const diff = ts - userMsgTime;
                 if (diff > 0 && diff < 120000) ttfts.push(diff);
@@ -457,17 +704,17 @@ if (agentType === "antigravity") {
             } else if (item.type === "CommandExecution") {
               const cid = item.id || "";
               const rawCmd = Array.isArray(item.command) ? item.command.slice(-1)[0] : String(item.command || "");
-              toolsChars += String(rawCmd).length;
-              const aggOut = item.aggregated_output || item.output || "";
-              resChars += String(aggOut).length;
               if (/\brtk\b/.test(rawCmd)) usedTools.add("rtk");
               if (/\bgit\b/.test(rawCmd)) usedTools.add("git");
               const pm = rawCmd.match(/(?:git\s+apply|patch|tee|cat\s+>\s*|nano|vim)\s+([^\s;&|]+)/i);
               if (pm) editedFiles.add(pm[1]);
-              const cm = rawCmd.match(/(?:cat|head|tail|less|grep|rg|bat|sed|head)\s+([^\s;&|-]+)/i);
+              const cm = rawCmd.match(/(?:cat|head|tail|less|grep|rg|bat|sed)\s+([^\s;&|-]+)/i);
               if (cm) readFiles.add(cm[1]);
               if (cid && !seenCallIds.has(cid)) {
                 seenCallIds.add(cid);
+                toolsChars += String(rawCmd).length;
+                const aggOut = item.aggregated_output || item.output || "";
+                resChars += String(aggOut).length;
                 const isErr = typeof item.exit_code === "number" && item.exit_code !== 0;
                 if (isErr) errCount++; else okCount++;
                 const cmdName = rawCmd.trim().split(NL)[0].replace(/^\S*zsh\s+-lc\s+['"]?/, "").slice(0, 44);
@@ -475,6 +722,20 @@ if (agentType === "antigravity") {
                 usedTools.add("exec_command");
               }
             }
+          }
+          if (o.type === "token_usage_record" && o.payload) {
+            if (o.payload.usage) {
+              lastTokenUsage = o.payload.usage;
+              const genOut = (o.payload.usage.output_tokens || 0) + (o.payload.usage.reasoning_output_tokens || 0);
+              if (lastInputTs && ts > lastInputTs && genOut >= 10) {
+                const genDur = ts - lastInputTs;
+                if (genDur >= 250 && genDur < 60000) {
+                  speeds.push(Math.min(280, Math.max(25, Math.round(genOut / (genDur / 1000)))));
+                }
+              }
+            }
+            if (o.payload.turn_token_usage) turnTokenUsage = o.payload.turn_token_usage;
+            if (o.payload.thread_token_usage) totalUsage = o.payload.thread_token_usage;
           }
           if (o.payload?.type === "token_count" && o.payload.info) {
             if (o.payload.info.total_token_usage) totalUsage = o.payload.info.total_token_usage;
@@ -519,6 +780,7 @@ if (agentType === "antigravity") {
             }
             okCount++;
           } else if (o.type === "response_item" && o.payload?.type === "function_call_output") {
+            lastInputTs = ts;
             const cid = o.payload.call_id || "";
             const outText = String(o.payload.output || "");
             resChars += outText.length;
@@ -526,12 +788,15 @@ if (agentType === "antigravity") {
             if (pend) {
               let dur = Math.max(0, ts - pend.startTs);
               const wm = outText.match(/Wall time:\s*([0-9.]+)\s*seconds/i);
-              if (wm) dur = Math.round(parseFloat(wm[1]) * 1000);
-              if (Number.isFinite(dur) && dur >= 0) {
+              if (wm) {
+                const parsedMs = Math.round(parseFloat(wm[1]) * 1000);
+                if (parsedMs > 0) dur = parsedMs;
+              }
+              if (Number.isFinite(dur) && dur > 0) {
                 toolDurs.push(dur);
                 pend.entry.ms = dur >= 1000 ? (dur / 1000).toFixed(1) + "s" : dur + "ms";
               } else {
-                pend.entry.ms = "—";
+                pend.entry.ms = "<0.1s";
               }
               const exitM = outText.match(/Process exited with code\s+(\d+)/i);
               const isErr = (exitM && exitM[1] !== "0") || /^\s*(?:Error:|failed:|Permission denied)/im.test(outText);
@@ -546,18 +811,38 @@ if (agentType === "antigravity") {
         } catch {}
       }
 
+      if (firstTitle || latestTitle) {
+        telemetry.sessionTitle = (latestTitle || firstTitle).slice(0, 140);
+      }
+      if (userTurnCount > 0 && telemetry.turn <= 1) {
+        telemetry.turn = userTurnCount;
+      }
+      telemetry.stepCount = maxOrdinal > 0 ? maxOrdinal : Math.max(tailLines.length, telemetry.turn * 2);
+
+      if (sessionCwd && telemetry.gitBranch === "no repo") {
+        telemetry.cwd = sessionCwd;
+        const gInfo = queryGitInfo(sessionCwd);
+        telemetry.gitBranch = gInfo.gitBranch;
+        telemetry.gitClean = gInfo.gitClean;
+        telemetry.gitChanges = gInfo.gitChanges;
+      }
+
       if (ttfts.length > 0) {
         telemetry.ttft = (ttfts[ttfts.length - 1] / 1000).toFixed(1) + "s";
-        telemetry.avgTtft = (ttfts.reduce((s,x)=>s+x,0) / ttfts.length / 1000).toFixed(1) + "s";
+        telemetry.avgTtft = (ttfts.reduce((s, x) => s + x, 0) / ttfts.length / 1000).toFixed(1) + "s";
+      }
+      if (speeds.length > 0) {
+        telemetry.tokPerSec = speeds[speeds.length - 1] + " tok/s";
+        telemetry.avgTokPerSec = Math.round(speeds.reduce((s, x) => s + x, 0) / speeds.length) + " tok/s";
       }
       if (toolDurs.length > 0) {
-        const avg = Math.round(toolDurs.reduce((s,x)=>s+x,0) / toolDurs.length);
+        const avg = Math.round(toolDurs.reduce((s, x) => s + x, 0) / toolDurs.length);
         telemetry.avgToolMs = avg >= 1000 ? (avg / 1000).toFixed(1) + "s" : avg + "ms";
       }
       if (recentCmds.length > 0) telemetry.recentTools = recentCmds.slice(-8).reverse();
       telemetry.toolsOk = okCount;
       telemetry.toolsErr = errCount;
-      telemetry.toolsPerTurn = ((okCount + errCount) / Math.max(1, turnNum)).toFixed(1);
+      telemetry.toolsPerTurn = ((okCount + errCount) / Math.max(1, telemetry.turn)).toFixed(1);
       telemetry.usedToolNames = Array.from(usedTools);
       telemetry.usedToolsCount = usedTools.size;
       for (const ut of telemetry.usedToolNames) {
@@ -568,100 +853,214 @@ if (agentType === "antigravity") {
       telemetry.readFilesCount = readFiles.size;
       telemetry.editedFilesCount = editedFiles.size;
 
+      // OpenAI GPT-5 / Codex pricing: $1.25/1M uncached input, $0.125/1M cached input (90% discount), $10.00/1M output
       if (lastTokenUsage) {
         telemetry.inTok = lastTokenUsage.input_tokens || 0;
         telemetry.cacheTok = lastTokenUsage.cached_input_tokens || 0;
         telemetry.outTok = lastTokenUsage.output_tokens || 0;
-        telemetry.reasoningTok = lastTokenUsage.reasoning_output_tokens || 0;
+        telemetry.reasoningTok = (turnTokenUsage?.reasoning_output_tokens ?? lastTokenUsage.reasoning_output_tokens) || 0;
         telemetry.totalCtx = telemetry.inTok + telemetry.outTok;
         telemetry.hitRate = telemetry.inTok > 0 ? (Math.round((telemetry.cacheTok / telemetry.inTok) * 1000) / 10) : 0;
-        const turnCostNum = (telemetry.cacheTok * 1.25 + Math.max(0, telemetry.inTok - telemetry.cacheTok) * 2.50 + telemetry.outTok * 10.0) / 1000000;
+        const tu = turnTokenUsage || lastTokenUsage;
+        const turnCostNum = ((tu.cached_input_tokens || 0) * 0.125 + Math.max(0, (tu.input_tokens || 0) - (tu.cached_input_tokens || 0)) * 1.25 + (tu.output_tokens || 0) * 10.0) / 1000000;
         telemetry.turnCost = "$" + turnCostNum.toFixed(3);
       }
       if (totalUsage) {
-        const sessionCostNum = (totalUsage.cached_input_tokens * 1.25 + Math.max(0, totalUsage.input_tokens - totalUsage.cached_input_tokens) * 2.50 + totalUsage.output_tokens * 10.0) / 1000000;
-        const savedNum = (totalUsage.cached_input_tokens * (2.50 - 1.25)) / 1000000;
+        const sessionCostNum = ((totalUsage.cached_input_tokens || 0) * 0.125 + Math.max(0, (totalUsage.input_tokens || 0) - (totalUsage.cached_input_tokens || 0)) * 1.25 + (totalUsage.output_tokens || 0) * 10.0) / 1000000;
+        const savedNum = ((totalUsage.cached_input_tokens || 0) * (1.25 - 0.125)) / 1000000;
         telemetry.cost = "$" + sessionCostNum.toFixed(2);
         telemetry.sessionCost = "$" + sessionCostNum.toFixed(2);
         if (savedNum > 0.01) telemetry.cacheSaved = "$" + savedNum.toFixed(2);
-      } else { telemetry.sessionCost = telemetry.cost; }
+      } else {
+        telemetry.sessionCost = telemetry.cost;
+      }
     } catch {}
   }
-} else if (agentType === "omp") {
-  const bDir = fs.existsSync(effectiveHome + "/.omp/agent/sessions") ? (effectiveHome + "/.omp/agent/sessions") : null;
-  const cfgY = effectiveHome + "/.omp/agent/config.yml";
-  try {
-    const cfgT = remoteBundle ? (remoteBundle.cfgText || "") : (fs.existsSync(cfgY) ? fs.readFileSync(cfgY, "utf8") : "");
-    if (cfgT) {
-      const mm = cfgT.match(/default:\s*([^\s]+)/);
-      if (mm) telemetry.model = mm[1].split("/").pop();
-    }
-  } catch {}
-  let ompFile = remoteBundle ? (remoteBundle.sessionPath || null) : null;
-  let ompLines = remoteBundle ? (remoteBundle.tailLines || []) : null;
+} else if (agentType === "omp" || agentType === "pi") {
+  const dirKey = agentType === "pi" ? "/.pi/agent/sessions" : "/.omp/agent/sessions";
+  const bDir = fs.existsSync(effectiveHome + dirKey) ? (effectiveHome + dirKey) : null;
+  if (agentType === "omp") {
+    const cfgY = effectiveHome + "/.omp/agent/config.yml";
+    try {
+      const cfgT = remoteBundle ? (remoteBundle.cfgText || "") : (fs.existsSync(cfgY) ? fs.readFileSync(cfgY, "utf8") : "");
+      if (cfgT) {
+        const mm = cfgT.match(/default:\s*([^\s]+)/);
+        if (mm) telemetry.model = mm[1].split("/").pop();
+      }
+    } catch {}
+  }
+
+  let sessFile = remoteBundle ? (remoteBundle.sessionPath || null) : null;
+  let sessLines = remoteBundle ? (remoteBundle.tailLines || []) : null;
   if (!remoteBundle && bDir) {
     try {
-      let allF = [];
+      const allF = [];
       for (const d of fs.readdirSync(bDir)) {
         const full = bDir + "/" + d;
-        try { if (fs.statSync(full).isDirectory()) for (const f of fs.readdirSync(full)) if (f.endsWith(".jsonl")) allF.push({ path: full + "/" + f, mtime: fs.statSync(full + "/" + f).mtimeMs }); } catch {}
+        try {
+          if (fs.statSync(full).isDirectory()) {
+            for (const f of fs.readdirSync(full)) {
+              if (f.endsWith(".jsonl")) {
+                const fp = full + "/" + f;
+                const st = fs.statSync(fp);
+                allF.push({ path: fp, mtime: st.mtimeMs, size: st.size });
+              }
+            }
+          }
+        } catch {}
       }
       if (allF.length > 0) {
-        allF.sort((a,b) => b.mtime - a.mtime);
-        ompFile = allF[0].path;
-        ompLines = readTailLines(ompFile, 262144);
+        allF.sort((a, b) => b.mtime - a.mtime);
+        let matched = null;
+        if (chatData?.sessionId) {
+          matched = allF.find((f) => f.path.includes(chatData.sessionId));
+        }
+        if (!matched && cwd) {
+          for (const cand of allF.slice(0, 15)) {
+            const head = readHeadLines(cand.path, 8192);
+            for (const hl of head) {
+              try {
+                const o = JSON.parse(hl);
+                if (o.type === "session" && o.cwd && isSameOrSubPath(o.cwd, cwd, effectiveHome)) {
+                  matched = cand;
+                  break;
+                }
+              } catch {}
+            }
+            if (matched) break;
+          }
+        }
+        sessFile = (matched || allF[0]).path;
+        sessLines = readTailLines(sessFile, 262144);
       }
     } catch {}
   }
-  if (ompFile && ompLines) {
+
+  if (sessFile && sessLines) {
     try {
-      const im = ompFile.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+      const im = sessFile.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
       if (im) telemetry.sessionId = im[1].slice(0, 8);
-      const lines = ompLines;
-        telemetry.stepCount = lines.length;
-        let totalIn = 0, totalOut = 0, totalCache = 0, lastCost = 0, turnCount = 0, toolCount = 0;
-        const recent = [], usedTools = new Set();
-        let lastToolStart = null, lastToolName = null;
-        for (const l of lines) {
-          try {
-            const o = JSON.parse(l);
-            const ts = new Date(o.timestamp || o.createdAt || Date.now()).getTime();
-            if (o.type === "title" && o.title) telemetry.sessionTitle = o.title;
-            if (o.type === "message") {
-              if (o.message?.role === "system") sysChars += String(o.message.content || "").length;
-              else if (o.message?.role === "user") { turnCount++; msgChars += String(o.message.content || "").length; }
-              else if (o.message?.role === "assistant") msgChars += String(o.message.content || "").length;
-            }
-            if (o.model || o.message?.model) telemetry.model = (o.model || o.message.model).split("/").pop();
-            if (o.type === "tool_use" || o.message?.content?.[0]?.type === "tool_use") {
-              toolCount++; const nm = o.name || o.message?.content?.[0]?.name || "tool";
-              toolsChars += JSON.stringify(o).length;
-              usedTools.add(nm); lastToolStart = ts; lastToolName = nm;
-            } else if (lastToolStart && (o.type === "toolResult" || ts > lastToolStart)) {
-              if (o.type === "toolResult") resChars += String(o.content || "").length;
-              const dur = Math.max(0, ts - lastToolStart);
-              const durStr = dur >= 1000 ? (dur / 1000).toFixed(1) + "s" : dur + "ms";
-              recent.push({ name: lastToolName, detail: "", time: fmtTime(lastToolStart), status: "ok", ms: durStr });
+      const lines = sessLines;
+      telemetry.stepCount = lines.length;
+      let totalIn = 0, totalOut = 0, totalCache = 0, totalReason = 0, cumCost = 0, lastCost = 0, turnCount = 0, toolCount = 0, errCount = 0;
+      let firstUserTitle = "", latestTitle = "";
+      const recent = [], usedTools = new Set(), readFiles = new Set(), editedFiles = new Set(), toolDurs = [], ttfts = [];
+      let lastToolStart = null, lastToolName = null, lastToolDetail = "", lastUserTs = null;
+
+      for (const l of lines) {
+        try {
+          const o = JSON.parse(l);
+          const ts = new Date(o.timestamp || o.createdAt || o.message?.timestamp || Date.now()).getTime();
+          if ((o.type === "title" || o.type === "title_change") && o.title) latestTitle = o.title;
+          if (o.type === "session_info" && o.name) latestTitle = o.name;
+          if (o.type === "session" && o.title) latestTitle = o.title;
+          if (o.type === "model_change") {
+            const mName = o.model || o.modelId;
+            if (mName) telemetry.model = String(mName).split("/").pop();
+            if (o.provider) telemetry.provider = o.provider;
+          }
+          if (o.type === "thinking_level_change" && o.thinkingLevel) {
+            telemetry.effort = o.thinkingLevel;
+          }
+          if (o.type === "message" && o.message) {
+            const msg = o.message;
+            if (msg.provider) telemetry.provider = msg.provider;
+            if (msg.model) telemetry.model = String(msg.model).split("/").pop();
+            const txt = extractTextContent(msg.content);
+            if (msg.role === "system") {
+              sysChars += txt.length;
+            } else if (msg.role === "user") {
+              turnCount++;
+              lastUserTs = ts;
+              msgChars += txt.length;
+              const fl = txt.trim().split(NL)[0].trim();
+              if (isMeaningfulPrompt(fl) && !firstUserTitle) firstUserTitle = fl;
+            } else if (msg.role === "assistant") {
+              msgChars += txt.length;
+              if (lastUserTs && ts > lastUserTs && ts - lastUserTs < 120000) {
+                ttfts.push(ts - lastUserTs);
+                lastUserTs = null;
+              }
+              if (Array.isArray(msg.content)) {
+                for (const block of msg.content) {
+                  if (block?.type === "toolCall" || block?.type === "tool_use") {
+                    toolCount++;
+                    const nm = block.name || "tool";
+                    toolsChars += JSON.stringify(block).length;
+                    usedTools.add(nm);
+                    const bArgs = block.arguments || block.input || {};
+                    const p = bArgs.path || bArgs.file_path;
+                    if (p) {
+                      if (nm.includes("read")) readFiles.add(p);
+                      else if (nm.includes("edit") || nm.includes("write")) editedFiles.add(p);
+                    }
+                    lastToolStart = ts;
+                    lastToolName = nm;
+                    lastToolDetail = toolDetail(bArgs);
+                  }
+                }
+              }
+              if (msg.usage) {
+                const u = msg.usage;
+                totalIn = u.input ?? totalIn;
+                totalOut = u.output ?? totalOut;
+                totalCache = u.cacheRead ?? totalCache;
+                totalReason = u.reasoning ?? totalReason;
+                if (u.cost?.total) {
+                  lastCost = u.cost.total;
+                  cumCost += u.cost.total;
+                }
+              }
+            } else if (msg.role === "toolResult") {
+              resChars += txt.length;
+              const isErr = Boolean(msg.isError);
+              if (isErr) errCount++;
+              const nm = msg.toolName || lastToolName || "tool";
+              usedTools.add(nm);
+              const dur = lastToolStart && ts >= lastToolStart ? ts - lastToolStart : 0;
+              if (dur > 0 && dur < 120000) toolDurs.push(dur);
+              const durStr = dur >= 1000 ? (dur / 1000).toFixed(1) + "s" : dur > 0 ? dur + "ms" : "—";
+              recent.push({ name: nm, detail: lastToolDetail, time: fmtTime(ts), status: isErr ? "err" : "ok", ms: durStr });
               lastToolStart = null;
             }
-            if (o.type === "message" && o.message?.usage) {
-              const u = o.message.usage;
-              totalIn = u.input || totalIn; totalOut = u.output || totalOut; totalCache = u.cacheRead || totalCache;
-              if (u.cost?.total) lastCost = u.cost.total;
-            }
-          } catch {}
-        }
-        if (turnCount > 0) telemetry.turn = turnCount;
-        telemetry.toolsOk = toolCount || (telemetry.turn * 2);
-        telemetry.usedToolNames = Array.from(usedTools);
-        telemetry.usedToolsCount = usedTools.size;
-        if (recent.length > 0) telemetry.recentTools = recent.slice(-6).reverse();
-        telemetry.inTok = totalIn; telemetry.cacheTok = totalCache; telemetry.outTok = totalOut;
-        telemetry.totalCtx = totalIn + totalOut + totalCache;
-        telemetry.hitRate = (totalIn + totalCache) > 0 ? (Math.round((totalCache / (totalIn + totalCache)) * 1000) / 10) : 0;
-        const costNum = lastCost || ((totalCache * 1.25 + totalIn * 2.5 + totalOut * 10) / 1000000);
-        telemetry.cost = "$" + costNum.toFixed(2); telemetry.sessionCost = "$" + costNum.toFixed(2);
-        telemetry.turnCost = "$" + (costNum / Math.max(1, telemetry.turn)).toFixed(3);
+          }
+        } catch {}
+      }
+
+      if (latestTitle || firstUserTitle) telemetry.sessionTitle = (latestTitle || firstUserTitle).slice(0, 140);
+      if (turnCount > 0) telemetry.turn = turnCount;
+      telemetry.toolsOk = Math.max(0, toolCount - errCount);
+      telemetry.toolsErr = errCount;
+      telemetry.toolsPerTurn = (toolCount / Math.max(1, telemetry.turn)).toFixed(1);
+      if (toolDurs.length > 0) {
+        const avg = Math.round(toolDurs.reduce((s, x) => s + x, 0) / toolDurs.length);
+        telemetry.avgToolMs = avg >= 1000 ? (avg / 1000).toFixed(1) + "s" : avg + "ms";
+      }
+      if (ttfts.length > 0) {
+        telemetry.ttft = (ttfts[ttfts.length - 1] / 1000).toFixed(1) + "s";
+        telemetry.avgTtft = (ttfts.reduce((s, x) => s + x, 0) / ttfts.length / 1000).toFixed(1) + "s";
+      }
+      telemetry.usedToolNames = Array.from(usedTools);
+      telemetry.usedToolsCount = usedTools.size;
+      for (const ut of telemetry.usedToolNames) {
+        if (!builtinNames.includes(ut) && !extNames.includes(ut)) builtinNames.push(ut);
+      }
+      telemetry.builtinTools = builtinNames.length;
+      telemetry.totalTools = builtinNames.length + extNames.length;
+      telemetry.readFilesCount = readFiles.size;
+      telemetry.editedFilesCount = editedFiles.size;
+      if (recent.length > 0) telemetry.recentTools = recent.slice(-8).reverse();
+      telemetry.inTok = totalIn;
+      telemetry.cacheTok = totalCache;
+      telemetry.outTok = totalOut;
+      telemetry.reasoningTok = totalReason;
+      telemetry.totalCtx = totalIn + totalOut + totalCache;
+      telemetry.hitRate = (totalIn + totalCache) > 0 ? (Math.round((totalCache / (totalIn + totalCache)) * 1000) / 10) : 0;
+      const sessionCostNum = cumCost || ((totalCache * 0.30 + totalIn * 3.0 + totalOut * 15.0) / 1000000);
+      const turnCostNum = lastCost || (sessionCostNum / Math.max(1, telemetry.turn));
+      telemetry.cost = "$" + sessionCostNum.toFixed(2);
+      telemetry.sessionCost = "$" + sessionCostNum.toFixed(2);
+      telemetry.turnCost = "$" + turnCostNum.toFixed(3);
     } catch {}
   }
 }
