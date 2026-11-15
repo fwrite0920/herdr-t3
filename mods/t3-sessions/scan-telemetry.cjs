@@ -56,31 +56,107 @@ if (agentType === "codex") builtinNames = ["exec_command", "write_stdin", "apply
 else if (agentType === "omp") builtinNames = ["bash", "read_file", "edit_file", "write_file", "glob", "grep", "exec"];
 else if (agentType === "pi") builtinNames = ["exec", "read", "write", "edit", "find", "grep"];
 
-const extNames = [];
-const sDirs = isWsl
-  ? [effectiveHome + "/.codex/skills", effectiveHome + "/.agents/skills", effectiveHome + "/.omp/agent/skills", effectiveHome + "/.pi/agent/skills", effectiveCwd + "/.agents/skills", effectiveCwd + "/.codex/skills"]
-  : [h + "/.gemini/antigravity-cli/skills", h + "/.gemini/antigravity-cli/builtin/skills", h + "/.gemini/config/plugins", h + "/.omp/agent/skills", h + "/.omp/agent/extensions", h + "/.pi/agent/skills", h + "/.pi/agent/extensions", root + "/.agents/skills", root + "/.codex/skills"];
-for (const sd of sDirs) {
+function fetchRemoteBundle(machineName, remoteCwd, agent) {
   try {
-    for (const it of fs.readdirSync(sd)) {
-      if (!it.startsWith(".")) {
-        const clean = it.replace(/\.(ts|js)$/, "");
-        if (!extNames.includes(clean)) extNames.push(clean);
-      }
-    }
-  } catch {}
+    const py = [
+      "import os,sys,json",
+      "cwd=sys.argv[1] if len(sys.argv)>1 else ''",
+      "agent=sys.argv[2] if len(sys.argv)>2 else 'generic'",
+      "home=os.path.expanduser('~')",
+      "ext=set()",
+      "for d in [home+'/.codex/skills',home+'/.agents/skills',home+'/.omp/agent/skills',home+'/.omp/agent/extensions',home+'/.pi/agent/skills',home+'/.pi/agent/extensions',(cwd+'/.agents/skills') if cwd else '',(cwd+'/.codex/skills') if cwd else '']:",
+      "  if d and os.path.isdir(d):",
+      "    try:",
+      "      for it in os.listdir(d):",
+      "        if not it.startswith('.'): ext.add(it[:-3] if it.endswith(('.ts','.js')) else it)",
+      "    except Exception: pass",
+      "rules=[]",
+      "for lbl,fp in [('AGENTS.md',cwd+'/AGENTS.md' if cwd else ''),('CLAUDE.md',cwd+'/CLAUDE.md' if cwd else ''),('GEMINI.md',cwd+'/GEMINI.md' if cwd else ''),('codex.toml',home+'/.codex/config.toml'),('.codex/config',cwd+'/.codex/config.toml' if cwd else '')]:",
+      "  if fp and os.path.isfile(fp): rules.append(lbl)",
+      "cfg=''",
+      "for cp in [home+'/.codex/config.toml',home+'/.omp/agent/config.yml']:",
+      "  if os.path.isfile(cp):",
+      "    try: cfg=open(cp,'r',encoding='utf-8',errors='ignore').read(32768); break",
+      "    except Exception: pass",
+      "def tail_lines(fp,mb=524288):",
+      "  sz=os.path.getsize(fp)",
+      "  with open(fp,'rb') as f:",
+      "    if sz>mb:",
+      "      f.seek(sz-mb); data=f.read(); nl=data.find(b'\\n')",
+      "      if nl!=-1: data=data[nl+1:]",
+      "    else: data=f.read()",
+      "  return [l for l in data.decode('utf-8','ignore').splitlines() if l.strip()]",
+      "base={'codex':home+'/.codex/sessions','omp':home+'/.omp/agent/sessions','pi':home+'/.pi/agent/sessions','claude':home+'/.claude/projects'}.get(agent)",
+      "sp=''; lines=[]",
+      "if base and os.path.isdir(base):",
+      "  cands=[]",
+      "  for r,_ds,fs in os.walk(base):",
+      "    for fn in fs:",
+      "      if fn.endswith('.jsonl'):",
+      "        fp=os.path.join(r,fn)",
+      "        try: cands.append((os.path.getmtime(fp),fp))",
+      "        except Exception: pass",
+      "  cands.sort(reverse=True)",
+      "  if cands:",
+      "    sp=cands[0][1]",
+      "    if len(cands)>1 and cwd and agent=='codex':",
+      "      for _mt,fp in cands[:12]:",
+      "        try:",
+      "          head=open(fp,'r',encoding='utf-8',errors='ignore').read(8192)",
+      "          for hl in head.splitlines():",
+      "            if not hl.strip(): continue",
+      "            o=json.loads(hl); scwd=(o.get('payload') or {}).get('cwd','')",
+      "            if scwd:",
+      "              if scwd==cwd or cwd.startswith(scwd+'/') or scwd.startswith(cwd+'/'): sp=fp",
+      "              break",
+      "          if sp==fp: break",
+      "        except Exception: pass",
+      "    try: lines=tail_lines(sp)",
+      "    except Exception: lines=[]",
+      "print(json.dumps({'home':home,'extNames':sorted(ext),'rulesLoaded':rules,'cfgText':cfg,'sessionPath':sp,'tailLines':lines}))"
+    ].join("\n");
+    const b64 = Buffer.from(py).toString("base64");
+    const cmd = "echo " + b64 + " | base64 -d | python3 - " + JSON.stringify(remoteCwd || "") + " " + JSON.stringify(agent || "generic");
+    const out = execFileSync("hc", ["exec", "--on", machineName, cmd], { timeout: 3000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+    return JSON.parse(out.trim());
+  } catch { return null; }
 }
-extNames.sort();
+
+const remoteBundle = (isRemote && !isWsl && machine) ? fetchRemoteBundle(machine, cwd, agentType) : null;
+
+const extNames = [];
+if (remoteBundle) {
+  for (const it of (remoteBundle.extNames || [])) extNames.push(it);
+} else {
+  const sDirs = isWsl
+    ? [effectiveHome + "/.codex/skills", effectiveHome + "/.agents/skills", effectiveHome + "/.omp/agent/skills", effectiveHome + "/.pi/agent/skills", effectiveCwd + "/.agents/skills", effectiveCwd + "/.codex/skills"]
+    : [h + "/.gemini/antigravity-cli/skills", h + "/.gemini/antigravity-cli/builtin/skills", h + "/.gemini/config/plugins", h + "/.omp/agent/skills", h + "/.omp/agent/extensions", h + "/.pi/agent/skills", h + "/.pi/agent/extensions", root + "/.agents/skills", root + "/.codex/skills"];
+  for (const sd of sDirs) {
+    try {
+      for (const it of fs.readdirSync(sd)) {
+        if (!it.startsWith(".")) {
+          const clean = it.replace(/\.(ts|js)$/, "");
+          if (!extNames.includes(clean)) extNames.push(clean);
+        }
+      }
+    } catch {}
+  }
+  extNames.sort();
+}
 
 const rulesLoaded = [];
-for (const [label, fp] of [
-  ["AGENTS.md", effectiveCwd + "/AGENTS.md"],
-  ["CLAUDE.md", effectiveCwd + "/CLAUDE.md"],
-  ["GEMINI.md", effectiveCwd + "/GEMINI.md"],
-  ["codex.toml", effectiveHome + "/.codex/config.toml"],
-  [".codex/config", effectiveCwd + "/.codex/config.toml"]
-]) {
-  try { if (fs.existsSync(fp)) rulesLoaded.push(label); } catch {}
+if (remoteBundle) {
+  for (const r of (remoteBundle.rulesLoaded || [])) rulesLoaded.push(r);
+} else {
+  for (const [label, fp] of [
+    ["AGENTS.md", effectiveCwd + "/AGENTS.md"],
+    ["CLAUDE.md", effectiveCwd + "/CLAUDE.md"],
+    ["GEMINI.md", effectiveCwd + "/GEMINI.md"],
+    ["codex.toml", effectiveHome + "/.codex/config.toml"],
+    [".codex/config", effectiveCwd + "/.codex/config.toml"]
+  ]) {
+    try { if (fs.existsSync(fp)) rulesLoaded.push(label); } catch {}
+  }
 }
 
 let sysChars = (builtinNames.length + extNames.length) * 180, toolsChars = 0, msgChars = 0, resChars = 0;
@@ -281,8 +357,8 @@ if (agentType === "antigravity") {
   const cDir = effectiveHome + "/.codex";
   const cfgP = cDir + "/config.toml";
   try {
-    if (fs.existsSync(cfgP)) {
-      const cfgT = fs.readFileSync(cfgP, "utf8");
+    const cfgT = remoteBundle ? (remoteBundle.cfgText || "") : (fs.existsSync(cfgP) ? fs.readFileSync(cfgP, "utf8") : "");
+    if (cfgT) {
       const mm = cfgT.match(/model\s*=\s*["']([^"']+)["']/);
       if (mm) telemetry.model = mm[1].startsWith("auto/") ? mm[1].slice(5) : mm[1];
       const em = cfgT.match(/model_reasoning_effort\s*=\s*["']([^"']+)["']/);
@@ -292,46 +368,49 @@ if (agentType === "antigravity") {
     }
   } catch {}
 
-  const sBase = cDir + "/sessions";
-  const sessFiles = [];
-  function walkSess(d, dp = 0) {
-    if (dp > 4) return;
-    try {
-      for (const item of fs.readdirSync(d)) {
-        const full = d + "/" + item, st = fs.statSync(full);
-        if (st.isDirectory()) walkSess(full, dp + 1);
-        else if (item.endsWith(".jsonl")) sessFiles.push({ path: full, mtime: st.mtimeMs, size: st.size });
-      }
-    } catch {}
-  }
-  if (fs.existsSync(sBase)) walkSess(sBase);
-  sessFiles.sort((a, b) => b.mtime - a.mtime);
-
-  let latestFile = sessFiles[0]?.path || null;
-  if (sessFiles.length > 1 && cwd) {
-    for (const cand of sessFiles.slice(0, 12)) {
+  let latestFile = remoteBundle ? (remoteBundle.sessionPath || null) : null;
+  if (!remoteBundle) {
+    const sBase = cDir + "/sessions";
+    const sessFiles = [];
+    function walkSess(d, dp = 0) {
+      if (dp > 4) return;
       try {
-        const fd = fs.openSync(cand.path, "r");
-        const buf = Buffer.alloc(Math.min(8192, cand.size));
-        fs.readSync(fd, buf, 0, buf.length, 0);
-        fs.closeSync(fd);
-        let matched = false;
-        for (const line of buf.toString("utf8").split(NL)) {
-          if (!line.trim()) continue;
-          try {
-            const o = JSON.parse(line);
-            const scwd = normPath(o.payload?.cwd || "");
-            if (scwd) {
-              if (scwd === cwd || cwd.startsWith(scwd + "/") || scwd.startsWith(cwd + "/")) {
-                latestFile = cand.path;
-                matched = true;
-              }
-              break;
-            }
-          } catch {}
+        for (const item of fs.readdirSync(d)) {
+          const full = d + "/" + item, st = fs.statSync(full);
+          if (st.isDirectory()) walkSess(full, dp + 1);
+          else if (item.endsWith(".jsonl")) sessFiles.push({ path: full, mtime: st.mtimeMs, size: st.size });
         }
-        if (matched) break;
       } catch {}
+    }
+    if (fs.existsSync(sBase)) walkSess(sBase);
+    sessFiles.sort((a, b) => b.mtime - a.mtime);
+
+    latestFile = sessFiles[0]?.path || null;
+    if (sessFiles.length > 1 && cwd) {
+      for (const cand of sessFiles.slice(0, 12)) {
+        try {
+          const fd = fs.openSync(cand.path, "r");
+          const buf = Buffer.alloc(Math.min(8192, cand.size));
+          fs.readSync(fd, buf, 0, buf.length, 0);
+          fs.closeSync(fd);
+          let matched = false;
+          for (const line of buf.toString("utf8").split(NL)) {
+            if (!line.trim()) continue;
+            try {
+              const o = JSON.parse(line);
+              const scwd = normPath(o.payload?.cwd || "");
+              if (scwd) {
+                if (scwd === cwd || cwd.startsWith(scwd + "/") || scwd.startsWith(cwd + "/")) {
+                  latestFile = cand.path;
+                  matched = true;
+                }
+                break;
+              }
+            } catch {}
+          }
+          if (matched) break;
+        } catch {}
+      }
     }
   }
 
@@ -339,7 +418,7 @@ if (agentType === "antigravity") {
     try {
       const im = latestFile.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
       if (im) telemetry.sessionId = im[1].slice(0, 8);
-      const lines = readTailLines(latestFile, 524288);
+      const lines = remoteBundle ? (remoteBundle.tailLines || []) : readTailLines(latestFile, 524288);
       telemetry.stepCount = lines.length;
 
       const recentCmds = [];
@@ -512,12 +591,15 @@ if (agentType === "antigravity") {
   const bDir = fs.existsSync(effectiveHome + "/.omp/agent/sessions") ? (effectiveHome + "/.omp/agent/sessions") : null;
   const cfgY = effectiveHome + "/.omp/agent/config.yml";
   try {
-    if (fs.existsSync(cfgY)) {
-      const mm = fs.readFileSync(cfgY, "utf8").match(/default:s*([^s]+)/);
+    const cfgT = remoteBundle ? (remoteBundle.cfgText || "") : (fs.existsSync(cfgY) ? fs.readFileSync(cfgY, "utf8") : "");
+    if (cfgT) {
+      const mm = cfgT.match(/default:\s*([^\s]+)/);
       if (mm) telemetry.model = mm[1].split("/").pop();
     }
   } catch {}
-  if (bDir) {
+  let ompFile = remoteBundle ? (remoteBundle.sessionPath || null) : null;
+  let ompLines = remoteBundle ? (remoteBundle.tailLines || []) : null;
+  if (!remoteBundle && bDir) {
     try {
       let allF = [];
       for (const d of fs.readdirSync(bDir)) {
@@ -526,9 +608,16 @@ if (agentType === "antigravity") {
       }
       if (allF.length > 0) {
         allF.sort((a,b) => b.mtime - a.mtime);
-        const im = allF[0].path.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-        if (im) telemetry.sessionId = im[1].slice(0, 8);
-        const lines = readTailLines(allF[0].path, 262144);
+        ompFile = allF[0].path;
+        ompLines = readTailLines(ompFile, 262144);
+      }
+    } catch {}
+  }
+  if (ompFile && ompLines) {
+    try {
+      const im = ompFile.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+      if (im) telemetry.sessionId = im[1].slice(0, 8);
+      const lines = ompLines;
         telemetry.stepCount = lines.length;
         let totalIn = 0, totalOut = 0, totalCache = 0, lastCost = 0, turnCount = 0, toolCount = 0;
         const recent = [], usedTools = new Set();
@@ -573,7 +662,6 @@ if (agentType === "antigravity") {
         const costNum = lastCost || ((totalCache * 1.25 + totalIn * 2.5 + totalOut * 10) / 1000000);
         telemetry.cost = "$" + costNum.toFixed(2); telemetry.sessionCost = "$" + costNum.toFixed(2);
         telemetry.turnCost = "$" + (costNum / Math.max(1, telemetry.turn)).toFixed(3);
-      }
     } catch {}
   }
 }
