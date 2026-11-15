@@ -32,12 +32,13 @@ export function descendants(all, addr, seen = new Set()) {
   return agentKids(all, addr, seen).flatMap((k) => [k, ...descendants(all, k.address, seen)]);
 }
 
-// Its own word with what's under it: needing the person first, then its own done, then busy or waiting on
-// sub-agents it will hear back from, else its own. No word of its own: no agent, whatever it started.
+// Its own word with what's under it: needing the person first, then any working sub-agents/tasks it is still
+// waiting on, else its own. No word of its own: no agent, whatever it started.
 export function treeStatus(own, kids) {
   if (own == null) return own;
   if (own === "blocked" || kids.includes("blocked")) return "blocked";
-  return own !== "done" && kids.includes("working") ? "working" : own;
+  if (kids.includes("working")) return "working";
+  return own;
 }
 
 // A settled agent stays settled until new work: busy now, or a turn ended since. Label removal can still be in flight,
