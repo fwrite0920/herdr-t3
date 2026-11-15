@@ -158,12 +158,10 @@ export function inboxRowView(view, t, model, actions, drag) {
         .child("Settle")
         .when(offer, (el) => stop(view, t, id, el, 6)), { action: on ? settleKey() : undefined, delay }))));
     // T3's card row: 10 and 8 in, rounded-md, its lines 20, 20 and 16 tall, 4 and 2 apart: 78 with all three.
-    const cardBar = on ? t.accent : st === "blocked" ? t.blocked : running(a) ? t.working : null;
     const base = v_flex().id(`${ghost ? "ghost-" : ""}card-${a.address}`).relative().px(10).py(8).flex_none().rounded(6)
       .border(1).border_color(on ? t.accent + "55" : st === "blocked" ? t.blocked + "33" : t.border)
       .when(!ghost, (el) => el.opacity(1))
-      .when(!on && st === "blocked", (el) => el.bg(t.blocked + "10"))
-      .when(Boolean(cardBar), (el) => el.child(div().absolute().left(2).top(8).bottom(8).w(2).rounded(1).bg(cardBar)));
+      .when(!on && st === "blocked", (el) => el.bg(t.blocked + "10"));
     return (ghost ? base : row(base, a, details).role("button").accessibility_label(title(a)).on_hover(hover(a)).when(Boolean(menuMod), context(a))
       .on_click(open(a)).on_size_change((size) => { view.cardH = size.height / zoom; }))
       .when(on, (el) => el.bg(t.selected))
