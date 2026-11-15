@@ -298,7 +298,7 @@ export default class Agents extends View {
             ),
       )
       .when(list.length === 0, (el) =>
-        el.child(v_flex().mx(12).my(16).px(14).py(18).gap(8).items_center().rounded(8).border(1).border_color(t.border + "55").bg(t.raised + "44")
+        el.child(v_flex().mx(12).my(16).px(14).py(18).gap(8).items_center().rounded(8).border(1).border_color(t.border).bg(t.raised)
           .child(h_flex().size(28).rounded(6).bg(t.raised).items_center().justify_center()
             .child(svg("mods/t3-agents/icons/bot.svg").size(15).text_color(t.muted)))
           .child(div().text_size(12).font_medium().text_color(t.muted).child("No active agents"))
