@@ -105,7 +105,7 @@ export function inboxRowView(view, t, model, actions, drag) {
     // and not yet seen), else how long ago it last changed. Sized as T3's: 16px mark, 4px gaps, and the
     // time in monospace children, one per part, so spacing and width don't hang on the interface font and
     // a monospace space (a full cell) doesn't open "1h 5m" wider than the 4px gaps.
-    const pill = (color, mark, label, time) => h_flex().id(`state-${a.address}`).h(20).gap(4).flex_none().items_center().font_medium().text_color(color)
+    const pill = (color, mark, label, time) => h_flex().id(`state-${a.address}`).h(20).px(5).gap(4).flex_none().rounded(4).bg(color + "18").items_center().font_medium().text_color(color)
       .child(mark).child(div().child(label))
       .when(Boolean(time), (el) => el.children(time.split(" ").map((part) => div().font_family(settings().font_family ?? "JetBrains Mono").child(part))));
     // It wakes where it was, so this carries the weight, as T3's; a click dismisses it, and it stays on hover.
@@ -126,7 +126,7 @@ export function inboxRowView(view, t, model, actions, drag) {
         ? pill(t.working, svg("mods/workspace-chrome/spinner.svg").size(16).flex_none().text_color(t.working).spin(900),
           "Working", started(a) > 0 && started(a) < Infinity ? took(started(a), now) : null)
         : st === "blocked"
-          ? pill(t.blocked, div().size(16).flex_none().rounded(4).bg(t.blocked + "26").text_size(11).font_bold().flex().items_center().justify_center().child("!"), "Needs you")
+          ? pill(t.blocked, svg("mods/t3-inbox/icons/alert-circle.svg").size(14).flex_none().text_color(t.blocked), "Needs you")
           : wokeMark
             || (st === "done"
               ? pill(t.ansi2, svg("mods/t3-inbox/icons/circle-check.svg").size(16).flex_none().text_color(t.ansi2), "Done")
@@ -158,9 +158,11 @@ export function inboxRowView(view, t, model, actions, drag) {
         .child("Settle")
         .when(offer, (el) => stop(view, t, id, el, 6)), { action: on ? settleKey() : undefined, delay }))));
     // T3's card row: 10 and 8 in, rounded-md, its lines 20, 20 and 16 tall, 4 and 2 apart: 78 with all three.
-    const base = v_flex().id(`${ghost ? "ghost-" : ""}card-${a.address}`).px(10).py(8).flex_none().rounded(6)
-      // A working row recedes until it's hovered or in view, as T3's.
-      .when(!ghost, (el) => el.opacity(running(a) && !woke(a) && !on && !over ? 0.7 : 1).transition("opacity", MOTION));
+    const cardBar = on ? t.accent : st === "blocked" ? t.blocked : running(a) ? t.working : null;
+    const base = v_flex().id(`${ghost ? "ghost-" : ""}card-${a.address}`).relative().px(10).py(8).flex_none().rounded(6)
+      .when(!ghost, (el) => el.opacity(1))
+      .when(!on && st === "blocked", (el) => el.bg(t.blocked + "0d"))
+      .when(Boolean(cardBar), (el) => el.child(div().absolute().left(2).top(8).bottom(8).w(2).rounded(1).bg(cardBar)));
     return (ghost ? base : row(base, a, details).role("button").accessibility_label(title(a)).on_hover(hover(a)).when(Boolean(menuMod), context(a))
       .on_click(open(a)).on_size_change((size) => { view.cardH = size.height / zoom; }))
       .when(on, (el) => el.bg(t.selected))

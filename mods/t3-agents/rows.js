@@ -101,12 +101,19 @@ function agentSubRow(view, t, s, shown, card, ghost) {
 
 export function agentStatus(view, t, a, note = "", id) {
   const color = t[a.status] ?? t.dim;
+  const doneColor = t.ansi2 ?? t.done ?? color;
   let mark;
-  if (a.status === "working") mark = svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900);
-  else if (a.status === "blocked") mark = div().size(12).flex_none().rounded(3).bg(t.blocked + "26").text_size(10).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!");
-  // Idle: a ring; done: a dot. Every mark is 12 wide, as T3's one-line row, flush right, so the column ends where Spaces' git info does.
-  else if (a.status === "idle") mark = div().size(6).mx(3).flex_none().rounded_full().border(1.5).border_color(t.idle ?? t.dim);
-  else mark = div().size(6).mx(3).flex_none().rounded_full().bg(a.status === "done" ? color : t.dim + "00");
+  if (a.status === "working") {
+    mark = svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900);
+  } else if (a.status === "blocked") {
+    mark = svg("mods/t3-agents/icons/alert-circle.svg").size(12).flex_none().text_color(t.blocked);
+  } else if (a.status === "done") {
+    mark = svg("mods/t3-agents/icons/circle-check.svg").size(12).flex_none().text_color(doneColor);
+  } else if (a.status === "idle") {
+    mark = svg("mods/t3-agents/icons/circle-dot.svg").size(12).flex_none().text_color(t.idle ?? t.dim);
+  } else {
+    mark = div().size(6).mx(3).flex_none().rounded_full().bg(t.dim + "00");
+  }
   const label = (SECTION[RANK[a.status]] ?? "Unknown") + note;
   const el = h_flex().size(20).flex_none().items_center().justify_end()
     .role("status").accessibility_label(label).child(mark);
@@ -204,6 +211,7 @@ export function agentEntries(view, t, { list, all, shown, ps, now, viewing, byPr
     const lead = (subs.length ? button(t, ghost ? undefined : iconId, { size: "tiny", surface: "row", label: view.isFolded(a.address) ? "Expand sub-agents" : "Collapse sub-agents", hot: !ghost && view.hot === iconId })
       : h_flex().size(16).flex_none().items_center().justify_center()).when(Boolean(pic), el => el.child(pic));
     const time = div().flex_none().text_size(12).text_color(t.dim).opacity(offer ? 0 : 1).transition("opacity", MOTION).when(Boolean(when), el => el.child(duration(now - when)));
+    const rowBar = on ? t.accent : st === "blocked" ? t.blocked : st === "working" ? t.working : null;
     const base = h_flex()
       .relative()
       .w_full().min_w(0)
@@ -213,8 +221,9 @@ export function agentEntries(view, t, { list, all, shown, ps, now, viewing, byPr
       .rounded(6)
       .items_center()
       .gap(10)
-      .opacity(st === "working" && !on && !offer ? 0.7 : 1)
       .when(on, (el) => el.bg(t.selected))
+      .when(!on && st === "blocked", (el) => el.bg(t.blocked + "0d"))
+      .when(Boolean(rowBar), (el) => el.child(div().absolute().left(2).top(8).bottom(8).w(2).rounded(1).bg(rowBar)))
       .child(ghost ? lead : lead.id(iconId)
         .when(subs.length > 0, el => el.on_click((_e, cx) => {
           cx.stop_propagation();
@@ -261,19 +270,28 @@ export function agentEntries(view, t, { list, all, shown, ps, now, viewing, byPr
     // 12px, as T3's section chevron; -2: its middle 22px from the sidebar's edge, under the headings' last button.
     return div().flex_none().mr(-2).text_color(color).child(foldArrow("t3-agents", ghost ? null : `chevron-${g.id}`, open, 12, color));
   };
-  // Drawn as Inbox's shelves, T3's: a dim label, then at the far edge the count and the chevron, an indicator that lights with its row.
+  // Drawn as Inbox's shelves, T3's: a semantic icon + label, then at the far edge the count badge and the chevron.
+  const shelfIcon = (id) => {
+    if (id === "pinned") return svg("mods/t3-agents/icons/pin.svg").size(12).flex_none().text_color(t.accent);
+    if (id === "sec-4") return svg("mods/t3-agents/icons/alert-circle.svg").size(12).flex_none().text_color(t.blocked);
+    if (id === "sec-3") return svg("mods/t3-agents/icons/circle-check.svg").size(12).flex_none().text_color(t.ansi2 ?? t.done ?? t.muted);
+    if (id === "sec-2") return svg("mods/t3-agents/icons/activity.svg").size(12).flex_none().text_color(t.working);
+    return svg("mods/t3-agents/icons/circle-dot.svg").size(12).flex_none().text_color(t.dim);
+  };
+  const shelfColor = (id) => id === "sec-4" ? t.blocked : id === "sec-2" ? t.working : id === "sec-3" ? (t.ansi2 ?? t.done ?? t.dim) : t.dim;
   const shelf = (g, open, ghost) => {
     const base = h_flex()
       .mx(2).px(8)
       .h(HEAD)
       .flex_none()
-      .gap(8)
+      .gap(6)
       .items_center()
       .text_size(12)
       .font_medium()
-      .text_color(t.dim)
+      .text_color(shelfColor(g.id))
+      .child(shelfIcon(g.id))
       .child(div().flex_1().min_w(0).truncate().child(g.label))
-      .child(div().flex_none().font_normal().child(String(g.members.length)))
+      .child(div().flex_none().px(5).py(1).rounded(4).bg(t.raised).text_size(11).font_medium().text_color(t.muted).child(String(g.members.length)))
       .child(chevron(g, open, ghost));
     if (ghost) return base;
     return stop(view, t, g.id, hoverKept(view, "overGroup", g.id, base

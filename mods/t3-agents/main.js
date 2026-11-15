@@ -250,6 +250,12 @@ export default class Agents extends View {
       if (this.detailsOut === gone) this.detailsOut = null;
     }
     const rows = entries.map((e) => flying(this, e.key, e.el));
+    let blockedCount = 0, workingCount = 0;
+    for (const a of list) {
+      const s = data.shownStatus(a);
+      if (s === "blocked") blockedCount++;
+      else if (s === "working") workingCount++;
+    }
 
     return focusRoot(this, v_flex()
       .id("t3-agents-root")
@@ -267,7 +273,15 @@ export default class Agents extends View {
             .flex_none()
             .items_center()
             .justify_between()
-            .child(div().text_size(12).font_medium().text_color(t.muted).child("Agents"))
+            .child(h_flex().gap(6).items_center().text_color(t.muted)
+              .child(svg("mods/t3-agents/icons/bot.svg").size(14).flex_none().text_color(t.muted))
+              .child(div().text_size(12).font_medium().text_color(t.muted).child("Agents"))
+              .when(blockedCount > 0, (el) => el.child(h_flex().h(16).px(4).gap(3).rounded(4).bg(t.blocked + "22").items_center().text_size(10).font_semibold().text_color(t.blocked)
+                .child(svg("mods/t3-agents/icons/alert-circle.svg").size(10).flex_none().text_color(t.blocked))
+                .child(String(blockedCount))))
+              .when(workingCount > 0, (el) => el.child(h_flex().h(16).px(4).gap(3).rounded(4).bg(t.working + "1a").items_center().text_size(10).font_semibold().text_color(t.working)
+                .child(svg("mods/workspace-chrome/spinner.svg").size(10).flex_none().text_color(t.working).spin(900))
+                .child(String(workingCount)))))
             .child(
               tip(this, t, "ag-sort", `Sort agents: ${sort.label}`, stop(this, t, "ag-sort", button(t, "ag-sort", { icon: `mods/t3-agents/icons/${sort.icon}.svg`, label: "Sort agents", size: "sm", hot: this.hot === "ag-sort" })
                 .on_hover(glow(this, "ag-sort"))

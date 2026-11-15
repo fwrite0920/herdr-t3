@@ -6,7 +6,7 @@
 import { View, div, svg } from "gpui-kit";
 import { foldArrow, planMotion, flying, leavingRows } from "./motion.js";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, machines, panes, focused, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, props, layout, nextCommand } from "herdr";
+import { spaces, machines, panes, agents, focused, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, props, layout, nextCommand } from "herdr";
 import { projectMark, tint } from "./project.js";
 import { repoFacts } from "./repos.js";
 import { dragGone, glow, hoverKept, tip, tipMark, POINTER_WATCH, pointerMoved } from "./tip.js";
@@ -378,6 +378,18 @@ export default class Spaces extends View {
     // end, and folded, the count; dim, brightening when hovered.
     const foldId = `space-fold-${w.id}`;
     const rowId = `space-${w.id}`;
+    const spaceAgents = agents().filter((a) => a.space === w.id);
+    const spaceStatus = spaceAgents.some((a) => a.status === "blocked") ? "blocked"
+      : spaceAgents.some((a) => a.status === "working") ? "working"
+      : spaceAgents.some((a) => a.status === "done") ? "done"
+      : null;
+    const statusDot = spaceStatus === "working"
+      ? svg("mods/workspace-chrome/spinner.svg").size(11).flex_none().text_color(t.working).spin(900)
+      : spaceStatus === "blocked"
+        ? div().size(6).flex_none().rounded_full().bg(t.blocked)
+        : spaceStatus === "done"
+          ? div().size(6).flex_none().rounded_full().bg(t.ansi2 ?? t.done ?? t.accent)
+          : null;
     const el = v_flex()
       .relative()
       .px(10)
@@ -399,8 +411,10 @@ export default class Spaces extends View {
           .when(!tree, el => el.child(projectMark(w, 16, t, ps)))
           .child(div().min_w(0).max_w(150).truncate().font_medium().text_color(t.foreground + "e6").child(w.name))
           .child(g ? this.gitTail(g, tree, w.name, t, w.id, ghost) : div().flex_1())
+          .when(Boolean(statusDot), (el) => el.child(statusDot))
           .when(kids > 0, el => el.child(this.foldButton(t, foldId, g.repo, hiding, ghost))),
-      );
+      )
+      .when(on, (el) => el.child(div().absolute().left(2).top(7).bottom(7).w(2).rounded(1).bg(t.accent)));
     if (ghost) return el;
     return stop(this, t, rowId, el
       .id(rowId)
@@ -559,7 +573,9 @@ export default class Spaces extends View {
       }))
       // As tall as Inbox's top row, T3's.
       .child(h_flex().id("spaces-heading").h(32).flex_none().pl(18).pr(8).items_center().justify_between().text_size(12).font_medium().text_color(t.dim)
-        .child(div().text_color(t.muted).child("Spaces"))
+        .child(h_flex().gap(6).items_center().text_color(t.muted)
+          .child(svg("mods/t3-spaces/icons/folder-git-2.svg").size(14).flex_none().text_color(t.muted))
+          .child(div().text_color(t.muted).child("Spaces")))
         // The same two as Inbox's top row, so switching modes moves nothing.
         .child(h_flex().flex_none().items_center()
           .child(tool("space-new", "New space", "folder-plus", (_e, cx) => {
