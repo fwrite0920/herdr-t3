@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { spaces, panes, focused, terminals, agents, run, exec, shared, setShared, home, notify, theme, layout } from "herdr";
+import { spaces, panes, focused, terminals, agents, run, exec, shared, setShared, home, notify, theme, layout, window } from "herdr";
 
 const TAGS = "t3.sessions.tags";
 const MOD = "mods/t3-sessions";
@@ -44,6 +44,7 @@ function groupSessions(list) {
 }
 
 function isSessionsActive() {
+  if (typeof window === "function" && window()?.active === false) return false;
   const root = typeof layout === "function" ? layout() : null;
   if (!root) return true;
   const find = (node, id) => (node?.id === id ? node : (node?.children ?? []).reduce((hit, c) => hit ?? find(c, id), null));
@@ -146,12 +147,10 @@ const extNames = [];
 const sDirs = [h + "/.gemini/antigravity-cli/skills", h + "/.gemini/antigravity-cli/builtin/skills", h + "/.gemini/config/plugins", h + "/.omp/agent/skills", h + "/.omp/agent/extensions", h + "/.pi/agent/skills", h + "/.pi/agent/extensions", root + "/.agents/skills", root + "/.codex/skills"];
 for (const sd of sDirs) {
   try {
-    if (fs.existsSync(sd)) {
-      for (const it of fs.readdirSync(sd)) {
-        if (!it.startsWith(".")) {
-          const clean = it.replace(/\.(ts|js)$/, "");
-          if (!extNames.includes(clean)) extNames.push(clean);
-        }
+    for (const it of fs.readdirSync(sd)) {
+      if (!it.startsWith(".")) {
+        const clean = it.replace(/\.(ts|js)$/, "");
+        if (!extNames.includes(clean)) extNames.push(clean);
       }
     }
   } catch {}
@@ -160,7 +159,7 @@ extNames.sort();
 
 let sysChars = (builtinNames.length + extNames.length) * 180, toolsChars = 0, msgChars = 0, resChars = 0;
 const turnNum = termData?.turn || 1;
-const cwd = normPath(termData?.foreground?.cwd) || normPath(termData?.cwd) || root || "D:/projects/herdr-t3";
+const cwd = normPath(termData?.foreground?.cwd) || normPath(termData?.cwd) || root || h;
 
 let gitBranch = "no repo", gitClean = true, gitChanges = "—";
 try {
@@ -337,9 +336,20 @@ if (agentType === "antigravity") {
     } catch {}
   }
 } else if (agentType === "codex") {
-  const wslCodex = "//wsl.localhost/Ubuntu-24.04/home/fwrite/.codex";
   const locCodex = h + "/.codex";
-  const cDir = fs.existsSync(wslCodex) ? wslCodex : locCodex;
+  let cDir = locCodex;
+  if (isWsl && process.platform === "win32") {
+    try {
+      for (const distro of fs.readdirSync("//wsl.localhost")) {
+        const homeBase = "//wsl.localhost/" + distro + "/home";
+        for (const user of fs.readdirSync(homeBase)) {
+          const cand = homeBase + "/" + user + "/.codex";
+          if (fs.existsSync(cand)) { cDir = cand; break; }
+        }
+        if (cDir !== locCodex) break;
+      }
+    } catch {}
+  }
   const cfgP = cDir + "/config.toml";
   try {
     if (fs.existsSync(cfgP)) {
@@ -574,6 +584,19 @@ function norm(p) { return p ? p.replace(/\\\\/g, '/') : ''; }
 
 const h = (process.argv[1] || os.homedir()).replace(/\\\\/g, '/');
 
+function readHead(fp, size, maxBytes = 16384) {
+  const len = Math.min(size, maxBytes);
+  if (len <= 0) return '';
+  const fd = fs.openSync(fp, 'r');
+  try {
+    const buf = Buffer.allocUnsafe(len);
+    const n = fs.readSync(fd, buf, 0, len, 0);
+    return buf.toString('utf8', 0, n);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 function scanPi(h) {
   const out = [];
   const base = h + '/.pi/agent/sessions';
@@ -588,7 +611,7 @@ function scanPi(h) {
           const fp = dir + '/' + file;
           try {
             const stat = fs.statSync(fp);
-            const head = fs.readFileSync(fp, 'utf8').slice(0, 16384);
+            const head = readHead(fp, stat.size);
             const first = head.split(NL)[0];
             const o = JSON.parse(first || '{}');
             const ident = o.id || file.replace(/\\.jsonl$/, '').split('_').pop() || file;
@@ -629,7 +652,7 @@ function scanOmp(h) {
           const fp = dir + '/' + file;
           try {
             const stat = fs.statSync(fp);
-            const head = fs.readFileSync(fp, 'utf8').slice(0, 16384);
+            const head = readHead(fp, stat.size);
             let title = '', ident = file.replace(/\\.jsonl$/, '').split('_').pop() || file, cwd = '';
             for (const line of head.split(NL)) {
               if (!line.trim()) continue;
@@ -666,7 +689,7 @@ function scanClaude(h) {
           const fp = dir + '/' + file;
           try {
             const stat = fs.statSync(fp);
-            const head = fs.readFileSync(fp, 'utf8').slice(0, 16384);
+            const head = readHead(fp, stat.size);
             const first = head.split(NL)[0];
             const o = JSON.parse(first || '{}');
             const ident = file.replace(/\\.jsonl$/, '');
@@ -749,7 +772,7 @@ function scanAgy(h) {
   return out;
 }
 
-function scanCodexDirs(base, prefix = '') {
+function scanCodexDirs(base, prefix = '', wslDistro = '') {
   const out = [];
   if (!fs.existsSync(base)) return out;
   try {
@@ -761,11 +784,7 @@ function scanCodexDirs(base, prefix = '') {
         if (stat.isDirectory()) walk(full, depth + 1);
         else if (item.endsWith('.jsonl')) {
           try {
-            const fd = fs.openSync(full, 'r');
-            const buf = Buffer.alloc(Math.min(stat.size, 16384));
-            fs.readSync(fd, buf, 0, buf.length, 0);
-            fs.closeSync(fd);
-            const head = buf.toString('utf8');
+            const head = readHead(full, stat.size);
             let title = '', cwd = '';
             for (const line of head.split(NL)) {
               try {
@@ -776,7 +795,7 @@ function scanCodexDirs(base, prefix = '') {
               } catch {}
             }
             const id = item.replace(/\\.jsonl$/, '').split('-').pop();
-            out.push({ agent: 'codex', id: prefix ? prefix + '/' + id : id, file: item, cwd: norm(cwd), mtime: stat.mtimeMs, title: (title.slice(0, 200) || 'Codex Session') });
+            out.push({ agent: 'codex', id: prefix ? prefix + '/' + id : id, file: item, cwd: norm(cwd), mtime: stat.mtimeMs, title: (title.slice(0, 200) || 'Codex Session'), ...(wslDistro ? { wslDistro } : {}) });
           } catch {}
         }
       }
@@ -786,7 +805,19 @@ function scanCodexDirs(base, prefix = '') {
   return out;
 }
 
-const wslCodex = scanCodexDirs('//wsl.localhost/Ubuntu-24.04/home/fwrite/.codex/sessions', 'wsl');
+const wslCodex = [];
+if (process.platform === 'win32') {
+  try {
+    for (const distro of fs.readdirSync('//wsl.localhost')) {
+      const homeBase = '//wsl.localhost/' + distro + '/home';
+      try {
+        for (const user of fs.readdirSync(homeBase)) {
+          wslCodex.push(...scanCodexDirs(homeBase + '/' + user + '/.codex/sessions', 'wsl', distro));
+        }
+      } catch {}
+    }
+  } catch {}
+}
 const localCodex = scanCodexDirs(h + '/.codex/sessions');
 
 const list = [...scanPi(h), ...scanOmp(h), ...scanClaude(h), ...scanAgy(h), ...wslCodex, ...localCodex];
@@ -1015,7 +1046,7 @@ export default class Sessions extends View {
     let folder = session.cwd || home();
     if (session.agent === "codex" && String(session.id).startsWith("wsl/")) {
       const cleanId = String(session.id).replace(/^wsl\//, "");
-      argv = ["wsl", "-d", "Ubuntu-24.04", ...(session.cwd ? ["--cd", session.cwd] : []), "codex", "resume", cleanId];
+      argv = ["wsl", ...(session.wslDistro ? ["-d", session.wslDistro] : []), ...(session.cwd ? ["--cd", session.cwd] : []), "codex", "resume", cleanId];
       folder = undefined;
     } else if (typeof agent.argv === "function") {
       argv = agent.argv(session.id, session.file);
@@ -1481,9 +1512,6 @@ export default class Sessions extends View {
   }
 
   renderHistory(t, short, root) {
-    const list = this.visible(root);
-    const groups = groupSessions(list);
-
     // Calculate agent category counts based on current project scope & search query
     const raw = this.filter.trim();
     const wanted = [...raw.matchAll(/#([^\s#]+)/g)].map((m) => m[1].toLowerCase());
@@ -1496,6 +1524,10 @@ export default class Sessions extends View {
       if (!q) return true;
       return `${s.title} ${own.join(" ")} ${s.cwd}`.toLowerCase().includes(q);
     });
+    const list = this.historyAgentFilter === "all"
+      ? scopedList
+      : scopedList.filter((s) => s.agent === this.historyAgentFilter);
+    const groups = groupSessions(list);
 
     const counts = { all: scopedList.length, [AGY]: 0, [CDX]: 0, [CC]: 0, [PI]: 0, [OMP]: 0 };
     for (const s of scopedList) {

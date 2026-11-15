@@ -1,8 +1,20 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, home, window } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, home, window, layout } from "herdr";
 
 const MOD = "mods/t3-changes";
+
+function isChangesActive() {
+  if (typeof window === "function" && window()?.active === false) return false;
+  const root = typeof layout === "function" ? layout() : null;
+  if (!root) return true;
+  const find = (node, id) => (node?.id === id ? node : (node?.children ?? []).reduce((hit, c) => hit ?? find(c, id), null));
+  const panel = find(root, "panel");
+  if (panel && panel.hidden) return false;
+  const body = find(root, "panel-body");
+  if (body && body.active && body.active !== "changes") return false;
+  return true;
+}
 
 const norm = (p) => (p ? p.replace(/\\/g, "/").replace(/\/+$/, "") : "");
 
@@ -58,7 +70,7 @@ export default class Changes extends View {
     this.input.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
     this.input.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
     this.refresh(cx);
-    cx.timer.every(10000, (cx) => this.refresh(cx));
+    cx.timer.every(10000, (cx) => { if (isChangesActive()) this.refresh(cx); });
   }
 
   watch(root, cx) {
@@ -97,21 +109,26 @@ export default class Changes extends View {
     this.loading = true;
     cx.spawn(async (cx) => {
       try {
-        const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on }).catch(() => null);
-        if (key() !== context) return;
-        if (!top || top.code !== 0) {
-          this.root = null;
-          this.files = [];
-          this.setLines([]);
-          this.open = null;
-          this.error = "Not a git repository";
-          return;
+        let root = this.root;
+        if (!root) {
+          const top = await exec("git", ["rev-parse", "--show-toplevel"], { cwd, on }).catch(() => null);
+          if (key() !== context) return;
+          if (!top || top.code !== 0) {
+            this.root = null;
+            this.files = [];
+            this.setLines([]);
+            this.open = null;
+            this.error = "Not a git repository";
+            return;
+          }
+          root = top.stdout.trim().replace(/\\/g, "/");
         }
-        const root = top.stdout.trim().replace(/\\/g, "/");
         const git = (args) => exec("git", [...READ, ...args], { cwd: root, on });
-        const status = await git(["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"]);
+        const [status, head] = await Promise.all([
+          git(["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all"]),
+          git(["rev-parse", "--verify", "HEAD"]),
+        ]);
         if (status.code !== 0) throw new Error(status.stderr);
-        const head = await git(["rev-parse", "--verify", "HEAD"]);
         const stats = {};
         const results = head.code === 0
           ? [await git(["diff", "HEAD", "--numstat", "-z", "--no-renames"])]

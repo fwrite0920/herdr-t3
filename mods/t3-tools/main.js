@@ -1,8 +1,20 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { spaces, panes, focused, run, exec, home, notify, theme, readTextFile } from "herdr";
+import { spaces, panes, focused, run, exec, home, notify, theme, readTextFile, layout, window } from "herdr";
 
 const MOD = "mods/t3-tools";
+
+function isToolsActive() {
+  if (typeof window === "function" && window()?.active === false) return false;
+  const root = typeof layout === "function" ? layout() : null;
+  if (!root) return true;
+  const find = (node, id) => (node?.id === id ? node : (node?.children ?? []).reduce((hit, c) => hit ?? find(c, id), null));
+  const panel = find(root, "panel");
+  if (panel && panel.hidden) return false;
+  const body = find(root, "panel-body");
+  if (body && body.active && body.active !== "tools") return false;
+  return true;
+}
 
 const norm = (p) => (p ? p.replace(/\\/g, "/").replace(/\/+$/, "") : "");
 
@@ -180,9 +192,10 @@ export default class Tools extends View {
       cx.notify();
     });
     this.refresh(cx);
-    cx.timer.every(30000, (cx) => this.refresh(cx));
+    cx.timer.every(30000, (cx) => { if (isToolsActive()) this.refresh(cx); });
     this.watch = null;
     cx.timer.every(1000, (cx) => {
+      if (!isToolsActive()) return;
       const { cwd } = currentPlace();
       if (cwd !== this.watch) {
         this.watch = cwd;

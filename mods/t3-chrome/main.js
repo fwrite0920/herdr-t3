@@ -43,7 +43,7 @@ export default class WorkspaceChrome extends View {
       this.scanPorts(cx);
       cx.timer.every(6000, (cx) => this.scanPorts(cx));
     }
-    if (!props()?.footer && !props()?.part) {
+    if (!props()?.footer && !props()?.part && window()?.platform === "macos") {
       this.alignLights(cx);
       // The brand copy stays alive with the sidebar hidden; no redraw is needed until a zoom actually changes the file.
       cx.timer.every(250, cx => this.alignLights(cx));
@@ -55,6 +55,7 @@ export default class WorkspaceChrome extends View {
       if (this.ports?.length) { this.ports = []; cx.notify(); }
       return;
     }
+    if (!panelState().open || window()?.active === false) return;
     cx.spawn(async (cx) => {
       try {
         const plat = window()?.platform;
