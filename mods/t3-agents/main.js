@@ -298,7 +298,11 @@ export default class Agents extends View {
             ),
       )
       .when(list.length === 0, (el) =>
-        el.child(div().px(16).py(24).text_center().text_size(12).line_height("16px").text_color(t.dim).child("No agent status yet. Agents show up here when they report their status. Older versions and agents inside tmux may not.")),
+        el.child(v_flex().mx(12).my(16).px(14).py(18).gap(8).items_center().rounded(8).border(1).border_color(t.border + "55").bg(t.raised + "44")
+          .child(h_flex().size(28).rounded(6).bg(t.raised).items_center().justify_center()
+            .child(svg("mods/t3-agents/icons/bot.svg").size(15).text_color(t.muted)))
+          .child(div().text_size(12).font_medium().text_color(t.muted).child("No active agents"))
+          .child(div().text_center().text_size(11).line_height("15px").text_color(t.dim).child("Agents appear here when they report status."))),
       )
       .child(v_flex().id("ag-list").flex_1().min_h(0).px(8).pb(8).overflow_y_scroll()
         // The rows in one box that scrolls, so the leaving ones placed in it scroll with them.

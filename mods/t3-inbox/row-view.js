@@ -160,8 +160,9 @@ export function inboxRowView(view, t, model, actions, drag) {
     // T3's card row: 10 and 8 in, rounded-md, its lines 20, 20 and 16 tall, 4 and 2 apart: 78 with all three.
     const cardBar = on ? t.accent : st === "blocked" ? t.blocked : running(a) ? t.working : null;
     const base = v_flex().id(`${ghost ? "ghost-" : ""}card-${a.address}`).relative().px(10).py(8).flex_none().rounded(6)
+      .border(1).border_color(on ? t.accent + "55" : st === "blocked" ? t.blocked + "33" : t.border + "55")
       .when(!ghost, (el) => el.opacity(1))
-      .when(!on && st === "blocked", (el) => el.bg(t.blocked + "0d"))
+      .when(!on && st === "blocked", (el) => el.bg(t.blocked + "10"))
       .when(Boolean(cardBar), (el) => el.child(div().absolute().left(2).top(8).bottom(8).w(2).rounded(1).bg(cardBar)));
     return (ghost ? base : row(base, a, details).role("button").accessibility_label(title(a)).on_hover(hover(a)).when(Boolean(menuMod), context(a))
       .on_click(open(a)).on_size_change((size) => { view.cardH = size.height / zoom; }))
@@ -178,7 +179,8 @@ export function inboxRowView(view, t, model, actions, drag) {
           .text_color(leads || over || swept(a) ? t.foreground : t.muted).child(title(a)))
         // Marks go on the third line when there is one, as in T3, so the title keeps its whole line.
         .when(Boolean(marks) && !meta, (el) => el.child(marks)))
-      .when(Boolean(meta), (el) => el.child(h_flex().h(16).mt(2).gap(6).items_center().text_size(12).text_color(t.dim)
+      .when(Boolean(meta), (el) => el.child(h_flex().h(16).mt(2).gap(4).items_center().text_size(12).text_color(t.dim)
+        .child(svg("mods/t3-inbox/icons/git-branch.svg").size(12).flex_none().text_color(t.dim))
         // T3's MiddleTruncate: a branch's start and end tell it apart.
         .child(div().flex_1().min_w(0).overflow_hidden().whitespace_nowrap().text_ellipsis_middle().child(meta))
         .when(Boolean(marks), (m) => m.child(marks))))
