@@ -1540,39 +1540,29 @@ export default class Sessions extends View {
       .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
         .child(h_flex().w_full().justify_between().items_center()
           .child(this.sectionHead("ACTIVITY", "#34d399", "mods/t3-sessions/icons/terminal.svg", t))
-          .child(h_flex().gap(8).items_center().text_size(10.5)
+          .child(h_flex().gap(6).items_center().text_size(10)
             .when((tel.readFilesCount || 0) > 0 || (tel.editedFilesCount || 0) > 0, (el) => el.child(
-              div().text_color(t.dim).child(`读 ${tel.readFilesCount || 0} · 改 ${tel.editedFilesCount || 0}`)))
-            .child(div().text_color(t.dim).child(`${tel.usedToolsCount || 0} tools`))
-            .child(div().font_bold().text_color("#34d399").child(`${tel.toolsOk || 0} ok`))))
-        .children((tel.recentTools || []).map((tool, idx) =>
-          v_flex().id(`tool-${idx}`).w_full().gap(2).py(3).px(5).rounded(4).bg(t.background).border(1).border_color(t.border)
-            .when(Boolean(tool.file || tool.detail), (el) => el.cursor_pointer().hover((s) => s.border_color(t.accent))
-              .on_click((_e, cx) => {
-                if (tool.file) {
-                  const base = norm(activeCwd || root);
-                  let rel = norm(tool.file);
-                  if (base && rel.toLowerCase().startsWith(base.toLowerCase() + "/")) rel = rel.slice(base.length + 1);
-                  run("layout.select", { stack: "panel-body", child: "files" });
-                  run(`t3-files.open:${rel}`);
-                } else if (tool.detail) {
-                  cx.write_to_clipboard(tool.detail);
-                  notify({ title: "已复制", body: tool.detail, level: "info" });
-                }
-              }))
-            .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
-              .child(h_flex().gap(5).items_center().min_w(0).flex_1()
-                .child(div().flex_none().text_color(tool.status === "ok" ? "#34d399" : "#fb923c").child(tool.status === "ok" ? "✓" : "▶"))
-                .child(div().font_bold().text_color(t.foreground).truncate().child(tool.name)))
+              div().px(5).py(1).rounded(3).bg(t.background).text_color(t.muted).child(`读 ${tel.readFilesCount || 0} · 改 ${tel.editedFilesCount || 0}`)))
+            .child(div().px(5).py(1).rounded(3).bg(t.background).text_color(t.muted).child(`${tel.usedToolsCount || 0} tools`))
+            .child(div().px(5).py(1).rounded(3).bg("#064e3b66").font_bold().text_color("#34d399").child(`${tel.toolsOk || 0} ok`))))
+        .children((tel.recentTools || []).map((tool, idx) => {
+          const isOk = tool.status === "ok";
+          const stColor = isOk ? "#34d399" : "#fb923c";
+          return v_flex().id(`tool-${idx}`).w_full().gap(2).py(5).px(7).rounded(5).bg(t.background).border(1).border_color(t.border)
+            .child(h_flex().w_full().justify_between().items_center().gap(6)
+              .child(h_flex().gap(6).items_center().min_w(0).flex_1()
+                .child(div().size(6).flex_none().rounded_full().bg(stColor))
+                .child(div().text_size(11).font_bold().text_color(t.foreground).truncate().child(tool.name)))
               .child(h_flex().gap(6).items_center().flex_none().font_family("JetBrains Mono").text_size(10)
                 .when(Boolean(tool.time), (el) => el.child(div().text_color(t.dim).child(tool.time)))
-                .child(div().text_color(tool.status === "ok" ? "#34d399" : "#fb923c").child(tool.ms || "—"))))
+                .child(div().px(4).py(0.5).rounded(3).bg(t.raised).text_color(stColor).child(tool.ms || "—"))))
             .when(Boolean(tool.detail), (el) => el.child(
-              div().pl(13).text_size(10).font_family("JetBrains Mono").text_color(t.dim).truncate().child(tool.detail)))))
+              div().pl(12).text_size(10).font_family("JetBrains Mono").text_color(t.dim).truncate().child(tool.detail)));
+        }))
         .when((tel.recentTools?.length || 0) === 0, (el) => el.child(
-          div().text_size(11).text_color(t.dim).child("等待工具调用 / 暂无活动记录")))
+          div().py(4).text_size(11).text_color(t.dim).child("等待工具调用 / 暂无活动记录")))
         .when(remainingTools > 0, (el) => el.child(
-          div().text_size(10.5).text_color(t.dim).child(`... 另有 ${remainingTools} 次工具执行`))));
+          div().pt(1).text_size(10).text_color(t.dim).child(`… 另有 ${remainingTools} 次历史工具调用`))));
   }
 
   renderHistory(t, short, root) {
