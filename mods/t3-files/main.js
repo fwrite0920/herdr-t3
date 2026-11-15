@@ -189,8 +189,16 @@ export default class Files extends View {
     if (!st.on && window()?.platform === "windows") {
       let entries = null;
       try {
-        const dirents = await fs.readdir(dir, { withFileTypes: true });
-        entries = sortEntries(dirents.filter((d) => d.name !== ".git").map((d) => ({ name: d.name, dir: d.isDirectory() })));
+        const items = await fs.readdir(dir);
+        const filtered = items.filter((d) => (typeof d === "string" ? d : d?.name) !== ".git").slice(0, 501);
+        entries = sortEntries(await Promise.all(filtered.map(async (d) => {
+          if (d && typeof d !== "string" && typeof d.isDirectory === "function") {
+            return { name: d.name, dir: d.isDirectory() };
+          }
+          const name = String(d);
+          const stInfo = await fs.stat(join(dir, name)).catch(() => null);
+          return { name, dir: Boolean(stInfo?.isDirectory?.()) };
+        })));
       } catch {
         const pr = await exec("powershell", ["-NoProfile", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); & { param($p) @(Get-ChildItem -LiteralPath $p -Force -ErrorAction Stop | Where-Object Name -ne '.git' | Select-Object -First 501 | ForEach-Object { @{ name=$_.Name; dir=($_.PSIsContainer -and (-not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $_.LinkType -or ($_.Target -and [IO.Directory]::Exists(([IO.Path]::Combine([IO.Path]::GetDirectoryName($_.FullName), $_.Target[0])))))) } }) | ConvertTo-Json -Compress } '" + dir.replace(/['‘’‚‛]/g, "$&$&") + "'"]).catch(() => null);
         if (pr?.code === 0) {
