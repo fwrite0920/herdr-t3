@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, Popup } from "gpui-base";
-import { spaces, panes, agents, terminals, run, openOverlay, focused, notify, theme, window, layout, settings, props, shared, setShared, nextCommand } from "herdr";
+import { spaces, panes, agents, terminals, run, openOverlay, focused, notify, theme, window, layout, settings, props, shared, setShared, nextCommand, exec } from "herdr";
 import { modStatus, namer, programOf } from "./name.js";
 import { notNews, ownStatus, stillSettled, subAgents, treeStatus } from "./tree.js";
 import { tip, glow } from "./tip.js";
@@ -115,6 +115,10 @@ export default class Tabs extends View {
     });
     if (part !== "keys") return;
     nav().arrive = (space) => { this.fitRow(window()); restorePanel(this, space); };
+    this.seenAgentStates = new Map();
+    if (window()?.platform === "windows") {
+      cx.timer.every(2000, () => this.checkBackgroundAlerts());
+    }
     // Only this copy answers: every other copy would open its own dialog.
     cx.spawn(async (cx) => {
       for (;;) {
@@ -333,6 +337,21 @@ export default class Tabs extends View {
     const back = moved ? focused() : null;
     if (back?.pane) run("pane.focus", { pane: back.pane });
     else if (back?.terminal) run("pane.focus", { terminal: back.terminal });
+  }
+
+  checkBackgroundAlerts() {
+    const list = agents();
+    const bg = window()?.active === false;
+    const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "''");
+    for (const a of list) {
+      const prev = this.seenAgentStates.get(a.address);
+      this.seenAgentStates.set(a.address, a.status);
+      if (!bg || prev !== "working" || (a.status !== "done" && a.status !== "blocked")) continue;
+      const title = a.status === "blocked" ? "Agent 需要你的确认" : "Agent 已完成";
+      const body = a.title || a.tab_name || a.program || a.address;
+      const ps = `[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null; [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] | Out-Null; $x = New-Object Windows.Data.Xml.Dom.XmlDocument; $x.LoadXml('<toast><visual><binding template="ToastText02"><text id="1">${esc(title)}</text><text id="2">${esc(body)}</text></binding></visual></toast>'); [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Herdr').Show([Windows.UI.Notifications.ToastNotification]::new($x))`;
+      exec("powershell", ["-NoProfile", "-WindowStyle", "Hidden", "-Command", ps]).catch(() => null);
+    }
   }
 
   render() {

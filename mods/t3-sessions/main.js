@@ -302,7 +302,7 @@ if (agentType === "antigravity") {
                   usedTools.add(tc.name);
                   const p = tc.args?.Path || tc.args?.path || tc.args?.file_path;
                   if (p) { if (tc.name === "read_file") readFiles.add(p); else if (tc.name === "write_file" || tc.name === "edit_file") editedFiles.add(p); }
-                  if (i >= lines.length - 30) turnTools.push({ name: tc.name, detail: toolDetail(tc.args), time: fmtTime(o.created_at), start: o.created_at, end: null, ms: "0s", status: "running" });
+                  if (i >= lines.length - 30) turnTools.push({ name: tc.name, detail: toolDetail(tc.args), file: p ? normPath(p) : "", time: fmtTime(o.created_at), start: o.created_at, end: null, ms: "0s", status: "running" });
                 }
               }
             }
@@ -457,14 +457,14 @@ if (agentType === "antigravity") {
             if (fn) {
               toolsChars += JSON.stringify(o.payload.item || o.payload).length;
               usedTools.add(fn);
-              let detail = "";
+              let detail = "", file = "";
               try {
                 const args = JSON.parse(o.payload.item?.arguments || o.payload.arguments || "{}");
                 detail = toolDetail(args);
                 const p = args.path || args.file_path || args.file;
-                if (p) { if (fn.includes("read") || fn.includes("view") || fn.includes("get")) readFiles.add(p); else editedFiles.add(p); }
+                if (p) { file = normPath(p); if (fn.includes("read") || fn.includes("view") || fn.includes("get")) readFiles.add(p); else editedFiles.add(p); }
               } catch {}
-              recentCmds.push({ name: fn, detail, time: fmtTime(ts), status: "ok", ms: "—" });
+              recentCmds.push({ name: fn, detail, file, time: fmtTime(ts), status: "ok", ms: "—" });
             }
           }
         } catch {}
@@ -606,6 +606,18 @@ const NL = String.fromCharCode(10);
 function norm(p) { return p ? p.replace(/\\\\/g, '/') : ''; }
 
 const h = (process.argv[1] || os.homedir()).replace(/\\\\/g, '/');
+const cacheFile = norm(os.tmpdir()) + '/herdr-t3-sessions-cache-v1.json';
+let cache = {};
+let cacheDirty = false;
+try { cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8')); } catch { cache = {}; }
+function cached(fp, mtime, build) {
+  const hit = cache[fp];
+  if (hit && hit.mtime === mtime && hit.item) return hit.item;
+  const item = build();
+  cache[fp] = { mtime, item };
+  cacheDirty = true;
+  return item;
+}
 
 function readHead(fp, size, maxBytes = 16384) {
   const len = Math.min(size, maxBytes);
@@ -634,25 +646,27 @@ function scanPi(h) {
           const fp = dir + '/' + file;
           try {
             const stat = fs.statSync(fp);
-            const head = readHead(fp, stat.size);
-            const first = head.split(NL)[0];
-            const o = JSON.parse(first || '{}');
-            const ident = o.id || file.replace(/\\.jsonl$/, '').split('_').pop() || file;
-            let title = '';
-            for (const line of head.split(NL)) {
-              if (!line.trim()) continue;
-              try {
-                const row = JSON.parse(line);
-                if (row.type === 'session_info' && row.name) { title = row.name; break; }
-                const msg = row.message || {};
-                if ((row.type === 'user' || msg.role === 'user') && !title) {
-                  const c = msg.content || row.content;
-                  title = typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => x?.text || '').join(' ') : '';
-                  if (title.trim()) break;
-                }
-              } catch {}
-            }
-            out.push({ agent: 'pi', id: ident, file, cwd: norm(o.cwd || ''), mtime: stat.mtimeMs, title: title.trim().slice(0, 200) });
+            out.push(cached(fp, stat.mtimeMs, () => {
+              const head = readHead(fp, stat.size);
+              const first = head.split(NL)[0];
+              const o = JSON.parse(first || '{}');
+              const ident = o.id || file.replace(/\\.jsonl$/, '').split('_').pop() || file;
+              let title = '';
+              for (const line of head.split(NL)) {
+                if (!line.trim()) continue;
+                try {
+                  const row = JSON.parse(line);
+                  if (row.type === 'session_info' && row.name) { title = row.name; break; }
+                  const msg = row.message || {};
+                  if ((row.type === 'user' || msg.role === 'user') && !title) {
+                    const c = msg.content || row.content;
+                    title = typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => x?.text || '').join(' ') : '';
+                    if (title.trim()) break;
+                  }
+                } catch {}
+              }
+              return { agent: 'pi', id: ident, file, cwd: norm(o.cwd || ''), mtime: stat.mtimeMs, title: title.trim().slice(0, 200) };
+            }));
           } catch {}
         }
       } catch {}
@@ -675,21 +689,23 @@ function scanOmp(h) {
           const fp = dir + '/' + file;
           try {
             const stat = fs.statSync(fp);
-            const head = readHead(fp, stat.size);
-            let title = '', ident = file.replace(/\\.jsonl$/, '').split('_').pop() || file, cwd = '';
-            for (const line of head.split(NL)) {
-              if (!line.trim()) continue;
-              try {
-                const row = JSON.parse(line);
-                if (row.type === 'title' && row.title) title = row.title;
-                if (row.type === 'session') {
-                  if (row.id) ident = row.id;
-                  if (row.cwd) cwd = norm(row.cwd);
-                }
-                if (title && cwd) break;
-              } catch {}
-            }
-            out.push({ agent: 'omp', id: ident, file, cwd, mtime: stat.mtimeMs, title: title.trim().slice(0, 200) || 'Omp Session' });
+            out.push(cached(fp, stat.mtimeMs, () => {
+              const head = readHead(fp, stat.size);
+              let title = '', ident = file.replace(/\\.jsonl$/, '').split('_').pop() || file, cwd = '';
+              for (const line of head.split(NL)) {
+                if (!line.trim()) continue;
+                try {
+                  const row = JSON.parse(line);
+                  if (row.type === 'title' && row.title) title = row.title;
+                  if (row.type === 'session') {
+                    if (row.id) ident = row.id;
+                    if (row.cwd) cwd = norm(row.cwd);
+                  }
+                  if (title && cwd) break;
+                } catch {}
+              }
+              return { agent: 'omp', id: ident, file, cwd, mtime: stat.mtimeMs, title: title.trim().slice(0, 200) || 'Omp Session' };
+            }));
           } catch {}
         }
       } catch {}
@@ -712,24 +728,26 @@ function scanClaude(h) {
           const fp = dir + '/' + file;
           try {
             const stat = fs.statSync(fp);
-            const head = readHead(fp, stat.size);
-            const first = head.split(NL)[0];
-            const o = JSON.parse(first || '{}');
-            const ident = file.replace(/\\.jsonl$/, '');
-            let title = '';
-            for (const line of head.split(NL)) {
-              if (!line.trim()) continue;
-              try {
-                const row = JSON.parse(line);
-                const msg = row.message || {};
-                if (row.type === 'user' || msg.role === 'user') {
-                  const c = msg.content || row.content;
-                  title = typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => x?.text || '').join(' ') : '';
-                  if (title.trim()) break;
-                }
-              } catch {}
-            }
-            out.push({ agent: 'cc', id: ident, file, cwd: norm(o.cwd || ''), mtime: stat.mtimeMs, title: title.trim().slice(0, 200) });
+            out.push(cached(fp, stat.mtimeMs, () => {
+              const head = readHead(fp, stat.size);
+              const first = head.split(NL)[0];
+              const o = JSON.parse(first || '{}');
+              const ident = file.replace(/\\.jsonl$/, '');
+              let title = '';
+              for (const line of head.split(NL)) {
+                if (!line.trim()) continue;
+                try {
+                  const row = JSON.parse(line);
+                  const msg = row.message || {};
+                  if (row.type === 'user' || msg.role === 'user') {
+                    const c = msg.content || row.content;
+                    title = typeof c === 'string' ? c : Array.isArray(c) ? c.map((x) => x?.text || '').join(' ') : '';
+                    if (title.trim()) break;
+                  }
+                } catch {}
+              }
+              return { agent: 'cc', id: ident, file, cwd: norm(o.cwd || ''), mtime: stat.mtimeMs, title: title.trim().slice(0, 200) };
+            }));
           } catch {}
         }
       } catch {}
@@ -844,6 +862,7 @@ if (process.platform === 'win32') {
 const localCodex = scanCodexDirs(h + '/.codex/sessions');
 
 const list = [...scanPi(h), ...scanOmp(h), ...scanClaude(h), ...scanAgy(h), ...wslCodex, ...localCodex];
+if (cacheDirty) { try { fs.writeFileSync(cacheFile, JSON.stringify(cache)); } catch {} }
 process.stdout.write(JSON.stringify(list));
 `;
 
@@ -1528,6 +1547,19 @@ export default class Sessions extends View {
             .child(div().font_bold().text_color("#34d399").child(`${tel.toolsOk || 0} ok`))))
         .children((tel.recentTools || []).map((tool, idx) =>
           v_flex().id(`tool-${idx}`).w_full().gap(2).py(3).px(5).rounded(4).bg(t.background).border(1).border_color(t.border)
+            .when(Boolean(tool.file || tool.detail), (el) => el.cursor_pointer().hover((s) => s.border_color(t.accent))
+              .on_click((_e, cx) => {
+                if (tool.file) {
+                  const base = norm(activeCwd || root);
+                  let rel = norm(tool.file);
+                  if (base && rel.toLowerCase().startsWith(base.toLowerCase() + "/")) rel = rel.slice(base.length + 1);
+                  run("layout.select", { stack: "panel-body", child: "files" });
+                  run(`t3-files.open:${rel}`);
+                } else if (tool.detail) {
+                  cx.write_to_clipboard(tool.detail);
+                  notify({ title: "已复制", body: tool.detail, level: "info" });
+                }
+              }))
             .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
               .child(h_flex().gap(5).items_center().min_w(0).flex_1()
                 .child(div().flex_none().text_color(tool.status === "ok" ? "#34d399" : "#fb923c").child(tool.status === "ok" ? "✓" : "▶"))

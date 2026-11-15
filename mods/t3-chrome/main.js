@@ -72,18 +72,37 @@ export default class WorkspaceChrome extends View {
           3000, 3001, 3002, 3003, 3004, 3005, 4000, 4173, 4200, 4321, 5000, 5001,
           5173, 5174, 5175, 5176, 8000, 8001, 8080, 8081, 8088, 8888, 9000, 9001
         ]);
-        const found = new Set();
+        const found = new Map();
         for (const line of out.split("\n")) {
           if (!line.includes("LISTEN")) continue;
           const m = line.match(/(?:127\.0\.0\.1|0\.0\.0\.0|\[::\]|:::?):(\d+)\s/);
           if (m) {
             const p = parseInt(m[1], 10);
             if (DEV_COMMON.has(p) || (p >= 3000 && p <= 3010) || (p >= 5170 && p <= 5180) || (p >= 8080 && p <= 8090)) {
-              found.add(p);
+              if (plat === "windows") {
+                const pid = line.trim().split(/\s+/).pop();
+                if (!found.has(p)) found.set(p, { pid, name: "" });
+              } else {
+                const name = line.trim().split(/\s+/)[0] || "";
+                if (!found.has(p)) found.set(p, { pid: "", name });
+              }
             }
           }
         }
-        const list = Array.from(found).sort((a, b) => a - b);
+        if (plat === "windows" && found.size) {
+          const tl = await exec("tasklist", ["/FO", "CSV", "/NH"]).catch(() => null);
+          if (tl?.stdout) {
+            const pidMap = new Map();
+            for (const row of tl.stdout.split(/\r?\n/)) {
+              const cols = row.match(/^"([^"]+)","(\d+)"/);
+              if (cols) pidMap.set(cols[2], cols[1].replace(/\.exe$/i, ""));
+            }
+            for (const info of found.values()) {
+              if (info.pid && pidMap.has(info.pid)) info.name = pidMap.get(info.pid);
+            }
+          }
+        }
+        const list = Array.from(found.entries()).sort((a, b) => a[0] - b[0]).map(([port, info]) => ({ port, name: info.name }));
         if (JSON.stringify(list) !== JSON.stringify(this.ports)) {
           this.ports = list;
           cx.notify();
@@ -231,9 +250,11 @@ export default class WorkspaceChrome extends View {
       .children(visiblePages.map(page))
       .child(div().flex_1())
       .when(Boolean(settings.livePorts !== false && this.ports?.length), (el) => el.child(
-        h_flex().gap(4).items_center().mr(4).children(this.ports.map((port) => {
+        h_flex().gap(4).items_center().mr(4).children(this.ports.map((entry) => {
+          const port = typeof entry === "object" ? entry.port : entry;
+          const proc = typeof entry === "object" ? entry.name : "";
           const key = `port-${port}`;
-          return tip(this, t, key, `Open http://localhost:${port} in browser`,
+          return tip(this, t, key, `${proc ? `${proc} · ` : ""}Open http://localhost:${port} in browser`,
             stop(this, t, key, own(h_flex().id(key).h(22).px(6).gap(4).items_center().rounded(6).bg(t.raised).cursor_pointer()
               .hover(st => st.bg(t.hover))
               .on_click((_e, cx) => {
