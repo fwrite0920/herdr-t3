@@ -115,6 +115,23 @@ function formatTok(n) {
   return String(Math.round(n));
 }
 
+function maskSecrets(s) {
+  return String(s ?? "")
+    .replace(/\b(sk-[a-zA-Z0-9_-]{8,}|ghp_[a-zA-Z0-9]{10,}|gho_[a-zA-Z0-9]{10,}|AIza[0-9A-Za-z_-]{16,})\b/g, (m) => m.slice(0, 6) + "…***")
+    .replace(/\bBearer\s+[A-Za-z0-9._-]{10,}/gi, "Bearer ***");
+}
+
+function fmtReset(iso) {
+  if (!iso) return "";
+  const diff = Math.max(0, new Date(iso).getTime() - Date.now());
+  if (!Number.isFinite(diff)) return "";
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h${String(mins % 60).padStart(2, "0")}m`;
+  return `${Math.floor(hrs / 24)}d${hrs % 24}h`;
+}
+
 // Universal Multi-Agent & Multi-Machine Telemetry Scanner (Antigravity, Codex, Omp, Pi, Shell, SSH)
 const SCAN_TELEMETRY = `
 const fs = require("fs"), os = require("os"), { execSync, execFileSync } = require("child_process");
@@ -938,8 +955,20 @@ export default class Sessions extends View {
       cx.notify();
     });
 
+    this.magpieQuotas = null;
+    this.magpieOpen = true;
+    this.magpieLoading = false;
+
     this.pollTelemetry(cx);
+    this.pollMagpie(cx);
     this.refreshHistory(cx);
+
+    // 60-second Magpie quota polling (only when active and in inspector view)
+    cx.timer.every(60000, (cx) => {
+      if (isSessionsActive() && this.viewMode === "inspector") {
+        this.pollMagpie(cx);
+      }
+    });
 
     // 1-second interval to tick the elapsed timer live (only when active and in inspector view)
     cx.timer.every(1000, (cx) => {
@@ -973,6 +1002,34 @@ export default class Sessions extends View {
         if (this.viewMode === "inspector") this.pollTelemetry(cx);
         else this.refreshHistory(cx);
         cx.notify();
+      }
+    });
+  }
+
+  pollMagpie(cx) {
+    if (this.magpieLoading) return;
+    this.magpieLoading = true;
+    cx.spawn(async (cx) => {
+      try {
+        const res = await exec("magpie", ["quota", "--json"]).catch(() => null);
+        const raw = res?.stdout || "";
+        const idx = raw.indexOf("[");
+        if (idx !== -1) {
+          const parsed = JSON.parse(raw.slice(idx));
+          if (Array.isArray(parsed)) {
+            this.magpieQuotas = parsed.map((p) => ({
+              provider: p.provider || "",
+              name: p.name || p.provider || "Provider",
+              kind: p.kind || "",
+              plan: p.plan || "",
+              windows: Array.isArray(p.windows) ? p.windows : [],
+              balance: p.balance ?? null
+            }));
+            cx.notify();
+          }
+        }
+      } catch {} finally {
+        this.magpieLoading = false;
       }
     });
   }
@@ -1469,6 +1526,46 @@ export default class Sessions extends View {
           .when(displayedTools.length === 0, (el3) => el3.child(
             div().p(8).text_size(11).text_color(t.dim).child("没有匹配的工具或技能"))))))
 
+      // 3.5 MAGPIE QUOTA (Shown when local Magpie CLI returns subscription/plan quotas)
+      .when(Array.isArray(this.magpieQuotas) && this.magpieQuotas.length > 0, (el) => el.child(
+        v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
+          .child(h_flex().w_full().justify_between().items_center()
+            .child(this.sectionHead("MAGPIE QUOTA", "#38bdf8", "mods/t3-sessions/icons/zap.svg", t))
+            .child(h_flex().gap(6).items_center()
+              .child(div().text_size(10.5).text_color(t.muted).cursor_pointer().hover((s) => s.text_color(t.foreground))
+                .on_click((_e, cx) => this.pollMagpie(cx))
+                .child(this.magpieLoading ? "…" : "⟳"))
+              .child(div().text_size(11).font_medium().text_color(t.muted).cursor_pointer()
+                .on_click((_e, cx) => { this.magpieOpen = !this.magpieOpen; cx.notify(); })
+                .child(this.magpieOpen ? "▾ 收起" : "▸ 展开"))))
+          .when(this.magpieOpen, (el2) => el2.child(v_flex().w_full().gap(6)
+            .children((this.magpieQuotas || []).map((q, qi) =>
+              v_flex().id(`magpie-q-${qi}`).w_full().gap(4).p(6).rounded(5).bg(t.background).border(1).border_color(t.border)
+                .child(h_flex().w_full().justify_between().items_center()
+                  .child(h_flex().gap(5).items_center()
+                    .child(div().text_size(11).font_bold().text_color(t.foreground).child(q.name))
+                    .when(Boolean(q.plan), (pEl) => pEl.child(div().px(4).py(0.5).rounded(3).bg(t.raised).text_size(9.5).text_color("#38bdf8").child(String(q.plan).toUpperCase()))))
+                  .when(q.balance != null, (bEl) => bEl.child(div().text_size(10.5).font_family("JetBrains Mono").text_color("#34d399").child(`$${Number(q.balance).toFixed(2)}`))))
+                .children((q.windows || []).map((w, wi) => {
+                  const rem = Math.max(0, Math.min(100, Number(w.remaining ?? (100 - (w.used ?? 0)))));
+                  const used = 100 - rem;
+                  const barColor = rem <= 10 ? "#ef4444" : rem <= 30 ? "#fb923c" : "#34d399";
+                  const resetStr = fmtReset(w.resetsAt);
+                  const calls = w.holds?.routed?.calls;
+                  const cost = w.holds?.routed?.cost ?? w.holds?.cost;
+                  return v_flex().id(`magpie-w-${qi}-${wi}`).w_full().gap(2)
+                    .child(h_flex().w_full().justify_between().items_center().text_size(10)
+                      .child(div().text_color(t.muted).child(w.name || "window"))
+                      .child(h_flex().gap(6).items_center().font_family("JetBrains Mono")
+                        .when(Boolean(calls || cost), (cEl) => cEl.child(div().text_color(t.dim).child(`${calls || 0} req · $${Number(cost || 0).toFixed(2)}`)))
+                        .when(Boolean(resetStr), (rEl) => rEl.child(div().text_color(t.dim).child(`↻ ${resetStr}`)))
+                        .child(div().font_bold().text_color(barColor).child(`${Math.round(rem)}%`))))
+                    .child(h_flex().w_full().h(4).rounded(2).overflow_hidden().bg(t.border)
+                      .when(rem > 0, (fEl) => fEl.child(div().h_full().bg(barColor).flex_grow(rem)))
+                      .when(used > 0, (uEl) => uEl.child(div().h_full().flex_grow(used))));
+                }))))
+          )))
+
       // 4. 2x2 QUICK STATS HUD (Updates per turn)
       .child(v_flex().w_full().gap(6)
         .child(h_flex().w_full().gap(6)
@@ -1502,7 +1599,11 @@ export default class Sessions extends View {
               .child(svg("mods/t3-sessions/icons/clock.svg").size(11).text_color("#c084fc").flex_none())
               .child(div().text_size(9.5).font_bold().text_color(t.muted).child("LATENCY & SPEED")))
             .child(div().text_size(13).font_bold().text_color("#c084fc").child(totalTok > 0 ? (tel.ttft || "1.0s") : "—"))
-            .child(div().text_size(10).text_color(t.dim).child(totalTok > 0 ? (tel.tokPerSec || "130 tok/s") : "—")))))
+            .child(div().text_size(10).text_color(t.dim).child(totalTok > 0 ? (tel.tokPerSec || "130 tok/s") : "—"))))
+        .when(pct >= 80, (el) => el.child(
+          h_flex().w_full().px(8).py(5).gap(6).items_center().rounded(5).bg(pct >= 90 ? "#7f1d1d4d" : "#78350f4d").border(1).border_color(pct >= 90 ? "#ef4444" : "#fb923c")
+            .child(div().text_size(10.5).font_bold().text_color(pct >= 90 ? "#ef4444" : "#fb923c").child(pct >= 90 ? "上下文紧迫" : "上下文预警"))
+            .child(div().flex_1().text_size(10).text_color(t.muted).truncate().child("建议执行 /compact 或开启新会话")))))
 
       // 5. TOKEN COMPOSITION & DYNAMIC BREAKDOWN
       .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
@@ -1624,6 +1725,24 @@ export default class Sessions extends View {
             })
             .child(svg(this.showAll ? "mods/t3-sessions/icons/server.svg" : "mods/t3-sessions/icons/folder.svg").size(11).text_color(this.showAll ? t.accent : t.muted).flex_none())
             .child(div().text_size(11).font_medium().text_color(this.showAll ? t.accent : t.foreground).child(this.showAll ? "全局" : (short(root) || "当前项目"))))
+          // Export CSV Button (Magpie-inspired masked usage export)
+          .child(div().id("btn-export-csv").h_full().px(7).flex_none().flex().items_center().rounded(5).bg(t.raised).border_1().border_color(t.border).text_size(10.5).font_medium().text_color(t.muted).cursor_pointer()
+            .hover((s) => s.text_color(t.foreground).bg(t.hover))
+            .on_click((_e, cx) => {
+              const csvEsc = (v) => `"${maskSecrets(v).replace(/"/g, '""')}"`;
+              const header = "agent,id,mtime,cwd,tags,title";
+              const rows = scopedList.map((s) => [
+                csvEsc(s.agent),
+                csvEsc(s.id),
+                csvEsc(s.mtime ? new Date(s.mtime).toISOString() : ""),
+                csvEsc(s.cwd || ""),
+                csvEsc(this.tagsOf(s).join(" ")),
+                csvEsc(s.title || "")
+              ].join(","));
+              cx.write_to_clipboard([header, ...rows].join("\n"));
+              notify({ title: "已导出会话 CSV 到剪贴板", body: `共 ${scopedList.length} 条记录（已自动脱敏）`, level: "success" });
+            })
+            .child("CSV"))
           // Refresh Button
           .child(div().id("btn-refresh-hist").h_full().px(7).flex_none().flex().items_center().rounded(5).bg(t.raised).border_1().border_color(t.border).text_size(11).text_color(t.muted).cursor_pointer()
             .hover((s) => s.text_color(t.foreground).bg(t.hover))
