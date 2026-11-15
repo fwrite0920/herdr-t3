@@ -181,7 +181,7 @@ export default class Files extends View {
     this.changed(st);
   }
 
-  async list(st, rel) {
+  async list(st, rel, cx = null) {
     const fresh = this.fresh(st, `list:${rel}`), dir = join(st.root, rel);
     if (!fresh()) return;
     const inIgnored = [rel, ...ancestors(rel)].some((p) => p && st.ignored.has(p));
@@ -205,20 +205,29 @@ export default class Files extends View {
       if (!fresh()) return;
       if (!entries) {
         if (rel) { st.entries.delete(rel); st.expanded.delete(rel); } else st.error = "This folder can't be listed.";
-      } else {
-        st.entries.set(rel, entries);
-        if (!rel) st.error = null;
-        if (st.git && !inIgnored && entries.length) {
-          const paths = entries.map((e) => (rel ? `${rel}/` : "") + e.name + (e.dir ? "/" : ""));
-          const igRes = await exec("git", ["check-ignore", "--", ...paths], { cwd: st.root }).catch(() => null);
-          if (!fresh()) return;
-          if (igRes?.stdout) {
-            const found = new Set(igRes.stdout.split(/\r?\n/).filter(Boolean).map((p) => p.replace(/[/\\]+$/, "")));
-            markIgnored(st.ignored, rel, entries, found);
-          }
-        }
+        this.changed(st);
+        if (cx) cx.notify();
+        return;
       }
+      st.entries.set(rel, entries);
+      if (!rel) st.error = null;
       this.changed(st);
+      if (cx) cx.notify();
+
+      if (st.git && !inIgnored && entries.length) {
+        const paths = entries.map((e) => (rel ? `${rel}/` : "") + e.name + (e.dir ? "/" : ""));
+        const applyIgnore = async () => {
+          const igRes = await exec("git", ["check-ignore", "--", ...paths], { cwd: st.root }).catch(() => null);
+          if (!fresh() || !igRes?.stdout) return;
+          const found = new Set(igRes.stdout.split(/\r?\n/).filter(Boolean).map((p) => p.replace(/[/\\]+$/, "")));
+          if (!found.size) return;
+          markIgnored(st.ignored, rel, entries, found);
+          this.changed(st);
+          if (cx) cx.notify();
+        };
+        if (cx) cx.spawn(() => applyIgnore());
+        else await applyIgnore();
+      }
       return;
     }
 
@@ -269,7 +278,7 @@ export default class Files extends View {
       const go = this.going(st);
       cx.spawn(async (cx) => {
         for (let p = path, kids; p && go(); p = kids?.length === 1 && kids[0].dir ? join(p, kids[0].name) : null) {
-          await this.list(st, p);
+          await this.list(st, p, cx);
           kids = st.entries.get(p);
           if (kids?.length === 1 && kids[0].dir) st.expanded.add(join(p, kids[0].name));
         }

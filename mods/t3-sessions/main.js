@@ -68,7 +68,11 @@ function isTelemetryDifferent(prev, next) {
     prev.gitClean !== next.gitClean ||
     prev.gitChanges !== next.gitChanges ||
     prev.usedToolsCount !== next.usedToolsCount ||
+    prev.toolsOk !== next.toolsOk ||
     prev.recentTools?.length !== next.recentTools?.length ||
+    prev.recentTools?.[0]?.name !== next.recentTools?.[0]?.name ||
+    prev.recentTools?.[0]?.status !== next.recentTools?.[0]?.status ||
+    prev.recentTools?.[0]?.detail !== next.recentTools?.[0]?.detail ||
     prev.model !== next.model ||
     prev.effort !== next.effort ||
     prev.agent !== next.agent
@@ -200,6 +204,22 @@ let telemetry = {
   breakdown: { sys: 0, sysPct: 0, tools: 0, toolsPct: 0, msg: 0, msgPct: 0, res: 0, resPct: 0 }
 };
 
+function fmtTime(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return "";
+  return d.toTimeString().slice(0, 8);
+}
+
+function toolDetail(args) {
+  if (!args || typeof args !== "object") return "";
+  const raw = args.Path || args.path || args.file_path || args.CommandLine || args.command || args.query || args.url || args.Pattern || args.pattern || "";
+  if (!raw) return "";
+  const s = String(raw).replace(/\\\\/g, "/").trim();
+  if (s.includes("/") && !s.includes(" ")) return s.split("/").slice(-2).join("/");
+  return s.slice(0, 48);
+}
+
 function readTailLines(file, maxBytes = 131072) {
   try {
     const stat = fs.statSync(file);
@@ -282,7 +302,7 @@ if (agentType === "antigravity") {
                   usedTools.add(tc.name);
                   const p = tc.args?.Path || tc.args?.path || tc.args?.file_path;
                   if (p) { if (tc.name === "read_file") readFiles.add(p); else if (tc.name === "write_file" || tc.name === "edit_file") editedFiles.add(p); }
-                  if (i >= lines.length - 10) turnTools.push({ name: tc.name, start: o.created_at, end: null, ms: "0s", status: "running" });
+                  if (i >= lines.length - 30) turnTools.push({ name: tc.name, detail: toolDetail(tc.args), time: fmtTime(o.created_at), start: o.created_at, end: null, ms: "0s", status: "running" });
                 }
               }
             }
@@ -330,7 +350,7 @@ if (agentType === "antigravity") {
             telemetry.sessionCost = "$" + sessionCostNum.toFixed(2);
             telemetry.turnCost = "$" + turnCostNum.toFixed(3);
           }
-          if (turnTools.length > 0) telemetry.recentTools = turnTools.slice(-2);
+          if (turnTools.length > 0) telemetry.recentTools = turnTools.slice(-6).reverse();
         }
       }
     } catch {}
@@ -429,7 +449,7 @@ if (agentType === "antigravity") {
           } else if (lastCmdStart && ts > lastCmdStart) {
             const dur = Math.max(0, ts - lastCmdStart);
             const durStr = dur >= 1000 ? (dur / 1000).toFixed(1) + "s" : dur + "ms";
-            if (recentCmds.length < 2) recentCmds.unshift({ name: lastCmdName, status: "ok", ms: durStr });
+            recentCmds.push({ name: "exec", detail: lastCmdName, time: fmtTime(lastCmdStart), status: "ok", ms: durStr });
             lastCmdStart = null;
           }
           if (o.payload?.item?.type === "function_call" || o.payload?.type === "function_call") {
@@ -437,11 +457,14 @@ if (agentType === "antigravity") {
             if (fn) {
               toolsChars += JSON.stringify(o.payload.item || o.payload).length;
               usedTools.add(fn);
+              let detail = "";
               try {
                 const args = JSON.parse(o.payload.item?.arguments || o.payload.arguments || "{}");
+                detail = toolDetail(args);
                 const p = args.path || args.file_path || args.file;
                 if (p) { if (fn.includes("read") || fn.includes("view") || fn.includes("get")) readFiles.add(p); else editedFiles.add(p); }
               } catch {}
+              recentCmds.push({ name: fn, detail, time: fmtTime(ts), status: "ok", ms: "—" });
             }
           }
         } catch {}
@@ -451,7 +474,7 @@ if (agentType === "antigravity") {
         telemetry.ttft = (ttfts[ttfts.length - 1] / 1000).toFixed(1) + "s";
         telemetry.avgTtft = (ttfts.reduce((s,x)=>s+x,0) / ttfts.length / 1000).toFixed(1) + "s";
       }
-      if (recentCmds.length > 0) telemetry.recentTools = recentCmds;
+      if (recentCmds.length > 0) telemetry.recentTools = recentCmds.slice(-6).reverse();
       telemetry.toolsOk = executedCount || (turnNum * 3);
       telemetry.usedToolNames = Array.from(usedTools);
       telemetry.usedToolsCount = usedTools.size;
@@ -523,7 +546,7 @@ if (agentType === "antigravity") {
               if (o.type === "toolResult") resChars += String(o.content || "").length;
               const dur = Math.max(0, ts - lastToolStart);
               const durStr = dur >= 1000 ? (dur / 1000).toFixed(1) + "s" : dur + "ms";
-              if (recent.length < 2) recent.unshift({ name: lastToolName, status: "ok", ms: durStr });
+              recent.push({ name: lastToolName, detail: "", time: fmtTime(lastToolStart), status: "ok", ms: durStr });
               lastToolStart = null;
             }
             if (o.type === "message" && o.message?.usage) {
@@ -537,7 +560,7 @@ if (agentType === "antigravity") {
         telemetry.toolsOk = toolCount || (telemetry.turn * 2);
         telemetry.usedToolNames = Array.from(usedTools);
         telemetry.usedToolsCount = usedTools.size;
-        if (recent.length > 0) telemetry.recentTools = recent;
+        if (recent.length > 0) telemetry.recentTools = recent.slice(-6).reverse();
         telemetry.inTok = totalIn; telemetry.cacheTok = totalCache; telemetry.outTok = totalOut;
         telemetry.totalCtx = totalIn + totalOut + totalCache;
         telemetry.hitRate = (totalIn + totalCache) > 0 ? (Math.round((totalCache / (totalIn + totalCache)) * 1000) / 10) : 0;
@@ -1333,90 +1356,35 @@ export default class Sessions extends View {
             .child(div().font_family("JetBrains Mono").text_color(t.dim).child(`# ${tel.sessionId || "term"}`))
             .child(div().font_bold().text_color(isWorking ? "#fb923c" : "#34d399").child(isWorking ? "in-memory" : "saved")))))
 
-      // 2. 2x2 QUICK STATS HUD (High-Density Vector Icon Dashboard)
-      .child(v_flex().w_full().gap(6)
-        .child(h_flex().w_full().gap(6)
-          // Stat 1: Context Window
-          .child(v_flex().flex_1().p(8).gap(3).rounded(6).bg(t.raised).border(1).border_color(t.border)
-            .child(h_flex().items_center().gap(4)
-              .child(svg("mods/t3-sessions/icons/layers.svg").size(11).text_color("#38bdf8").flex_none())
-              .child(div().text_size(9.5).font_bold().text_color(t.muted).child("CONTEXT")))
-            .child(div().text_size(13).font_bold().text_color(t.foreground).child(`${formatTok(totalTok)} / ${tel.maxCtx || "1M"}`))
-            .child(h_flex().gap(4).items_center()
-              .child(div().text_size(10.5).font_medium().text_color("#38bdf8").child(`${pct.toFixed(1)}%`))
-              .child(div().text_size(10).text_color(t.dim).child(`· ~${tel.headroom || 30} 轮剩余 (${tel.health || '充裕'})`))))
-          // Stat 2: Cache Hit Rate
-          .child(v_flex().flex_1().p(8).gap(3).rounded(6).bg(t.raised).border(1).border_color(t.border)
-            .child(h_flex().items_center().gap(4)
-              .child(svg("mods/t3-sessions/icons/zap.svg").size(11).text_color("#34d399").flex_none())
-              .child(div().text_size(9.5).font_bold().text_color(t.muted).child("CACHE HIT")))
-            .child(div().text_size(13).font_bold().text_color("#34d399").child(totalTok > 0 ? `${tel.hitRate}%` : "—"))
-            .child(div().text_size(10).text_color(t.dim).child(`cache ${formatTok(cacheTok)}`))))
-        .child(h_flex().w_full().gap(6)
-          // Stat 3: Est. Session Cost
-          .child(v_flex().flex_1().p(8).gap(3).rounded(6).bg(t.raised).border(1).border_color(t.border)
-            .child(h_flex().items_center().gap(4)
-              .child(svg("mods/t3-sessions/icons/database.svg").size(11).text_color("#f59e0b").flex_none())
-              .child(div().text_size(9.5).font_bold().text_color(t.muted).child("EST. COST")))
-            .child(div().text_size(13).font_bold().text_color("#f59e0b").child(totalTok > 0 ? (tel.sessionCost || tel.cost || "$0.00") : "—"))
-            .child(div().text_size(10).text_color(t.dim).child(totalTok > 0 ? `当轮 ${tel.turnCost || '$0.000'} · in ${formatTok(inTok)}` : `in ${formatTok(inTok)} · out ${formatTok(outTok)}`)))
-          // Stat 4: TTFT & Speed
-          .child(v_flex().flex_1().p(8).gap(3).rounded(6).bg(t.raised).border(1).border_color(t.border)
-            .child(h_flex().items_center().gap(4)
-              .child(svg("mods/t3-sessions/icons/clock.svg").size(11).text_color("#c084fc").flex_none())
-              .child(div().text_size(9.5).font_bold().text_color(t.muted).child("LATENCY & SPEED")))
-            .child(div().text_size(13).font_bold().text_color("#c084fc").child(totalTok > 0 ? (tel.ttft || "1.0s") : "—"))
-            .child(div().text_size(10).text_color(t.dim).child(totalTok > 0 ? (tel.tokPerSec || "130 tok/s") : "—")))))
-
-      // 3. TOKEN COMPOSITION & DYNAMIC BREAKDOWN
+      // 2. WORKSPACE & GIT ENVIRONMENT (Static / low-churn reference at top)
       .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
-        .child(h_flex().w_full().justify_between().items_center()
-          .child(this.sectionHead("CONTEXT BREAKDOWN", "#38bdf8", "mods/t3-sessions/icons/layers.svg", t))
-          .child(div().text_size(10.5).font_medium().text_color(t.dim).child(`~${formatTok(totalTok)}`)))
-        .child(h_flex().w_full().h(8).rounded(3).overflow_hidden().bg(t.border)
-          .child(div().h_full().bg("#818cf8").flex_grow(Math.max(1, b.sysPct || 10)))
-          .child(div().h_full().bg("#f472b6").flex_grow(Math.max(1, b.toolsPct || 12)))
-          .child(div().h_full().bg("#38bdf8").flex_grow(Math.max(1, b.msgPct || 48)))
-          .child(div().h_full().bg("#fb923c").flex_grow(Math.max(1, b.resPct || 30))))
-        .child(v_flex().w_full().gap(4).pt(2).text_size(11).font_medium()
-          .child(h_flex().w_full().justify_between().items_center()
-            .child(h_flex().gap(6).items_center()
-              .child(div().size(6).rounded(1).bg("#818cf8"))
-              .child(div().text_color(t.muted).child("System")))
-            .child(div().text_color(t.dim).child(`~${formatTok(b.sys)}  ${b.sysPct}%`)))
-          .child(h_flex().w_full().justify_between().items_center()
-            .child(h_flex().gap(6).items_center()
-              .child(div().size(6).rounded(1).bg("#f472b6"))
-              .child(div().text_color(t.muted).child("Tools")))
-            .child(div().text_color(t.dim).child(`~${formatTok(b.tools)}  ${b.toolsPct}%`)))
-          .child(h_flex().w_full().justify_between().items_center()
-            .child(h_flex().gap(6).items_center()
-              .child(div().size(6).rounded(1).bg("#38bdf8"))
-              .child(div().text_color(t.muted).child("Messages")))
-            .child(div().text_color(t.dim).child(`~${formatTok(b.msg)}  ${b.msgPct}%`)))
-          .child(h_flex().w_full().justify_between().items_center()
-            .child(h_flex().gap(6).items_center()
-              .child(div().size(6).rounded(1).bg("#fb923c"))
-              .child(div().text_color(t.muted).child("Tool results")))
-            .child(div().text_color(t.dim).child(`~${formatTok(b.res)}  ${b.resPct}%`)))))
+        .child(this.sectionHead("WORKSPACE & GIT", "#a78bfa", "mods/t3-sessions/icons/server.svg", t))
+        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
+          .child(h_flex().gap(4).items_center()
+            .child(svg("mods/t3-sessions/icons/server.svg").size(11).text_color(t.muted).flex_none())
+            .child(div().text_color(t.muted).child("Host")))
+          .child(div().font_bold().text_color("#38bdf8").child(String(tel.machine || "LOCAL").toUpperCase())))
+        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
+          .child(h_flex().gap(4).items_center()
+            .child(svg("mods/t3-sessions/icons/git-branch.svg").size(11).text_color(tel.gitBranch === "no repo" ? t.dim : "#f59e0b").flex_none())
+            .child(div().text_color(t.muted).child("Git")))
+          .child(h_flex().gap(4).items_center()
+            .child(div().font_bold().text_color(tel.gitBranch === "no repo" ? t.dim : "#f59e0b").child(tel.gitBranch === "no repo" ? "—" : `⑂ ${tel.gitBranch}`))
+            .child(div().text_color(tel.gitChanges === "—" ? t.dim : tel.gitClean ? "#34d399" : "#fb923c")
+              .child(`(${tel.gitChanges === "—" ? "not a git repo" : tel.gitClean ? "clean" : tel.gitChanges})`))))
+        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
+          .child(h_flex().gap(4).items_center()
+            .child(svg("mods/t3-sessions/icons/database.svg").size(11).text_color(t.muted).flex_none())
+            .child(div().text_color(t.muted).child("CWD")))
+          .child(div().max_w(170).truncate().text_color(t.dim).child(activeCwd || root || "—")))
+        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
+          .child(div().text_color(t.muted).child("Session ID"))
+          .child(div().font_family("JetBrains Mono").font_bold().text_color(t.foreground).child(tel.sessionId || "term")))
+        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
+          .child(div().text_color(t.muted).child("History"))
+          .child(div().text_color(t.foreground).child(`${turn} turns · ${tel.stepCount || 10} steps`))))
 
-      // 4. LIVE ACTIVITY FEED
-      .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
-        .child(h_flex().w_full().justify_between().items_center()
-          .child(this.sectionHead("ACTIVITY", "#34d399", "mods/t3-sessions/icons/terminal.svg", t))
-          .child(div().text_size(10.5).font_bold().text_color("#34d399").child(`${tel.toolsOk || 0} ok`)))
-        .children((tel.recentTools || []).map((tool, idx) =>
-          h_flex().id(`tool-${idx}`).w_full().justify_between().items_center().text_size(11).font_medium()
-            .child(h_flex().gap(6).items_center()
-              .child(div().text_color(tool.status === "ok" ? "#34d399" : "#fb923c").child(tool.status === "ok" ? "✓" : "▶"))
-              .child(div().max_w(180).truncate().text_color(t.foreground).child(tool.name)))
-            .child(div().font_family("JetBrains Mono").text_color(t.dim).child(tool.ms))))
-        .when((tel.recentTools?.length || 0) === 0, (el) => el.child(
-          div().text_size(11).text_color(t.dim).child("等待工具调用 / 暂无活动记录")))
-        .when(remainingTools > 0, (el) => el.child(
-          div().text_size(10.5).text_color(t.dim).child(`... 另有 ${remainingTools} 次工具执行`))))
-
-      // 5. TOOLS & SKILLS CATALOG (Fixed Scrolling & Multi-Category Explorer)
+      // 3. TOOLS & SKILLS CATALOG (Mostly static during session)
       .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
         .child(h_flex().w_full().justify_between().items_center()
           .child(this.sectionHead("TOOLS & SKILLS", "#c084fc", "mods/t3-sessions/icons/wrench.svg", t))
@@ -1482,33 +1450,97 @@ export default class Sessions extends View {
           .when(displayedTools.length === 0, (el3) => el3.child(
             div().p(8).text_size(11).text_color(t.dim).child("没有匹配的工具或技能"))))))
 
-      // 6. WORKSPACE & GIT ENVIRONMENT (Vector Icons)
+      // 4. 2x2 QUICK STATS HUD (Updates per turn)
+      .child(v_flex().w_full().gap(6)
+        .child(h_flex().w_full().gap(6)
+          // Stat 1: Context Window
+          .child(v_flex().flex_1().p(8).gap(3).rounded(6).bg(t.raised).border(1).border_color(t.border)
+            .child(h_flex().items_center().gap(4)
+              .child(svg("mods/t3-sessions/icons/layers.svg").size(11).text_color("#38bdf8").flex_none())
+              .child(div().text_size(9.5).font_bold().text_color(t.muted).child("CONTEXT")))
+            .child(div().text_size(13).font_bold().text_color(t.foreground).child(`${formatTok(totalTok)} / ${tel.maxCtx || "1M"}`))
+            .child(h_flex().gap(4).items_center()
+              .child(div().text_size(10.5).font_medium().text_color("#38bdf8").child(`${pct.toFixed(1)}%`))
+              .child(div().text_size(10).text_color(t.dim).child(`· ~${tel.headroom || 30} 轮剩余 (${tel.health || '充裕'})`))))
+          // Stat 2: Cache Hit Rate
+          .child(v_flex().flex_1().p(8).gap(3).rounded(6).bg(t.raised).border(1).border_color(t.border)
+            .child(h_flex().items_center().gap(4)
+              .child(svg("mods/t3-sessions/icons/zap.svg").size(11).text_color("#34d399").flex_none())
+              .child(div().text_size(9.5).font_bold().text_color(t.muted).child("CACHE HIT")))
+            .child(div().text_size(13).font_bold().text_color("#34d399").child(totalTok > 0 ? `${tel.hitRate}%` : "—"))
+            .child(div().text_size(10).text_color(t.dim).child(`cache ${formatTok(cacheTok)}`))))
+        .child(h_flex().w_full().gap(6)
+          // Stat 3: Est. Session Cost
+          .child(v_flex().flex_1().p(8).gap(3).rounded(6).bg(t.raised).border(1).border_color(t.border)
+            .child(h_flex().items_center().gap(4)
+              .child(svg("mods/t3-sessions/icons/database.svg").size(11).text_color("#f59e0b").flex_none())
+              .child(div().text_size(9.5).font_bold().text_color(t.muted).child("EST. COST")))
+            .child(div().text_size(13).font_bold().text_color("#f59e0b").child(totalTok > 0 ? (tel.sessionCost || tel.cost || "$0.00") : "—"))
+            .child(div().text_size(10).text_color(t.dim).child(totalTok > 0 ? `当轮 ${tel.turnCost || '$0.000'} · in ${formatTok(inTok)}` : `in ${formatTok(inTok)} · out ${formatTok(outTok)}`)))
+          // Stat 4: TTFT & Speed
+          .child(v_flex().flex_1().p(8).gap(3).rounded(6).bg(t.raised).border(1).border_color(t.border)
+            .child(h_flex().items_center().gap(4)
+              .child(svg("mods/t3-sessions/icons/clock.svg").size(11).text_color("#c084fc").flex_none())
+              .child(div().text_size(9.5).font_bold().text_color(t.muted).child("LATENCY & SPEED")))
+            .child(div().text_size(13).font_bold().text_color("#c084fc").child(totalTok > 0 ? (tel.ttft || "1.0s") : "—"))
+            .child(div().text_size(10).text_color(t.dim).child(totalTok > 0 ? (tel.tokPerSec || "130 tok/s") : "—")))))
+
+      // 5. TOKEN COMPOSITION & DYNAMIC BREAKDOWN
       .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
-        .child(this.sectionHead("WORKSPACE & GIT", "#a78bfa", "mods/t3-sessions/icons/server.svg", t))
-        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
-          .child(h_flex().gap(4).items_center()
-            .child(svg("mods/t3-sessions/icons/server.svg").size(11).text_color(t.muted).flex_none())
-            .child(div().text_color(t.muted).child("Host")))
-          .child(div().font_bold().text_color("#38bdf8").child(String(tel.machine || "LOCAL").toUpperCase())))
-        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
-          .child(h_flex().gap(4).items_center()
-            .child(svg("mods/t3-sessions/icons/git-branch.svg").size(11).text_color(tel.gitBranch === "no repo" ? t.dim : "#f59e0b").flex_none())
-            .child(div().text_color(t.muted).child("Git")))
-          .child(h_flex().gap(4).items_center()
-            .child(div().font_bold().text_color(tel.gitBranch === "no repo" ? t.dim : "#f59e0b").child(tel.gitBranch === "no repo" ? "—" : `⑂ ${tel.gitBranch}`))
-            .child(div().text_color(tel.gitChanges === "—" ? t.dim : tel.gitClean ? "#34d399" : "#fb923c")
-              .child(`(${tel.gitChanges === "—" ? "not a git repo" : tel.gitClean ? "clean" : tel.gitChanges})`))))
-        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
-          .child(h_flex().gap(4).items_center()
-            .child(svg("mods/t3-sessions/icons/database.svg").size(11).text_color(t.muted).flex_none())
-            .child(div().text_color(t.muted).child("CWD")))
-          .child(div().max_w(170).truncate().text_color(t.dim).child(activeCwd || root || "—")))
-        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
-          .child(div().text_color(t.muted).child("Session ID"))
-          .child(div().font_family("JetBrains Mono").font_bold().text_color(t.foreground).child(tel.sessionId || "term")))
-        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
-          .child(div().text_color(t.muted).child("History"))
-          .child(div().text_color(t.foreground).child(`${turn} turns · ${tel.stepCount || 10} steps`))));
+        .child(h_flex().w_full().justify_between().items_center()
+          .child(this.sectionHead("CONTEXT BREAKDOWN", "#38bdf8", "mods/t3-sessions/icons/layers.svg", t))
+          .child(div().text_size(10.5).font_medium().text_color(t.dim).child(`~${formatTok(totalTok)}`)))
+        .child(h_flex().w_full().h(8).rounded(3).overflow_hidden().bg(t.border)
+          .child(div().h_full().bg("#818cf8").flex_grow(Math.max(1, b.sysPct || 10)))
+          .child(div().h_full().bg("#f472b6").flex_grow(Math.max(1, b.toolsPct || 12)))
+          .child(div().h_full().bg("#38bdf8").flex_grow(Math.max(1, b.msgPct || 48)))
+          .child(div().h_full().bg("#fb923c").flex_grow(Math.max(1, b.resPct || 30))))
+        .child(v_flex().w_full().gap(4).pt(2).text_size(11).font_medium()
+          .child(h_flex().w_full().justify_between().items_center()
+            .child(h_flex().gap(6).items_center()
+              .child(div().size(6).rounded(1).bg("#818cf8"))
+              .child(div().text_color(t.muted).child("System")))
+            .child(div().text_color(t.dim).child(`~${formatTok(b.sys)}  ${b.sysPct}%`)))
+          .child(h_flex().w_full().justify_between().items_center()
+            .child(h_flex().gap(6).items_center()
+              .child(div().size(6).rounded(1).bg("#f472b6"))
+              .child(div().text_color(t.muted).child("Tools")))
+            .child(div().text_color(t.dim).child(`~${formatTok(b.tools)}  ${b.toolsPct}%`)))
+          .child(h_flex().w_full().justify_between().items_center()
+            .child(h_flex().gap(6).items_center()
+              .child(div().size(6).rounded(1).bg("#38bdf8"))
+              .child(div().text_color(t.muted).child("Messages")))
+            .child(div().text_color(t.dim).child(`~${formatTok(b.msg)}  ${b.msgPct}%`)))
+          .child(h_flex().w_full().justify_between().items_center()
+            .child(h_flex().gap(6).items_center()
+              .child(div().size(6).rounded(1).bg("#fb923c"))
+              .child(div().text_color(t.muted).child("Tool results")))
+            .child(div().text_color(t.dim).child(`~${formatTok(b.res)}  ${b.resPct}%`)))))
+
+      // 6. LIVE ACTIVITY FEED (Most dynamic, at the bottom with richer details)
+      .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
+        .child(h_flex().w_full().justify_between().items_center()
+          .child(this.sectionHead("ACTIVITY", "#34d399", "mods/t3-sessions/icons/terminal.svg", t))
+          .child(h_flex().gap(8).items_center().text_size(10.5)
+            .when((tel.readFilesCount || 0) > 0 || (tel.editedFilesCount || 0) > 0, (el) => el.child(
+              div().text_color(t.dim).child(`读 ${tel.readFilesCount || 0} · 改 ${tel.editedFilesCount || 0}`)))
+            .child(div().text_color(t.dim).child(`${tel.usedToolsCount || 0} tools`))
+            .child(div().font_bold().text_color("#34d399").child(`${tel.toolsOk || 0} ok`))))
+        .children((tel.recentTools || []).map((tool, idx) =>
+          v_flex().id(`tool-${idx}`).w_full().gap(2).py(3).px(5).rounded(4).bg(t.background).border(1).border_color(t.border)
+            .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
+              .child(h_flex().gap(5).items_center().min_w(0).flex_1()
+                .child(div().flex_none().text_color(tool.status === "ok" ? "#34d399" : "#fb923c").child(tool.status === "ok" ? "✓" : "▶"))
+                .child(div().font_bold().text_color(t.foreground).truncate().child(tool.name)))
+              .child(h_flex().gap(6).items_center().flex_none().font_family("JetBrains Mono").text_size(10)
+                .when(Boolean(tool.time), (el) => el.child(div().text_color(t.dim).child(tool.time)))
+                .child(div().text_color(tool.status === "ok" ? "#34d399" : "#fb923c").child(tool.ms || "—"))))
+            .when(Boolean(tool.detail), (el) => el.child(
+              div().pl(13).text_size(10).font_family("JetBrains Mono").text_color(t.dim).truncate().child(tool.detail)))))
+        .when((tel.recentTools?.length || 0) === 0, (el) => el.child(
+          div().text_size(11).text_color(t.dim).child("等待工具调用 / 暂无活动记录")))
+        .when(remainingTools > 0, (el) => el.child(
+          div().text_size(10.5).text_color(t.dim).child(`... 另有 ${remainingTools} 次工具执行`))));
   }
 
   renderHistory(t, short, root) {
