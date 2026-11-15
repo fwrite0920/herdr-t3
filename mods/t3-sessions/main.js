@@ -398,7 +398,62 @@ if (process.platform === 'win32') {
 }
 const localCodex = scanCodexDirs(h + '/.codex/sessions');
 
-const list = [...scanPi(h), ...scanOmp(h), ...scanClaude(h), ...scanAgy(h), ...wslCodex, ...localCodex];
+const remoteList = [];
+try {
+  const { execFileSync } = require('child_process');
+  const lsOut = execFileSync('hc', ['ls'], { timeout: 1200, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  const lsObj = JSON.parse(lsOut);
+  const remotes = (lsObj.machines || []).filter((m) => m.state === 'connected' && m.name && m.name !== 'wsl');
+  if (remotes.length > 0) {
+    const py = [
+      'import os,json',
+      'home=os.path.expanduser("~")',
+      'out=[]',
+      'def head_read(fp,mb=131072):',
+      '  with open(fp,"r",encoding="utf-8",errors="ignore") as f: return f.read(mb)',
+      'cb=home+"/.codex/sessions"',
+      'if os.path.isdir(cb):',
+      '  for r,_ds,fs in os.walk(cb):',
+      '    for fn in fs:',
+      '      if not fn.endswith(".jsonl"): continue',
+      '      fp=os.path.join(r,fn)',
+      '      try:',
+      '        mt=os.path.getmtime(fp)*1000',
+      '        cwd=""; title=""',
+      '        for ln in head_read(fp).splitlines():',
+      '          if not ln.strip(): continue',
+      '          try:',
+      '            o=json.loads(ln)',
+      '            if o.get("type") in ("session_meta","turn_context") and (o.get("payload") or {}).get("cwd") and not cwd: cwd=o["payload"]["cwd"]',
+      '            it=(o.get("payload") or {}).get("item") or {}',
+      '            if it.get("type")=="UserMessage" and not title:',
+      '              c=it.get("content")',
+      '              title=" ".join(x.get("text","") for x in c).strip() if isinstance(c,list) else str(c or it.get("text","")).strip()',
+      '            if cwd and title: break',
+      '          except Exception: pass',
+      '        sid=fn[:-6].split("-")[-1]',
+      '        import re',
+      '        m=re.search(r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",fn,re.I)',
+      '        if m: sid=m.group(1)',
+      '        out.append({"agent":"codex","id":sid,"file":fn,"cwd":cwd,"mtime":mt,"title":(title[:200] or "Codex Session")})',
+      '      except Exception: pass',
+      'print(json.dumps(out))'
+    ].join('\\n');
+    const b64 = Buffer.from(py).toString('base64');
+    const cmd = 'echo ' + b64 + ' | base64 -d | python3 -';
+    for (const rm of remotes.slice(0, 4)) {
+      try {
+        const rout = execFileSync('hc', ['exec', '--on', rm.name, cmd], { timeout: 2200, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+        const arr = JSON.parse(rout.trim() || '[]');
+        for (const it of arr) {
+          remoteList.push({ ...it, id: rm.name + '/' + it.id, machine: rm.name });
+        }
+      } catch {}
+    }
+  }
+} catch {}
+
+const list = [...scanPi(h), ...scanOmp(h), ...scanClaude(h), ...scanAgy(h), ...wslCodex, ...localCodex, ...remoteList];
 if (cacheDirty) { try { fs.writeFileSync(cacheFile, JSON.stringify(cache)); } catch {} }
 process.stdout.write(JSON.stringify(list));
 `;
@@ -967,8 +1022,11 @@ export default class Sessions extends View {
               .child(div().text_size(9.5).font_bold().text_color(t.muted).child("CONTEXT")))
             .child(div().text_size(13).font_bold().text_color(t.foreground).child(`${formatTok(totalTok)} / ${tel.maxCtx || "1M"}`))
             .child(h_flex().gap(4).items_center()
-              .child(div().text_size(10.5).font_medium().text_color("#38bdf8").child(`${pct.toFixed(1)}%`))
-              .child(div().text_size(10).text_color(t.dim).child(`· ~${tel.headroom || 30} 轮剩余 (${tel.health || '充裕'})`))))
+              .child(div().text_size(10.5).font_medium().text_color(pct >= 90 ? "#ef4444" : pct >= 80 ? "#fb923c" : "#38bdf8").child(`${pct.toFixed(1)}%`))
+              .child(div().text_size(10).text_color(t.dim).truncate().child(`· ~${tel.headroom || 30} 轮剩余`)))
+            .child(h_flex().w_full().h(3).mt(2).rounded(2).overflow_hidden().bg(t.border)
+              .when(pct > 0, (fEl) => fEl.child(div().h_full().bg(pct >= 90 ? "#ef4444" : pct >= 80 ? "#fb923c" : pct >= 60 ? "#38bdf8" : "#34d399").flex_grow(Math.max(1, Math.min(100, pct)))))
+              .when(pct < 100, (uEl) => uEl.child(div().h_full().flex_grow(Math.max(1, 100 - Math.min(100, pct)))))))
           // Stat 2: Cache Hit Rate
           .child(v_flex().flex_1().p(8).gap(3).rounded(6).bg(t.raised).border(1).border_color(t.border)
             .child(h_flex().items_center().gap(4)
@@ -1012,27 +1070,29 @@ export default class Sessions extends View {
           .child(div().h_full().bg("#f472b6").flex_grow(Math.max(1, b.toolsPct || 12)))
           .child(div().h_full().bg("#38bdf8").flex_grow(Math.max(1, b.msgPct || 48)))
           .child(div().h_full().bg("#fb923c").flex_grow(Math.max(1, b.resPct || 30))))
-        .child(v_flex().w_full().gap(4).pt(2).text_size(11).font_medium()
-          .child(h_flex().w_full().justify_between().items_center()
-            .child(h_flex().gap(6).items_center()
-              .child(div().size(6).rounded(1).bg("#818cf8"))
-              .child(div().text_color(t.muted).child("System")))
-            .child(div().text_color(t.dim).child(`~${formatTok(b.sys)}  ${b.sysPct}%`)))
-          .child(h_flex().w_full().justify_between().items_center()
-            .child(h_flex().gap(6).items_center()
-              .child(div().size(6).rounded(1).bg("#f472b6"))
-              .child(div().text_color(t.muted).child("Tools")))
-            .child(div().text_color(t.dim).child(`~${formatTok(b.tools)}  ${b.toolsPct}%`)))
-          .child(h_flex().w_full().justify_between().items_center()
-            .child(h_flex().gap(6).items_center()
-              .child(div().size(6).rounded(1).bg("#38bdf8"))
-              .child(div().text_color(t.muted).child("Messages")))
-            .child(div().text_color(t.dim).child(`~${formatTok(b.msg)}  ${b.msgPct}%`)))
-          .child(h_flex().w_full().justify_between().items_center()
-            .child(h_flex().gap(6).items_center()
-              .child(div().size(6).rounded(1).bg("#fb923c"))
-              .child(div().text_color(t.muted).child("Tool results")))
-            .child(div().text_color(t.dim).child(`~${formatTok(b.res)}  ${b.resPct}%`)))))
+        .child(v_flex().w_full().gap(5).pt(2).text_size(10.5).font_medium()
+          .child(h_flex().w_full().gap(10)
+            .child(h_flex().flex_1().justify_between().items_center()
+              .child(h_flex().gap(5).items_center()
+                .child(div().size(6).rounded(1).bg("#818cf8"))
+                .child(div().text_color(t.muted).child("System")))
+              .child(div().text_color(t.dim).child(`${b.sysPct}%`)))
+            .child(h_flex().flex_1().justify_between().items_center()
+              .child(h_flex().gap(5).items_center()
+                .child(div().size(6).rounded(1).bg("#f472b6"))
+                .child(div().text_color(t.muted).child("Tools")))
+              .child(div().text_color(t.dim).child(`${b.toolsPct}%`))))
+          .child(h_flex().w_full().gap(10)
+            .child(h_flex().flex_1().justify_between().items_center()
+              .child(h_flex().gap(5).items_center()
+                .child(div().size(6).rounded(1).bg("#38bdf8"))
+                .child(div().text_color(t.muted).child("Messages")))
+              .child(div().text_color(t.dim).child(`${b.msgPct}%`)))
+            .child(h_flex().flex_1().justify_between().items_center()
+              .child(h_flex().gap(5).items_center()
+                .child(div().size(6).rounded(1).bg("#fb923c"))
+                .child(div().text_color(t.muted).child("Results")))
+              .child(div().text_color(t.dim).child(`${b.resPct}%`))))))
 
       // 5. TOOLS & SKILLS CATALOG (Collapsible, default collapsed)
       .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)

@@ -17,7 +17,7 @@ function activeFolder() {
   const tabs = new Set((sp?.tabs ?? []).map((c) => c.id));
   const focusPane = f?.pane && tabs.has(f.tab) ? ps.find((p) => p.pane === f.pane && p.cwd) : null;
   const cwd = focusPane?.cwd || ps.find((p) => tabs.has(p.tab) && p.cwd)?.cwd || sp?.folder || "";
-  return { folder: norm(cwd), spaceId: sp?.id ?? null };
+  return { folder: norm(cwd), spaceId: sp?.id ?? null, on: sp?.machine ?? null };
 }
 
 export default class TodosView extends View {
@@ -35,15 +35,16 @@ export default class TodosView extends View {
   }
 
   checkFolder(cx) {
-    const { folder } = activeFolder();
-    if (folder !== this.lastFolder) {
+    const { folder, on } = activeFolder();
+    if (folder !== this.lastFolder || on !== this.on) {
       this.refresh(cx);
     }
   }
 
   async refresh(cx) {
-    const { folder } = activeFolder();
+    const { folder, on } = activeFolder();
     this.lastFolder = folder;
+    this.on = on;
     if (!folder) {
       this.tasks = [];
       this.filePath = null;
@@ -64,7 +65,7 @@ export default class TodosView extends View {
     let content = null;
     let foundPath = null;
     for (const p of candidates) {
-      content = await readTextFile(p).catch(() => null);
+      content = await readTextFile(p, { on }).catch(() => null);
       if (content !== null) {
         foundPath = p;
         break;
@@ -122,7 +123,7 @@ export default class TodosView extends View {
 
     const updated = lines.join("\n");
     try {
-      await writeTextFile(this.filePath, updated, null);
+      await writeTextFile(this.filePath, updated, { on: this.on });
       this.rawContent = updated;
       this.tasks = this.parseTasks(updated);
       cx.notify();
@@ -134,7 +135,7 @@ export default class TodosView extends View {
   async addTask(cx) {
     const text = this.newInput.value().trim();
     if (!text) return;
-    const { folder } = activeFolder();
+    const { folder, on } = activeFolder();
     if (!folder) return;
 
     const path = this.filePath || `${folder}/TODO.md`;
@@ -147,7 +148,7 @@ export default class TodosView extends View {
     const nextContent = content.endsWith("\n") || !content ? `${content}${taskLine}` : `${content}\n${taskLine}`;
 
     try {
-      await writeTextFile(path, nextContent, null);
+      await writeTextFile(path, nextContent, { on });
       this.newInput.set_value("");
       this.filePath = path;
       this.rawContent = nextContent;
@@ -167,7 +168,7 @@ export default class TodosView extends View {
     lines.splice(task.lineIndex, 1);
     const updated = lines.join("\n");
     try {
-      await writeTextFile(this.filePath, updated, null);
+      await writeTextFile(this.filePath, updated, { on: this.on });
       this.rawContent = updated;
       this.tasks = this.parseTasks(updated);
       cx.notify();
@@ -177,12 +178,12 @@ export default class TodosView extends View {
   }
 
   async createTodoFile(cx) {
-    const { folder } = activeFolder();
+    const { folder, on } = activeFolder();
     if (!folder) return;
     const path = `${folder}/TODO.md`;
     const initial = `# Project Tasks\n\n- [ ] Initial task\n`;
     try {
-      await writeTextFile(path, initial, null);
+      await writeTextFile(path, initial, { on });
       this.filePath = path;
       this.rawContent = initial;
       this.tasks = this.parseTasks(initial);
@@ -258,10 +259,17 @@ export default class TodosView extends View {
         .child(chip("active", "Active", activeCount))
         .child(chip("done", "Done", doneCount))
         .child(div().flex_1())
+        .when(total > 0, (el) => el.child(div().text_size(10.5).font_medium().text_color(doneCount === total ? t.done : t.dim).child(`${Math.round((doneCount / total) * 100)}%`)))
         .child(div().id("btn-refresh-todos").p(4).rounded(6).cursor_pointer()
           .hover((s) => s.bg(t.hover))
           .on_click((_e, cx) => this.refresh(cx))
           .child(svg(`${MOD}/icons/rotate-cw.svg`).size(14).text_color(t.muted))))
+      .when(total > 0, (el) => {
+        const pctDone = Math.round((doneCount / total) * 100);
+        return el.child(h_flex().w_full().h(3).flex_none().bg(t.border)
+          .when(pctDone > 0, (fEl) => fEl.child(div().h_full().bg(pctDone === 100 ? t.done : t.accent).flex_grow(pctDone)))
+          .when(pctDone < 100, (uEl) => uEl.child(div().h_full().flex_grow(100 - pctDone))));
+      })
       // Add task input bar
       .child(h_flex().px(10).py(8).gap(8).items_center().border_b(1).border_color(t.border)
         .child(Input.new(this.newInput).w_full().h(32).px(8).rounded(7).border_1().border_color(t.border).bg(t.raised).text_size(13).text_color(t.foreground)))
