@@ -886,8 +886,10 @@ process.stdout.write(JSON.stringify(list));
 export default class Sessions extends View {
   init(_props, cx) {
     this.viewMode = shared("t3.sessions.mode") || "inspector"; // "inspector" | "history"
-    this.breakdownOpen = true;
-    this.toolsOpen = true;
+    this.workspaceOpen = false;
+    this.breakdownOpen = false;
+    this.toolsOpen = false;
+    this.activityOpen = false;
     this.toolCategory = "all"; // "all" | "builtin" | "ext"
     this.toolFilter = "";
     this.toolInput = InputState.new({ placeholder: "搜索工具与技能名称..." });
@@ -956,7 +958,7 @@ export default class Sessions extends View {
     });
 
     this.magpieQuotas = null;
-    this.magpieOpen = true;
+    this.magpieOpen = false;
     this.magpieLoading = false;
 
     this.pollTelemetry(cx);
@@ -1434,47 +1436,55 @@ export default class Sessions extends View {
 
       // 2. WORKSPACE & GIT ENVIRONMENT (Static / low-churn reference at top)
       .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
-        .child(this.sectionHead("WORKSPACE & GIT", "#a78bfa", "mods/t3-sessions/icons/server.svg", t))
-        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
-          .child(h_flex().gap(4).items_center()
-            .child(svg("mods/t3-sessions/icons/server.svg").size(11).text_color(t.muted).flex_none())
-            .child(div().text_color(t.muted).child("Host")))
-          .child(div().font_bold().text_color("#38bdf8").child(String(tel.machine || "LOCAL").toUpperCase())))
-        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
-          .child(h_flex().gap(4).items_center()
-            .child(svg("mods/t3-sessions/icons/git-branch.svg").size(11).text_color(tel.gitBranch === "no repo" ? t.dim : "#f59e0b").flex_none())
-            .child(div().text_color(t.muted).child("Git")))
-          .child(h_flex().gap(4).items_center()
-            .child(div().font_bold().text_color(tel.gitBranch === "no repo" ? t.dim : "#f59e0b").child(tel.gitBranch === "no repo" ? "—" : `⑂ ${tel.gitBranch}`))
-            .child(div().text_color(tel.gitChanges === "—" ? t.dim : tel.gitClean ? "#34d399" : "#fb923c")
-              .child(`(${tel.gitChanges === "—" ? "not a git repo" : tel.gitClean ? "clean" : tel.gitChanges})`))))
-        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
-          .child(h_flex().gap(4).items_center()
-            .child(svg("mods/t3-sessions/icons/database.svg").size(11).text_color(t.muted).flex_none())
-            .child(div().text_color(t.muted).child("CWD")))
-          .child(div().max_w(170).truncate().text_color(t.dim).child(activeCwd || root || "—")))
-        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
-          .child(div().text_color(t.muted).child("Session ID"))
-          .child(div().font_family("JetBrains Mono").font_bold().text_color(t.foreground).child(tel.sessionId || "term")))
-        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
-          .child(div().text_color(t.muted).child("History"))
-          .child(div().text_color(t.foreground).child(`${turn} turns · ${tel.stepCount || 10} steps`))))
+        .child(h_flex().w_full().justify_between().items_center().cursor_pointer()
+          .on_click((_e, cx) => { this.workspaceOpen = !this.workspaceOpen; cx.notify(); })
+          .child(this.sectionHead("WORKSPACE & GIT", "#a78bfa", "mods/t3-sessions/icons/server.svg", t))
+          .child(h_flex().gap(6).items_center().flex_none()
+            .child(div().text_size(10.5).font_bold().text_color(tel.gitBranch === "no repo" ? t.dim : "#f59e0b")
+              .child(tel.gitBranch === "no repo" ? "no repo" : `⑂ ${tel.gitBranch}`))
+            .child(div().text_size(11).font_medium().text_color(t.muted)
+              .child(this.workspaceOpen ? "▾ 收起" : "▸ 展开"))))
+        .when(this.workspaceOpen, (el) => el.child(v_flex().w_full().gap(6).pt(2)
+          .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
+            .child(h_flex().gap(4).items_center()
+              .child(svg("mods/t3-sessions/icons/server.svg").size(11).text_color(t.muted).flex_none())
+              .child(div().text_color(t.muted).child("Host")))
+            .child(div().font_bold().text_color("#38bdf8").child(String(tel.machine || "LOCAL").toUpperCase())))
+          .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
+            .child(h_flex().gap(4).items_center()
+              .child(svg("mods/t3-sessions/icons/git-branch.svg").size(11).text_color(tel.gitBranch === "no repo" ? t.dim : "#f59e0b").flex_none())
+              .child(div().text_color(t.muted).child("Git")))
+            .child(h_flex().gap(4).items_center()
+              .child(div().font_bold().text_color(tel.gitBranch === "no repo" ? t.dim : "#f59e0b").child(tel.gitBranch === "no repo" ? "—" : `⑂ ${tel.gitBranch}`))
+              .child(div().text_color(tel.gitChanges === "—" ? t.dim : tel.gitClean ? "#34d399" : "#fb923c")
+                .child(`(${tel.gitChanges === "—" ? "not a git repo" : tel.gitClean ? "clean" : tel.gitChanges})`))))
+          .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
+            .child(h_flex().gap(4).items_center()
+              .child(svg("mods/t3-sessions/icons/database.svg").size(11).text_color(t.muted).flex_none())
+              .child(div().text_color(t.muted).child("CWD")))
+            .child(div().max_w(170).truncate().text_color(t.dim).child(activeCwd || root || "—")))
+          .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
+            .child(div().text_color(t.muted).child("Session ID"))
+            .child(div().font_family("JetBrains Mono").font_bold().text_color(t.foreground).child(tel.sessionId || "term")))
+          .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
+            .child(div().text_color(t.muted).child("History"))
+            .child(div().text_color(t.foreground).child(`${turn} turns · ${tel.stepCount || 10} steps`))))))
 
       // 3. TOOLS & SKILLS CATALOG (Mostly static during session)
       .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
-        .child(h_flex().w_full().justify_between().items_center()
+        .child(h_flex().w_full().justify_between().items_center().cursor_pointer()
+          .on_click((_e, cx) => { this.toolsOpen = !this.toolsOpen; cx.notify(); })
           .child(this.sectionHead("TOOLS & SKILLS", "#c084fc", "mods/t3-sessions/icons/wrench.svg", t))
-          .child(h_flex().gap(6).items_center()
-            .child(div().text_size(11).font_bold().text_color(t.foreground).child(`${tel.totalTools || 52} 项可用`))
-            .child(div().text_size(11).font_medium().text_color(t.muted).cursor_pointer()
-              .on_click((_e, cx) => { this.toolsOpen = !this.toolsOpen; cx.notify(); })
-              .child(this.toolsOpen ? "▾ 收起" : "▸ 展开清单"))))
-        .child(h_flex().w_full().justify_between().items_center().text_size(10.5)
-          .child(div().text_color(t.dim).child(`内置基元 ${tel.builtinTools || 13} · 扩展技能 ${tel.extTools || 39}`))
-          .child(h_flex().gap(4).items_center()
-            .child(div().size(5).rounded_full().bg(usedSet.size > 0 ? "#10b981" : t.dim))
-            .child(div().font_bold().text_color(usedSet.size > 0 ? "#34d399" : t.dim).child(`已调用 ${usedSet.size || tel.usedToolsCount || 0} 项`))))
-        .when(this.toolsOpen, (el) => el.child(v_flex().w_full().gap(6).pt(4)
+          .child(h_flex().gap(6).items_center().flex_none()
+            .child(div().text_size(10.5).font_medium().text_color(t.muted).child(`${tel.totalTools || 52} 项 · 已用 ${usedSet.size || tel.usedToolsCount || 0}`))
+            .child(div().text_size(11).font_medium().text_color(t.muted)
+              .child(this.toolsOpen ? "▾ 收起" : "▸ 展开"))))
+        .when(this.toolsOpen, (el) => el.child(v_flex().w_full().gap(6).pt(2)
+          .child(h_flex().w_full().justify_between().items_center().text_size(10.5)
+            .child(div().text_color(t.dim).child(`内置基元 ${tel.builtinTools || 13} · 扩展技能 ${tel.extTools || 39}`))
+            .child(h_flex().gap(4).items_center()
+              .child(div().size(5).rounded_full().bg(usedSet.size > 0 ? "#10b981" : t.dim))
+              .child(div().font_bold().text_color(usedSet.size > 0 ? "#34d399" : t.dim).child(`已调用 ${usedSet.size || tel.usedToolsCount || 0} 项`))))
           // Search Box
           .child(h_flex().w_full().h(26).px(6).gap(6).items_center().rounded(4).bg(t.background).border(1).border_color(t.border)
             .child(div().text_size(10).text_color(t.dim).child("🔍"))
@@ -1607,63 +1617,72 @@ export default class Sessions extends View {
 
       // 5. TOKEN COMPOSITION & DYNAMIC BREAKDOWN
       .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
-        .child(h_flex().w_full().justify_between().items_center()
+        .child(h_flex().w_full().justify_between().items_center().cursor_pointer()
+          .on_click((_e, cx) => { this.breakdownOpen = !this.breakdownOpen; cx.notify(); })
           .child(this.sectionHead("CONTEXT BREAKDOWN", "#38bdf8", "mods/t3-sessions/icons/layers.svg", t))
-          .child(div().text_size(10.5).font_medium().text_color(t.dim).child(`~${formatTok(totalTok)}`)))
-        .child(h_flex().w_full().h(8).rounded(3).overflow_hidden().bg(t.border)
-          .child(div().h_full().bg("#818cf8").flex_grow(Math.max(1, b.sysPct || 10)))
-          .child(div().h_full().bg("#f472b6").flex_grow(Math.max(1, b.toolsPct || 12)))
-          .child(div().h_full().bg("#38bdf8").flex_grow(Math.max(1, b.msgPct || 48)))
-          .child(div().h_full().bg("#fb923c").flex_grow(Math.max(1, b.resPct || 30))))
-        .child(v_flex().w_full().gap(4).pt(2).text_size(11).font_medium()
-          .child(h_flex().w_full().justify_between().items_center()
-            .child(h_flex().gap(6).items_center()
-              .child(div().size(6).rounded(1).bg("#818cf8"))
-              .child(div().text_color(t.muted).child("System")))
-            .child(div().text_color(t.dim).child(`~${formatTok(b.sys)}  ${b.sysPct}%`)))
-          .child(h_flex().w_full().justify_between().items_center()
-            .child(h_flex().gap(6).items_center()
-              .child(div().size(6).rounded(1).bg("#f472b6"))
-              .child(div().text_color(t.muted).child("Tools")))
-            .child(div().text_color(t.dim).child(`~${formatTok(b.tools)}  ${b.toolsPct}%`)))
-          .child(h_flex().w_full().justify_between().items_center()
-            .child(h_flex().gap(6).items_center()
-              .child(div().size(6).rounded(1).bg("#38bdf8"))
-              .child(div().text_color(t.muted).child("Messages")))
-            .child(div().text_color(t.dim).child(`~${formatTok(b.msg)}  ${b.msgPct}%`)))
-          .child(h_flex().w_full().justify_between().items_center()
-            .child(h_flex().gap(6).items_center()
-              .child(div().size(6).rounded(1).bg("#fb923c"))
-              .child(div().text_color(t.muted).child("Tool results")))
-            .child(div().text_color(t.dim).child(`~${formatTok(b.res)}  ${b.resPct}%`)))))
+          .child(h_flex().gap(6).items_center().flex_none()
+            .child(div().text_size(10.5).font_medium().text_color(t.dim).child(`~${formatTok(totalTok)}`))
+            .child(div().text_size(11).font_medium().text_color(t.muted)
+              .child(this.breakdownOpen ? "▾ 收起" : "▸ 展开"))))
+        .when(this.breakdownOpen, (el) => el.child(v_flex().w_full().gap(6).pt(2)
+          .child(h_flex().w_full().h(8).rounded(3).overflow_hidden().bg(t.border)
+            .child(div().h_full().bg("#818cf8").flex_grow(Math.max(1, b.sysPct || 10)))
+            .child(div().h_full().bg("#f472b6").flex_grow(Math.max(1, b.toolsPct || 12)))
+            .child(div().h_full().bg("#38bdf8").flex_grow(Math.max(1, b.msgPct || 48)))
+            .child(div().h_full().bg("#fb923c").flex_grow(Math.max(1, b.resPct || 30))))
+          .child(v_flex().w_full().gap(4).pt(2).text_size(11).font_medium()
+            .child(h_flex().w_full().justify_between().items_center()
+              .child(h_flex().gap(6).items_center()
+                .child(div().size(6).rounded(1).bg("#818cf8"))
+                .child(div().text_color(t.muted).child("System")))
+              .child(div().text_color(t.dim).child(`~${formatTok(b.sys)}  ${b.sysPct}%`)))
+            .child(h_flex().w_full().justify_between().items_center()
+              .child(h_flex().gap(6).items_center()
+                .child(div().size(6).rounded(1).bg("#f472b6"))
+                .child(div().text_color(t.muted).child("Tools")))
+              .child(div().text_color(t.dim).child(`~${formatTok(b.tools)}  ${b.toolsPct}%`)))
+            .child(h_flex().w_full().justify_between().items_center()
+              .child(h_flex().gap(6).items_center()
+                .child(div().size(6).rounded(1).bg("#38bdf8"))
+                .child(div().text_color(t.muted).child("Messages")))
+              .child(div().text_color(t.dim).child(`~${formatTok(b.msg)}  ${b.msgPct}%`)))
+            .child(h_flex().w_full().justify_between().items_center()
+              .child(h_flex().gap(6).items_center()
+                .child(div().size(6).rounded(1).bg("#fb923c"))
+                .child(div().text_color(t.muted).child("Tool results")))
+              .child(div().text_color(t.dim).child(`~${formatTok(b.res)}  ${b.resPct}%`)))))))
 
       // 6. LIVE ACTIVITY FEED (Most dynamic, at the bottom with richer details)
       .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
-        .child(h_flex().w_full().justify_between().items_center()
+        .child(h_flex().w_full().justify_between().items_center().cursor_pointer()
+          .on_click((_e, cx) => { this.activityOpen = !this.activityOpen; cx.notify(); })
           .child(this.sectionHead("ACTIVITY", "#34d399", "mods/t3-sessions/icons/terminal.svg", t))
-          .child(h_flex().gap(6).items_center().text_size(10)
+          .child(h_flex().gap(5).items_center().text_size(10).flex_none()
             .when((tel.readFilesCount || 0) > 0 || (tel.editedFilesCount || 0) > 0, (el) => el.child(
               div().px(5).py(1).rounded(3).bg(t.background).text_color(t.muted).child(`读 ${tel.readFilesCount || 0} · 改 ${tel.editedFilesCount || 0}`)))
             .child(div().px(5).py(1).rounded(3).bg(t.background).text_color(t.muted).child(`${tel.usedToolsCount || 0} tools`))
-            .child(div().px(5).py(1).rounded(3).bg("#064e3b66").font_bold().text_color("#34d399").child(`${tel.toolsOk || 0} ok`))))
-        .children((tel.recentTools || []).map((tool, idx) => {
-          const isOk = tool.status === "ok";
-          const stColor = isOk ? "#34d399" : "#fb923c";
-          return v_flex().id(`tool-${idx}`).w_full().gap(2).py(5).px(7).rounded(5).bg(t.background).border(1).border_color(t.border)
-            .child(h_flex().w_full().justify_between().items_center().gap(6)
-              .child(h_flex().gap(6).items_center().min_w(0).flex_1()
-                .child(div().size(6).flex_none().rounded_full().bg(stColor))
-                .child(div().text_size(11).font_bold().text_color(t.foreground).truncate().child(tool.name)))
-              .child(h_flex().gap(6).items_center().flex_none().font_family("JetBrains Mono").text_size(10)
-                .when(Boolean(tool.time), (el) => el.child(div().text_color(t.dim).child(tool.time)))
-                .child(div().px(4).py(0.5).rounded(3).bg(t.raised).text_color(stColor).child(tool.ms || "—"))))
-            .when(Boolean(tool.detail), (el) => el.child(
-              div().pl(12).text_size(10).font_family("JetBrains Mono").text_color(t.dim).truncate().child(tool.detail)));
-        }))
-        .when((tel.recentTools?.length || 0) === 0, (el) => el.child(
-          div().py(4).text_size(11).text_color(t.dim).child("等待工具调用 / 暂无活动记录")))
-        .when(remainingTools > 0, (el) => el.child(
-          div().pt(1).text_size(10).text_color(t.dim).child(`… 另有 ${remainingTools} 次历史工具调用`))));
+            .child(div().px(5).py(1).rounded(3).bg("#064e3b66").font_bold().text_color("#34d399").child(`${tel.toolsOk || 0} ok`))
+            .child(div().text_size(11).font_medium().text_color(t.muted)
+              .child(this.activityOpen ? "▾ 收起" : "▸ 展开"))))
+        .when(this.activityOpen, (el) => el.child(v_flex().w_full().gap(6).pt(2)
+          .children((tel.recentTools || []).map((tool, idx) => {
+            const isOk = tool.status === "ok";
+            const stColor = isOk ? "#34d399" : "#fb923c";
+            return v_flex().id(`tool-${idx}`).w_full().gap(2).py(5).px(7).rounded(5).bg(t.background).border(1).border_color(t.border)
+              .child(h_flex().w_full().justify_between().items_center().gap(6)
+                .child(h_flex().gap(6).items_center().min_w(0).flex_1()
+                  .child(div().size(6).flex_none().rounded_full().bg(stColor))
+                  .child(div().text_size(11).font_bold().text_color(t.foreground).truncate().child(tool.name)))
+                .child(h_flex().gap(6).items_center().flex_none().font_family("JetBrains Mono").text_size(10)
+                  .when(Boolean(tool.time), (el2) => el2.child(div().text_color(t.dim).child(tool.time)))
+                  .child(div().px(4).py(0.5).rounded(3).bg(t.raised).text_color(stColor).child(tool.ms || "—"))))
+              .when(Boolean(tool.detail), (el2) => el2.child(
+                div().pl(12).text_size(10).font_family("JetBrains Mono").text_color(t.dim).truncate().child(tool.detail)));
+          }))
+          .when((tel.recentTools?.length || 0) === 0, (el2) => el2.child(
+            div().py(4).text_size(11).text_color(t.dim).child("等待工具调用 / 暂无活动记录")))
+          .when(remainingTools > 0, (el2) => el2.child(
+            div().pt(1).text_size(10).text_color(t.dim).child(`… 另有 ${remainingTools} 次历史工具调用`))))));
   }
 
   renderHistory(t, short, root) {
