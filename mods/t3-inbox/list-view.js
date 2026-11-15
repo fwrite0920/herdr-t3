@@ -24,23 +24,38 @@ export function inboxList(view, t, model, actions, drag, draw, cx) {
   const lane = (section, xs, draw, spacing) => drag.lane(section, xs, draw, spacing, fly);
   // A shelf's header, folding it: label, then count and chevron at the far edge; the chevron is an indicator, lit with its row.
   // As T3's: 2px in from the rows' edges, the count in normal weight.
-  const shelf = (id, label, count, open, toggle, extra) => stop(view, t, id, h_flex().id(id).h(SHELF).mx(2).px(8).gap(8).flex_none().items_center()
-    .text_size(12).font_medium().text_color(t.dim)
-    .role("button").accessibility_label(`${open ? "Hide" : "Show"} ${label.toLowerCase()} agents`)
-    .on_hover((on, cx) => {
-      if (on) view.overShelf = id;
-      else if (view.overShelf === id) view.overShelf = null;
-      cx.notify();
-    })
-    .on_click((_e, cx) => {
-      toggle();
-      cx.notify();
-    })
-    .child(div().flex_1().child(label))
-    .when(Boolean(extra), (el) => el.child(extra))
-    .child(div().font_normal().child(String(count)))
-        // 12px, as T3's section chevron; -2: its middle under the top row's last button, 22px from the sidebar's edge.
-    .child(svg(`mods/t3-inbox/icons/chevron-${open ? "down" : "right"}.svg`).size(12).mr(-2).flex_none().text_color(view.overShelf === id ? t.foreground : t.dim)));
+  const shelf = (id, label, count, open, toggle, extra) => {
+    const isWorking = id === "working-header";
+    const isSnoozed = id === "snoozed-header";
+    const isSettled = id === "settled-header";
+    const icon = isWorking
+      ? svg("mods/t3-inbox/icons/working.svg").size(12).flex_none().text_color(t.working).spin(1100)
+      : isSnoozed
+        ? svg("mods/t3-inbox/icons/alarm-clock.svg").size(12).flex_none().text_color(t.dim)
+        : isSettled
+          ? svg("mods/t3-inbox/icons/circle-check.svg").size(12).flex_none().text_color(t.dim)
+          : null;
+    return stop(view, t, id, h_flex().id(id).h(SHELF).mx(2).px(8).gap(6).flex_none().items_center().rounded(6)
+      .text_size(12).font_medium().text_color(isWorking ? t.working : t.dim)
+      .when(isWorking, (el) => el.bg(t.working + "12"))
+      .hover((s) => s.bg(isWorking ? t.working + "1c" : t.hover))
+      .role("button").accessibility_label(`${open ? "Hide" : "Show"} ${label.toLowerCase()} agents`)
+      .on_hover((on, cx) => {
+        if (on) view.overShelf = id;
+        else if (view.overShelf === id) view.overShelf = null;
+        cx.notify();
+      })
+      .on_click((_e, cx) => {
+        toggle();
+        cx.notify();
+      })
+      .when(Boolean(icon), (el) => el.child(icon))
+      .child(div().flex_1().child(label))
+      .when(Boolean(extra), (el) => el.child(extra))
+      .child(div().px(5).py(1).rounded(4).bg(isWorking ? t.working + "22" : t.raised).text_size(11).font_medium().text_color(isWorking ? t.working : t.muted).child(String(count)))
+          // 12px, as T3's section chevron; -2: its middle under the top row's last button, 22px from the sidebar's edge.
+      .child(svg(`mods/t3-inbox/icons/chevron-${open ? "down" : "right"}.svg`).size(12).mr(-2).flex_none().text_color(view.overShelf === id ? t.foreground : (isWorking ? t.working : t.dim))));
+  };
 
   // The list's motion, as T3's (Sidebar.motion.ts): when the rows' order or sections change, a row that moved slides from
   // where it was, one that's new fades in from 40px above, one that left fades out where it was; 150ms ease-out. Not
