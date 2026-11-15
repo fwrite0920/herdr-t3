@@ -29,14 +29,14 @@ export function inboxList(view, t, model, actions, drag, draw, cx) {
     const isSnoozed = id === "snoozed-header";
     const isSettled = id === "settled-header";
     const icon = isWorking
-      ? svg("mods/t3-inbox/icons/working.svg").size(12).flex_none().text_color(t.working).spin(1100)
+      ? svg("mods/t3-inbox/icons/activity.svg").size(12).flex_none().text_color(t.working)
       : isSnoozed
         ? svg("mods/t3-inbox/icons/alarm-clock.svg").size(12).flex_none().text_color(t.dim)
         : isSettled
           ? svg("mods/t3-inbox/icons/circle-check.svg").size(12).flex_none().text_color(t.dim)
           : null;
     return stop(view, t, id, h_flex().id(id).h(SHELF).mx(2).px(8).gap(6).flex_none().items_center().rounded(6)
-      .text_size(12).font_medium().text_color(isWorking ? t.foreground : t.dim)
+      .text_size(12).font_medium().text_color(isWorking ? t.working : t.dim)
       .hover((s) => s.bg(t.hover))
       .role("button").accessibility_label(`${open ? "Hide" : "Show"} ${label.toLowerCase()} agents`)
       .on_hover((on, cx) => {
@@ -51,7 +51,7 @@ export function inboxList(view, t, model, actions, drag, draw, cx) {
       .when(Boolean(icon), (el) => el.child(icon))
       .child(div().flex_1().child(label))
       .when(Boolean(extra), (el) => el.child(extra))
-      .child(div().px(5).py(1).rounded(4).bg(t.raised).text_size(11).font_medium().text_color(isWorking ? t.foreground : t.muted).child(String(count)))
+      .child(div().px(5).py(1).rounded(4).bg(t.raised).text_size(11).font_medium().text_color(t.muted).child(String(count)))
           // 12px, as T3's section chevron; -2: its middle under the top row's last button, 22px from the sidebar's edge.
       .child(svg(`mods/t3-inbox/icons/chevron-${open ? "down" : "right"}.svg`).size(12).mr(-2).flex_none().text_color(view.overShelf === id ? t.foreground : t.dim)));
   };
