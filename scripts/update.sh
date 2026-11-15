@@ -21,7 +21,7 @@ missing=$(jq -r '[.. | objects | .mod? | strings | select(startswith("frame-") |
   | while read -r m; do [ -d "$src/mods/$m" ] || [ -d "$app/mods/$m" ] || echo "$m"; done)
 [ -z "$missing" ] || { echo "the layout names mods that aren't here, nothing changed:" $missing >&2; exit 1; }
 
-mkdir -p "$app/mods" "$app/layouts"
+mkdir -p "$app/mods" "$app/layouts" "$app/themes"
 # One mod at a time: other t3-* folders in the app (yours, a test's) are left alone.
 for d in "$src"/mods/t3-*/; do rsync -a --delete $gen "$d" "$app/mods/$(basename "$d")/"; done
 # The Review extra (pulls-review and review): config.json is the person's own, so it is never shipped or deleted.
@@ -30,6 +30,7 @@ if [ -d "$app/mods/pulls-review" ]; then
 fi
 [ ! -d "$app/mods/t3-theme-export" ] || rsync -a --delete $gen "$src/extras/mods/t3-theme-export/" "$app/mods/t3-theme-export/"
 [ ! -d "$app/mods/asciicn-wallpaper" ] || rsync -a --delete $gen "$src/extras/mods/asciicn-wallpaper/" "$app/mods/asciicn-wallpaper/"
+cp "$src/extras/themes/omarchy.json" "$app/themes/"
 for t in "$src"/extras/themes/*.json; do [ ! -f "$app/themes/$(basename "$t")" ] || cp "$t" "$app/themes/"; done
 
 # The theme picker, stack switches, your focus ring color and the Review bar and theme-export blocks you added live in the installed layout; keep them across updates.
