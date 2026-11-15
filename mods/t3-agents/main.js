@@ -280,7 +280,7 @@ export default class Agents extends View {
                 .child(svg("mods/t3-agents/icons/alert-circle.svg").size(10).flex_none().text_color(t.blocked))
                 .child(String(blockedCount))))
               .when(workingCount > 0, (el) => el.child(h_flex().h(16).px(4).gap(3).rounded(4).bg(t.working + "1a").items_center().text_size(10).font_semibold().text_color(t.working)
-                .child(svg("mods/workspace-chrome/spinner.svg").size(10).flex_none().text_color(t.working).spin(900))
+                .child(svg("mods/t3-agents/icons/working.svg").size(10).flex_none().text_color(t.working).spin(1100))
                 .child(String(workingCount)))))
             .child(
               tip(this, t, "ag-sort", `Sort agents: ${sort.label}`, stop(this, t, "ag-sort", button(t, "ag-sort", { icon: `mods/t3-agents/icons/${sort.icon}.svg`, label: "Sort agents", size: "sm", hot: this.hot === "ag-sort" })

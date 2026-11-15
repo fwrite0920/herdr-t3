@@ -123,7 +123,7 @@ export function inboxRowView(view, t, model, actions, drag) {
     // Lifted, or marked by a sweep, the corner says what letting go will do instead.
     // The state or the time, faded out on hover where Settle fades in over it, as T3's corner.
     const word = running(a)
-        ? pill(t.working, svg("mods/workspace-chrome/spinner.svg").size(16).flex_none().text_color(t.working).spin(900),
+        ? pill(t.working, svg("mods/t3-inbox/icons/working.svg").size(15).flex_none().text_color(t.working).spin(1100),
           "Working", started(a) > 0 && started(a) < Infinity ? took(started(a), now) : null)
         : st === "blocked"
           ? pill(t.blocked, svg("mods/t3-inbox/icons/alert-circle.svg").size(14).flex_none().text_color(t.blocked), "Needs you")

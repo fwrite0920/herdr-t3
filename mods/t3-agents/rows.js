@@ -104,7 +104,7 @@ export function agentStatus(view, t, a, note = "", id) {
   const doneColor = t.ansi2 ?? t.done ?? color;
   let mark;
   if (a.status === "working") {
-    mark = svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900);
+    mark = svg("mods/t3-agents/icons/working.svg").size(12).flex_none().text_color(t.working).spin(1100);
   } else if (a.status === "blocked") {
     mark = svg("mods/t3-agents/icons/alert-circle.svg").size(12).flex_none().text_color(t.blocked);
   } else if (a.status === "done") {

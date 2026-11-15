@@ -384,7 +384,7 @@ export default class Spaces extends View {
       : spaceAgents.some((a) => a.status === "done") ? "done"
       : null;
     const statusDot = spaceStatus === "working"
-      ? svg("mods/workspace-chrome/spinner.svg").size(11).flex_none().text_color(t.working).spin(900)
+      ? svg("mods/t3-spaces/icons/working.svg").size(11).flex_none().text_color(t.working).spin(1100)
       : spaceStatus === "blocked"
         ? div().size(6).flex_none().rounded_full().bg(t.blocked)
         : spaceStatus === "done"
