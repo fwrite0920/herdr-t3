@@ -57,6 +57,8 @@ export default class Changes extends View {
     this.files = [];
     this.rows = [];
     this.diffWidth = 0;
+    this.listOpen = true;
+    this.confirmDiscard = null;
     this.message = "";
     this.gen = false;
     this.handle = cx.focus_handle();
@@ -145,11 +147,13 @@ export default class Changes extends View {
         const files = [];
         const entries = status.stdout.split("\0").filter(Boolean);
         for (const entry of entries.slice(0, 1000)) {
-          const xy = entry.slice(0, 2), path = entry.slice(3), fresh = xy === "??";
+          const xy = entry.slice(0, 2), x = xy[0], y = xy[1], path = entry.slice(3), fresh = xy === "??";
           const conflict = xy.includes("U") || xy === "AA" || xy === "DD";
+          const staged = !fresh && x !== " " && x !== "?";
+          const unstaged = fresh || y !== " ";
           const s = conflict ? "U" : xy.includes("D") ? "D" : fresh || xy.includes("A") ? "A" : "M";
           const stat = stats[path] ?? { add: 0, del: 0 };
-          files.push({ path, status: s, fresh, ...stat });
+          files.push({ path, status: s, fresh, staged, unstaged, ...stat });
         }
         if (key() !== context) return;
         this.root = root;
@@ -227,14 +231,65 @@ export default class Changes extends View {
     cx.notify();
   }
 
-  commit(cx) {
-    if (!this.message.trim() || !this.root || this.busy || this.loading || this.context !== key()) return;
-    const root = this.root, on = this.on, context = this.context, message = this.message.trim();
+  stageFile(f, cx) {
+    if (!this.root || this.busy || this.loading || this.context !== key()) return;
+    const root = this.root, on = this.on, context = this.context;
+    const args = (f.staged && !f.unstaged) ? ["reset", "HEAD", "--", f.path] : ["add", "--", f.path];
+    this.busy = true;
+    this.note = null;
+    this.confirmDiscard = null;
+    cx.spawn(async (cx) => {
+      try {
+        const r = await exec("git", args, { cwd: root, on });
+        if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim());
+      } catch (e) {
+        if (key() === context) this.note = `Stage failed: ${e}`;
+      } finally {
+        this.busy = false;
+        this.refresh(cx);
+        cx.notify();
+      }
+    });
+    cx.notify();
+  }
+
+  discardFile(f, cx) {
+    if (!this.root || this.busy || this.loading || this.context !== key()) return;
+    if (this.confirmDiscard !== f.path) {
+      this.confirmDiscard = f.path;
+      cx.notify();
+      return;
+    }
+    this.confirmDiscard = null;
+    const root = this.root, on = this.on, context = this.context;
+    const args = f.fresh ? ["clean", "-fd", "--", f.path] : ["checkout", "HEAD", "--", f.path];
     this.busy = true;
     this.note = null;
     cx.spawn(async (cx) => {
       try {
-        for (const args of [["add", "-A"], ["commit", "-m", message]]) {
+        const r = await exec("git", args, { cwd: root, on });
+        if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim());
+      } catch (e) {
+        if (key() === context) this.note = `Discard failed: ${e}`;
+      } finally {
+        this.busy = false;
+        this.refresh(cx);
+        cx.notify();
+      }
+    });
+    cx.notify();
+  }
+
+  commit(cx) {
+    if (!this.message.trim() || !this.root || this.busy || this.loading || this.context !== key()) return;
+    const root = this.root, on = this.on, context = this.context, message = this.message.trim();
+    const hasStaged = this.files.some((f) => f.staged);
+    this.busy = true;
+    this.note = null;
+    cx.spawn(async (cx) => {
+      try {
+        const steps = hasStaged ? [["commit", "-m", message]] : [["add", "-A"], ["commit", "-m", message]];
+        for (const args of steps) {
           const r = await exec("git", args, { cwd: root, on });
           if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim());
         }
@@ -260,15 +315,15 @@ export default class Changes extends View {
       cx.notify();
       return;
     }
-    const root = this.root, context = this.context, hasHead = this.hasHead;
+    const root = this.root, on = this.on, context = this.context, hasHead = this.hasHead;
     const files = this.files.map((f) => `${f.status} ${f.path} (+${f.add} −${f.del})`).join("\n");
     this.gen = true;
     this.note = null;
     cx.spawn(async (cx) => {
       try {
         const [log, diff] = await Promise.all([
-          exec("git", [...READ, "log", "--oneline", "-5"], { cwd: root }).catch(() => null),
-          exec("git", [...READ, "diff", ...(hasHead ? ["HEAD"] : ["--cached"]), "--no-color", "--no-textconv", "--no-ext-diff"], { cwd: root }).catch(() => null),
+          exec("git", [...READ, "log", "--oneline", "-5"], { cwd: root, on }).catch(() => null),
+          exec("git", [...READ, "diff", ...(hasHead ? ["HEAD"] : ["--cached"]), "--no-color", "--no-textconv", "--no-ext-diff"], { cwd: root, on }).catch(() => null),
         ]);
         const style = log && log.code === 0 ? log.stdout.trim() : "";
         const body = diff && diff.code === 0 ? diff.stdout.slice(0, 4000) : "";
@@ -281,11 +336,11 @@ export default class Changes extends View {
         ].join("\n\n");
 
         let message = "";
-        const rPi = await exec("pi", ["-p", "--no-session", prompt], { cwd: root }).catch(() => null);
+        const rPi = await exec("pi", ["-p", "--no-session", prompt], { cwd: root, on }).catch(() => null);
         if (rPi?.code === 0 && rPi.stdout?.trim()) {
           message = rPi.stdout.trim();
         } else {
-          const rClaude = await exec("claude", ["-p", prompt], { cwd: root }).catch(() => null);
+          const rClaude = await exec("claude", ["-p", prompt], { cwd: root, on }).catch(() => null);
           if (rClaude?.code === 0 && rClaude.stdout?.trim()) {
             message = rClaude.stdout.trim();
           } else {
@@ -308,16 +363,64 @@ export default class Changes extends View {
     cx.notify();
   }
 
+  stepFile(dir, cx) {
+    if (!this.files.length) return;
+    const idx = this.files.findIndex((f) => f.path === this.open);
+    const nextIdx = idx < 0 ? 0 : (idx + dir + this.files.length) % this.files.length;
+    this.pick(this.files[nextIdx].path, cx);
+  }
+
   diffRow({ kind, number, text }, t) {
-    if (kind === "@") return div().w_full().px(12).h(20).flex_none().truncate().bg(t.raised).text_color(t.dim).child(text);
-    return h_flex().w_full().h(20).flex_none().gap(10).when(kind === "+", (e) => e.bg(t.ansi2 + "18")).when(kind === "-", (e) => e.bg(t.ansi1 + "18"))
-      .child(div().w(30).flex_none().text_right().text_color(t.dim).child(number === undefined ? "" : String(number)))
+    if (kind === "@") {
+      const m = /^(@@[^@]+@@)\s*(.*)$/.exec(text);
+      return h_flex().w_full().px(10).h(22).gap(8).items_center().flex_none().bg(t.raised).border_t(1).border_b(1).border_color(t.border)
+        .child(div().flex_none().font_bold().text_color(t.accent).child(m ? m[1] : text))
+        .when(Boolean(m?.[2]), (el) => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(m[2])));
+    }
+    const sign = kind === "+" ? "+" : kind === "-" ? "−" : " ";
+    const signColor = kind === "+" ? t.ansi2 : kind === "-" ? t.ansi1 : t.dim;
+    return h_flex().w_full().h(20).flex_none().gap(6)
+      .when(kind === "+", (e) => e.bg(t.ansi2 + "18"))
+      .when(kind === "-", (e) => e.bg(t.ansi1 + "18"))
+      .child(div().w(34).flex_none().text_right().text_color(t.dim).child(number === undefined ? "" : String(number)))
+      .child(div().w(12).flex_none().text_center().font_bold().text_color(signColor).child(sign))
       .child(div().flex_1().min_w(0).truncate().child(text));
+  }
+
+  fileRow(f, t) {
+    const parts = f.path.split("/"), name = parts.pop();
+    const isConfirm = this.confirmDiscard === f.path;
+    const statusColor = f.status === "A" ? t.ansi2 : f.status === "D" ? t.ansi1 : f.status === "U" ? t.ansi1 : t.blocked;
+    return h_flex().id(`change-${f.path}`).h(28).flex_none().px(6).gap(6).items_center().rounded(6).cursor_pointer()
+      .when(this.open === f.path, (e) => e.bg(t.selected))
+      .hover((s) => s.bg(t.hover))
+      .on_click((_e, cx) => this.pick(f.path, cx))
+      .child(div().w(14).flex_none().text_size(11).font_bold().text_color(statusColor).child(f.status))
+      .child(h_flex().flex_1().min_w(0).items_center()
+        .when(parts.length > 0, (el) => el.child(div().text_color(t.dim).truncate().child(parts.join("/") + "/")))
+        .child(div().flex_none().max_w(220).truncate().font_medium().child(name)))
+      .when(f.staged, (el) => el.child(div().px(4).py(0.5).rounded(3).bg(t.ansi2 + "22").text_size(9.5).font_bold().text_color(t.ansi2).child("S")))
+      .when(f.add > 0, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.ansi2).child(`+${f.add}`)))
+      .when(f.del > 0, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.ansi1).child(`−${f.del}`)))
+      .child(div().id(`stage-${f.path}`).px(5).py(1).rounded(4).bg(t.raised).text_size(10.5).font_bold()
+        .text_color((f.staged && !f.unstaged) ? t.ansi2 : t.muted)
+        .hover((s) => s.text_color(t.foreground).bg(t.border))
+        .on_click((_e, cx) => { cx.stop_propagation(); this.stageFile(f, cx); })
+        .child((f.staged && !f.unstaged) ? "−" : "+"))
+      .child(div().id(`discard-${f.path}`).px(5).py(1).rounded(4).bg(isConfirm ? t.ansi1 + "33" : t.raised).text_size(10.5).font_medium()
+        .text_color(isConfirm ? t.ansi1 : t.dim)
+        .hover((s) => s.text_color(t.ansi1).bg(t.ansi1 + "22"))
+        .on_click((_e, cx) => { cx.stop_propagation(); this.discardFile(f, cx); })
+        .child(isConfirm ? "确认?" : "↺"));
   }
 
   render(cx) {
     if (key() !== this.context) this.refresh(cx);
     const t = theme(), add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
+    const stagedFiles = this.files.filter((f) => f.staged);
+    const unstagedFiles = this.files.filter((f) => !f.staged || f.unstaged);
+    const openFile = this.files.find((f) => f.path === this.open);
+    const hunkCount = this.rows.filter((r) => r.kind === "@").length;
     const enabled = Boolean(this.message.trim() && this.root && !this.busy && !this.loading);
     return v_flex().id("t3-changes").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .on_key_down((e, cx) => {
@@ -330,22 +433,33 @@ export default class Changes extends View {
       })
       .child(h_flex().id("t3-changes-toolbar").h(40).flex_none().px(12).gap(8).items_center().border_b(1).border_color(t.border)
         .child(div().font_semibold().text_size(13).child("Changes"))
-        .child(div().px(6).py(1).rounded(4).bg(t.raised).text_size(10.5).text_color(t.muted).child(`${this.files.length} files`))
+        .child(div().px(6).py(1).rounded(4).bg(t.raised).text_size(10.5).text_color(t.muted).cursor_pointer()
+          .hover((s) => s.text_color(t.foreground))
+          .on_click((_e, cx) => { this.listOpen = !this.listOpen; cx.notify(); })
+          .child(`${this.listOpen ? "▾" : "▸"} ${this.files.length} files`))
+        .when(stagedFiles.length > 0, (el) => el.child(
+          div().px(5).py(1).rounded(4).bg(t.ansi2 + "20").text_size(10.5).font_medium().text_color(t.ansi2).child(`${stagedFiles.length} staged`)))
         .child(div().flex_1())
         .child(div().text_size(11).text_color(t.ansi2).child(`+${add}`))
         .child(div().text_size(11).text_color(t.ansi1).child(`−${del}`)))
-      .child(v_flex().id("changes-list").flex_none().h(Math.min(180, Math.max(40, this.files.length * 28 + 8))).overflow_y_scrollbar().p(6).border_b(1).border_color(t.border).children(this.files.map((f) => {
-        const parts = f.path.split("/"), name = parts.pop();
-        return h_flex().id(`change-${f.path}`).h(28).flex_none().px(8).gap(8).items_center().rounded(6).cursor_pointer()
-          .when(this.open === f.path, (e) => e.bg(t.selected))
-          .hover((s) => s.bg(t.hover))
-          .on_click((_e, cx) => this.pick(f.path, cx))
-          .child(div().w(14).text_size(11).font_bold().text_color(f.status === "A" ? t.ansi2 : f.status === "D" ? t.ansi1 : f.status === "U" ? t.ansi1 : t.blocked).child(f.status))
-          .child(h_flex().flex_1().min_w(0).child(div().text_color(t.dim).truncate().child(parts.length ? parts.join("/") + "/" : "")).child(div().max_w(260).min_w(0).truncate().child(name)))
-          .when(f.add > 0, (e) => e.child(div().text_size(11).text_color(t.ansi2).child(`+${f.add}`)))
-          .when(f.del > 0, (e) => e.child(div().text_size(11).text_color(t.ansi1).child(`−${del}`)));
-      })).when(!this.files.length, (e) => e.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? "No uncommitted changes" : "No folder")))))
+      .when(this.listOpen, (el) => el.child(
+        v_flex().id("changes-list").flex_none().h(Math.min(200, Math.max(40, this.files.length * 28 + (stagedFiles.length && unstagedFiles.length ? 26 : 10)))).overflow_y_scrollbar().p(6).gap(2).border_b(1).border_color(t.border)
+          .when(stagedFiles.length > 0 && unstagedFiles.length > 0, (g) => g.child(
+            div().px(6).py(2).text_size(10).font_bold().text_color(t.ansi2).child(`STAGED (${stagedFiles.length})`)))
+          .children(stagedFiles.map((f) => this.fileRow(f, t)))
+          .when(stagedFiles.length > 0 && unstagedFiles.length > 0, (g) => g.child(
+            div().px(6).pt(4).pb(2).text_size(10).font_bold().text_color(t.muted).child(`CHANGES (${unstagedFiles.length})`)))
+          .children((stagedFiles.length > 0 ? unstagedFiles.filter((f) => !f.staged) : this.files).map((f) => this.fileRow(f, t)))
+          .when(!this.files.length, (e) => e.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? "No uncommitted changes" : "No folder"))))))
       .when(this.limited, (el) => el.child(div().px(12).py(4).text_size(11).text_color(t.dim).child("Showing the first 1,000 changed files")))
+      .when(Boolean(openFile), (el) => el.child(
+        h_flex().h(28).flex_none().px(10).gap(6).items_center().bg(t.raised).border_b(1).border_color(t.border).text_size(11)
+          .child(div().flex_1().min_w(0).truncate().font_medium().text_color(t.foreground).child(openFile.path))
+          .when(hunkCount > 0, (hEl) => hEl.child(div().flex_none().text_size(10).text_color(t.dim).child(`${hunkCount} hunks`)))
+          .child(div().px(5).py(1).rounded(4).bg(t.background).text_color(t.muted).cursor_pointer().hover((s) => s.text_color(t.foreground))
+            .on_click((_e, cx) => this.stepFile(-1, cx)).child("‹"))
+          .child(div().px(5).py(1).rounded(4).bg(t.background).text_color(t.muted).cursor_pointer().hover((s) => s.text_color(t.foreground))
+            .on_click((_e, cx) => this.stepFile(1, cx)).child("›"))))
       .child(div().flex_1().min_h(0).relative().font_family(settings().font_family ?? "JetBrains Mono").text_size(11)
         .child(div().id("changes-diff-x").size_full().overflow_x_scrollbar()
           .child(div().w_full().min_w(this.diffWidth).h_full().child(v_virtual_list("changes-diff", this.rows.length, 20, (i) => String(i),
@@ -356,6 +470,6 @@ export default class Changes extends View {
       .child(h_flex().flex_none().p(8).gap(8).border_t(1).border_color(t.border)
         .child(div().id("commit-message").flex_1().min_w(0).h(32).px(10).flex().items_center().rounded(6).border_1().border_color(this.typing ? t.accent : t.border).cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(12).text_color(t.foreground)))
         .child(div().id("commit-ai").h(32).px(10).flex().items_center().rounded(6).bg(t.raised).text_color(this.gen || !this.root || this.loading || this.context !== key() ? t.dim : t.accent).text_size(12).font_medium().cursor_pointer().on_click((_e, cx) => this.generate(cx)).child(this.gen ? "…" : "AI"))
-        .child(div().id("commit").h(32).px(14).flex().items_center().rounded(6).bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim).text_size(12).font_medium().when(enabled, (e) => e.cursor_pointer()).on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : "Commit")));
+        .child(div().id("commit").h(32).px(14).flex().items_center().rounded(6).bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim).text_size(12).font_medium().when(enabled, (e) => e.cursor_pointer()).on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : stagedFiles.length > 0 ? `Commit (${stagedFiles.length})` : "Commit")));
   }
 }
