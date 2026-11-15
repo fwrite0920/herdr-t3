@@ -1599,7 +1599,7 @@ export default class Sessions extends View {
               .child(svg("mods/t3-sessions/icons/clock.svg").size(11).text_color("#c084fc").flex_none())
               .child(div().text_size(9.5).font_bold().text_color(t.muted).child("LATENCY & SPEED")))
             .child(div().text_size(13).font_bold().text_color("#c084fc").child(totalTok > 0 ? (tel.ttft || "1.0s") : "—"))
-            .child(div().text_size(10).text_color(t.dim).child(totalTok > 0 ? (tel.tokPerSec || "130 tok/s") : "—"))))
+            .child(div().text_size(10).text_color(t.dim).child(totalTok > 0 ? (tel.tokPerSec || "130 tok/s") : "—")))
         .when(pct >= 80, (el) => el.child(
           h_flex().w_full().px(8).py(5).gap(6).items_center().rounded(5).bg(pct >= 90 ? "#7f1d1d4d" : "#78350f4d").border(1).border_color(pct >= 90 ? "#ef4444" : "#fb923c")
             .child(div().text_size(10.5).font_bold().text_color(pct >= 90 ? "#ef4444" : "#fb923c").child(pct >= 90 ? "上下文紧迫" : "上下文预警"))
