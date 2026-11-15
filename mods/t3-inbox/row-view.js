@@ -105,7 +105,7 @@ export function inboxRowView(view, t, model, actions, drag) {
     // and not yet seen), else how long ago it last changed. Sized as T3's: 16px mark, 4px gaps, and the
     // time in monospace children, one per part, so spacing and width don't hang on the interface font and
     // a monospace space (a full cell) doesn't open "1h 5m" wider than the 4px gaps.
-    const pill = (color, mark, label, time) => h_flex().id(`state-${a.address}`).h(20).px(5).gap(4).flex_none().rounded(4).bg(color + "18").items_center().font_medium().text_color(color)
+    const pill = (color, mark, label, time) => h_flex().id(`state-${a.address}`).h(20).px(5).gap(4).flex_none().rounded(4).bg(t.raised).border(1).border_color(color + "30").items_center().font_medium().text_color(color)
       .child(mark).when(Boolean(label), (el) => el.child(div().child(label)))
       .when(Boolean(time), (el) => el.children(time.split(" ").map((part) => div().font_family(settings().font_family ?? "JetBrains Mono").child(part))));
     // It wakes where it was, so this carries the weight, as T3's; a click dismisses it, and it stays on hover.
