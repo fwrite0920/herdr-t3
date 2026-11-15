@@ -166,6 +166,9 @@ export function settingsView(view) {
       }, item.locked);
     }))
     .child(div().pt(18).pb(4).text_size(12).font_semibold().text_color(t.dim).child("DEVELOPER FEATURES"))
+    .child(toggleRow("st-unified-chat", "Unified Agent Chat (Ctrl+I)", "Use the unified GUI chat composer (herdr-chat) for Antigravity, Codex, OMP, and Pi. Turn off to disable the GUI chat launcher.", Boolean(now.unifiedChat !== false), () => {
+      pick("unifiedChat", !Boolean(now.unifiedChat !== false));
+    }))
     .child(toggleRow("st-live-ports", "Live Dev Ports", "Detect listening localhost dev server ports (3000, 5173...) and show 1-click browser badges in the panel header.", Boolean(now.livePorts !== false), () => {
       pick("livePorts", !Boolean(now.livePorts !== false));
     }));

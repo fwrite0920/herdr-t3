@@ -7,12 +7,34 @@ const MOD = "mods/t3-sessions";
 
 const PI = "pi", CC = "cc", AGY = "agy", CDX = "codex", OMP = "omp";
 const AGENTS = {
-  [PI]: { name: "Inflection Pi", label: "Pi", color: "#a855f7", icon: "mods/t3-sessions/icons/zap.svg", argv: (id, file) => ["pi", "--session", id || file] },
-  [CC]: { name: "Claude Code", label: "Claude", color: "#f59e0b", icon: "mods/t3-sessions/icons/sparkles.svg", argv: (id, file) => ["claude", "--resume", id || file] },
-  [AGY]: { name: "Google Antigravity", label: "Antigravity", color: "#818cf8", icon: "mods/t3-sessions/icons/sparkles.svg", argv: (id, file) => file || id ? ["agy", "--conversation", file || id] : ["agy"] },
-  [CDX]: { name: "OpenAI Codex", label: "Codex", color: "#10b981", icon: "mods/t3-sessions/icons/terminal.svg", argv: (id, file) => ["codex", "resume", id || file] },
-  [OMP]: { name: "Oh-My-Prompt", label: "OMP", color: "#38bdf8", icon: "mods/t3-sessions/icons/terminal.svg", argv: (id, file) => ["omp", "--session", id || file] },
+  [PI]: { name: "Inflection Pi", label: "Pi", icon: "mods/t3-sessions/icons/zap.svg", argv: (id, file) => ["pi", "--session", id || file] },
+  [CC]: { name: "Claude Code", label: "Claude", icon: "mods/t3-sessions/icons/sparkles.svg", argv: (id, file) => ["claude", "--resume", id || file] },
+  [AGY]: { name: "Google Antigravity", label: "Antigravity", icon: "mods/t3-sessions/icons/sparkles.svg", argv: (id, file) => file || id ? ["agy", "--conversation", file || id] : ["agy"] },
+  [CDX]: { name: "OpenAI Codex", label: "Codex", icon: "mods/t3-sessions/icons/terminal.svg", argv: (id, file) => ["codex", "resume", id || file] },
+  [OMP]: { name: "Oh-My-Prompt", label: "OMP", icon: "mods/t3-sessions/icons/terminal.svg", argv: (id, file) => ["omp", "--session", id || file] },
 };
+
+function paletteOf(t) {
+  return {
+    red: t.ansi1 || "#c4746e",
+    green: t.ansi2 || t.working || t.accent || "#8a9a7b",
+    gold: t.ansi3 || t.blocked || "#c4b28a",
+    blue: t.ansi4 || t.accent || "#8ba4b0",
+    purple: t.ansi5 || t.accent || "#a292a3",
+    cyan: t.ansi6 || t.accent || "#8ea4a2",
+  };
+}
+
+function agentColorOf(agentKey, t) {
+  const p = paletteOf(t);
+  const k = String(agentKey || "").toLowerCase();
+  if (k === "agy" || k === "antigravity") return p.blue;
+  if (k === "codex") return p.green;
+  if (k === "omp") return p.cyan;
+  if (k === "pi") return p.purple;
+  if (k === "cc" || k === "claude") return p.gold;
+  return t.accent || p.blue;
+}
 
 function groupSessions(list) {
   const now = new Date();
@@ -773,7 +795,8 @@ export default class Sessions extends View {
 
   row(session, i, t, short, root) {
     const tags = this.tagsOf(session);
-    const agent = AGENTS[session.agent] || { label: session.agent, color: "#818cf8", icon: "mods/t3-sessions/icons/sparkles.svg" };
+    const baseAgent = AGENTS[session.agent] || { label: session.agent, icon: "mods/t3-sessions/icons/sparkles.svg" };
+    const agent = { ...baseAgent, color: agentColorOf(session.agent, t) };
     const tagging = this.tagging === this.keyOf(session);
     const away = session.cwd && root && !pathMatches(root, session.cwd);
     const isWsl = String(session.id).startsWith("wsl/") || String(session.cwd).startsWith("/home");
@@ -950,18 +973,21 @@ export default class Sessions extends View {
       displayedTools = displayedTools.filter((x) => x.name.toLowerCase().includes(this.toolFilter));
     }
 
+    const pal = paletteOf(t);
+    const agColor = agentColorOf(tel.agent || curAgent?.agent, t);
+
     return v_flex().id("sessions-inspector").flex_1().min_h(0).p(10).gap(10).overflow_y_scrollbar()
       // 1. HERO CARD: Agent & Session Identity with Vector Icons
       .child(v_flex().w_full().p(10).gap(8).rounded(8).bg(t.raised).border(1).border_color(t.border)
         .child(h_flex().w_full().justify_between().items_center()
           .child(h_flex().gap(6).items_center()
             .child(h_flex().items_center().gap(5).px(7).py(2).rounded(4).bg(t.background).border(1).border_color(t.border)
-              .child(svg("mods/t3-sessions/icons/sparkles.svg").size(11).text_color(tel.agentColor || "#818cf8").flex_none())
-              .child(div().text_size(11).font_bold().text_color(tel.agentColor || "#818cf8").child(tel.agentName || "Agent")))
+              .child(svg("mods/t3-sessions/icons/sparkles.svg").size(11).text_color(agColor).flex_none())
+              .child(div().text_size(11).font_bold().text_color(agColor).child(tel.agentName || "Agent")))
             .child(div().text_size(10.5).font_medium().text_color(t.dim).child(tel.model || "gemini-3.8-flash")))
           .child(h_flex().gap(6).items_center()
-            .child(div().size(7).rounded_full().bg(isWorking ? "#a855f7" : "#10b981"))
-            .child(div().text_size(11).font_bold().text_color(isWorking ? "#c084fc" : "#34d399").child(state))
+            .child(div().size(7).rounded_full().bg(isWorking ? pal.gold : pal.green))
+            .child(div().text_size(11).font_bold().text_color(isWorking ? pal.gold : pal.green).child(state))
             .child(h_flex().gap(3).items_center()
               .child(svg("mods/t3-sessions/icons/clock.svg").size(11).text_color(t.muted).flex_none())
               .child(div().text_size(11).font_family("JetBrains Mono").text_color(t.muted).child(elapsedStr)))))
@@ -972,23 +998,23 @@ export default class Sessions extends View {
             .child(div().text_color(t.dim).child(`effort ${tel.effort || "high"}`)))
           .child(h_flex().gap(6).items_center()
             .child(div().font_family("JetBrains Mono").text_color(t.dim).child(`# ${tel.sessionId || "term"}`))
-            .child(div().font_bold().text_color(isWorking ? "#fb923c" : "#34d399").child(isWorking ? "in-memory" : "saved")))))
+            .child(div().font_bold().text_color(isWorking ? pal.gold : pal.green).child(isWorking ? "in-memory" : "saved")))))
 
       // 2. WORKSPACE & GIT ENVIRONMENT (Always expanded)
       .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
-        .child(this.sectionHead("WORKSPACE & GIT", "#a78bfa", "mods/t3-sessions/icons/server.svg", t))
+        .child(this.sectionHead("WORKSPACE & GIT", pal.purple, "mods/t3-sessions/icons/server.svg", t))
         .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
           .child(h_flex().gap(4).items_center()
             .child(svg("mods/t3-sessions/icons/server.svg").size(11).text_color(t.muted).flex_none())
             .child(div().text_color(t.muted).child("Host")))
-          .child(div().font_bold().text_color("#38bdf8").child(String(tel.machine || "LOCAL").toUpperCase())))
+          .child(div().font_bold().text_color(pal.cyan).child(String(tel.machine || "LOCAL").toUpperCase())))
         .child(h_flex().w_full().justify_between().items_center().gap(8).text_size(11).font_medium()
           .child(h_flex().gap(4).items_center().flex_none()
-            .child(svg("mods/t3-sessions/icons/git-branch.svg").size(11).text_color(tel.gitBranch === "no repo" ? t.dim : "#f59e0b").flex_none())
+            .child(svg("mods/t3-sessions/icons/git-branch.svg").size(11).text_color(tel.gitBranch === "no repo" ? t.dim : pal.gold).flex_none())
             .child(div().text_color(t.muted).child("Git")))
           .child(h_flex().gap(4).items_center().min_w(0).flex_1().justify_end()
-            .child(div().min_w(0).truncate().font_bold().text_color(tel.gitBranch === "no repo" ? t.dim : "#f59e0b").child(tel.gitBranch === "no repo" ? "—" : `⑂ ${tel.gitBranch}`))
-            .child(div().flex_none().text_color(tel.gitChanges === "—" ? t.dim : tel.gitClean ? "#34d399" : "#fb923c")
+            .child(div().min_w(0).truncate().font_bold().text_color(tel.gitBranch === "no repo" ? t.dim : pal.gold).child(tel.gitBranch === "no repo" ? "—" : `⑂ ${tel.gitBranch}`))
+            .child(div().flex_none().text_color(tel.gitChanges === "—" ? t.dim : tel.gitClean ? pal.green : pal.gold)
               .child(`(${tel.gitChanges === "—" ? "not a git repo" : tel.gitClean ? "clean" : tel.gitChanges})`))))
         .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
           .child(h_flex().gap(4).items_center()
@@ -1004,12 +1030,12 @@ export default class Sessions extends View {
         .when(Boolean(tel.provider || tel.approvalPolicy || tel.sandboxPolicy), (el) => el.child(
           h_flex().w_full().justify_between().items_center().gap(8).text_size(11).font_medium()
             .child(div().flex_none().text_color(t.muted).child("Runtime"))
-            .child(div().min_w(0).truncate().font_family("JetBrains Mono").text_size(10.5).text_color("#38bdf8")
+            .child(div().min_w(0).truncate().font_family("JetBrains Mono").text_size(10.5).text_color(pal.cyan)
               .child([tel.provider, tel.approvalPolicy, tel.sandboxPolicy].filter(Boolean).join(" · ")))))
         .when(Array.isArray(tel.rulesLoaded) && tel.rulesLoaded.length > 0, (el) => el.child(
           h_flex().w_full().justify_between().items_center().gap(8).text_size(11).font_medium()
             .child(div().flex_none().text_color(t.muted).child("Rules"))
-            .child(div().min_w(0).truncate().font_family("JetBrains Mono").text_size(10.5).text_color("#a78bfa")
+            .child(div().min_w(0).truncate().font_family("JetBrains Mono").text_size(10.5).text_color(pal.purple)
               .child(tel.rulesLoaded.join(" · "))))))
 
       // 3. 2x2 QUICK STATS HUD (Context & Session metrics)
@@ -1018,29 +1044,29 @@ export default class Sessions extends View {
           // Stat 1: Context Window
           .child(v_flex().flex_1().p(8).gap(3).rounded(6).bg(t.raised).border(1).border_color(t.border)
             .child(h_flex().items_center().gap(4)
-              .child(svg("mods/t3-sessions/icons/layers.svg").size(11).text_color("#38bdf8").flex_none())
+              .child(svg("mods/t3-sessions/icons/layers.svg").size(11).text_color(pal.blue).flex_none())
               .child(div().text_size(9.5).font_bold().text_color(t.muted).child("CONTEXT")))
             .child(div().text_size(13).font_bold().text_color(t.foreground).child(`${formatTok(totalTok)} / ${tel.maxCtx || "1M"}`))
             .child(h_flex().gap(4).items_center()
-              .child(div().text_size(10.5).font_medium().text_color(pct >= 90 ? "#ef4444" : pct >= 80 ? "#fb923c" : "#38bdf8").child(`${pct.toFixed(1)}%`))
+              .child(div().text_size(10.5).font_medium().text_color(pct >= 90 ? pal.red : pct >= 80 ? pal.gold : pal.blue).child(`${pct.toFixed(1)}%`))
               .child(div().text_size(10).text_color(t.dim).truncate().child(`· ~${tel.headroom || 30} 轮剩余`)))
             .child(h_flex().w_full().h(3).mt(2).rounded(2).overflow_hidden().bg(t.border)
-              .when(pct > 0, (fEl) => fEl.child(div().h_full().bg(pct >= 90 ? "#ef4444" : pct >= 80 ? "#fb923c" : pct >= 60 ? "#38bdf8" : "#34d399").flex_grow(Math.max(1, Math.min(100, pct)))))
+              .when(pct > 0, (fEl) => fEl.child(div().h_full().bg(pct >= 90 ? pal.red : pct >= 80 ? pal.gold : pct >= 60 ? pal.blue : pal.green).flex_grow(Math.max(1, Math.min(100, pct)))))
               .when(pct < 100, (uEl) => uEl.child(div().h_full().flex_grow(Math.max(1, 100 - Math.min(100, pct)))))))
           // Stat 2: Cache Hit Rate
           .child(v_flex().flex_1().p(8).gap(3).rounded(6).bg(t.raised).border(1).border_color(t.border)
             .child(h_flex().items_center().gap(4)
-              .child(svg("mods/t3-sessions/icons/zap.svg").size(11).text_color("#34d399").flex_none())
+              .child(svg("mods/t3-sessions/icons/zap.svg").size(11).text_color(pal.green).flex_none())
               .child(div().text_size(9.5).font_bold().text_color(t.muted).child("CACHE HIT")))
-            .child(div().text_size(13).font_bold().text_color("#34d399").child(totalTok > 0 ? `${tel.hitRate}%` : "—"))
+            .child(div().text_size(13).font_bold().text_color(pal.green).child(totalTok > 0 ? `${tel.hitRate}%` : "—"))
             .child(div().text_size(10).text_color(t.dim).truncate().child(tel.cacheSaved ? `cache ${formatTok(cacheTok)} · 省 ${tel.cacheSaved}` : `cache ${formatTok(cacheTok)}`))))
         .child(h_flex().w_full().gap(6)
           // Stat 3: Est. Session Cost
           .child(v_flex().flex_1().p(8).gap(3).rounded(6).bg(t.raised).border(1).border_color(t.border)
             .child(h_flex().items_center().gap(4)
-              .child(svg("mods/t3-sessions/icons/database.svg").size(11).text_color("#f59e0b").flex_none())
+              .child(svg("mods/t3-sessions/icons/database.svg").size(11).text_color(pal.gold).flex_none())
               .child(div().text_size(9.5).font_bold().text_color(t.muted).child("EST. COST")))
-            .child(div().text_size(13).font_bold().text_color("#f59e0b").child(totalTok > 0 ? (tel.sessionCost || tel.cost || "$0.00") : "—"))
+            .child(div().text_size(13).font_bold().text_color(pal.gold).child(totalTok > 0 ? (tel.sessionCost || tel.cost || "$0.00") : "—"))
             .child(div().text_size(10).text_color(t.dim).truncate().child(
               totalTok > 0
                 ? ((tel.reasoningTok || 0) > 0 ? `当轮 ${tel.turnCost || '$0.000'} · reason ${formatTok(tel.reasoningTok)}` : `当轮 ${tel.turnCost || '$0.000'} · in ${formatTok(inTok)}`)
@@ -1048,49 +1074,49 @@ export default class Sessions extends View {
           // Stat 4: TTFT & Loop Density
           .child(v_flex().flex_1().p(8).gap(3).rounded(6).bg(t.raised).border(1).border_color(t.border)
             .child(h_flex().items_center().gap(4)
-              .child(svg("mods/t3-sessions/icons/clock.svg").size(11).text_color("#c084fc").flex_none())
+              .child(svg("mods/t3-sessions/icons/clock.svg").size(11).text_color(pal.purple).flex_none())
               .child(div().text_size(9.5).font_bold().text_color(t.muted).child("LATENCY & LOOP")))
-            .child(div().text_size(13).font_bold().text_color("#c084fc").child(totalTok > 0 ? (tel.ttft || "1.0s") : "—"))
+            .child(div().text_size(13).font_bold().text_color(pal.purple).child(totalTok > 0 ? (tel.ttft || "1.0s") : "—"))
             .child(div().text_size(10).text_color(t.dim).truncate().child(
               totalTok > 0
                 ? `${tel.tokPerSec || "130 tok/s"} · ${tel.toolsPerTurn || "0.0"} tools/轮`
                 : `${tel.toolsPerTurn || "0.0"} tools/轮`))))
         .when(pct >= 80, (el) => el.child(
-          h_flex().w_full().px(8).py(5).gap(6).items_center().rounded(5).bg(pct >= 90 ? "#7f1d1d4d" : "#78350f4d").border(1).border_color(pct >= 90 ? "#ef4444" : "#fb923c")
-            .child(div().text_size(10.5).font_bold().text_color(pct >= 90 ? "#ef4444" : "#fb923c").child(pct >= 90 ? "上下文紧迫" : "上下文预警"))
+          h_flex().w_full().px(8).py(5).gap(6).items_center().rounded(5).bg((pct >= 90 ? pal.red : pal.gold) + "26").border(1).border_color(pct >= 90 ? pal.red : pal.gold)
+            .child(div().text_size(10.5).font_bold().text_color(pct >= 90 ? pal.red : pal.gold).child(pct >= 90 ? "上下文紧迫" : "上下文预警"))
             .child(div().flex_1().text_size(10).text_color(t.muted).truncate().child("建议执行 /compact 或开启新会话")))))
 
       // 4. TOKEN COMPOSITION & DYNAMIC BREAKDOWN (Always expanded)
       .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
         .child(h_flex().w_full().justify_between().items_center()
-          .child(this.sectionHead("CONTEXT BREAKDOWN", "#38bdf8", "mods/t3-sessions/icons/layers.svg", t))
+          .child(this.sectionHead("CONTEXT BREAKDOWN", pal.blue, "mods/t3-sessions/icons/layers.svg", t))
           .child(div().text_size(10.5).font_medium().text_color(t.dim).child(`~${formatTok(totalTok)}`)))
         .child(h_flex().w_full().h(8).rounded(3).overflow_hidden().bg(t.border)
-          .child(div().h_full().bg("#818cf8").flex_grow(Math.max(1, b.sysPct || 10)))
-          .child(div().h_full().bg("#f472b6").flex_grow(Math.max(1, b.toolsPct || 12)))
-          .child(div().h_full().bg("#38bdf8").flex_grow(Math.max(1, b.msgPct || 48)))
-          .child(div().h_full().bg("#fb923c").flex_grow(Math.max(1, b.resPct || 30))))
+          .child(div().h_full().bg(pal.purple).flex_grow(Math.max(1, b.sysPct || 10)))
+          .child(div().h_full().bg(pal.cyan).flex_grow(Math.max(1, b.toolsPct || 12)))
+          .child(div().h_full().bg(pal.blue).flex_grow(Math.max(1, b.msgPct || 48)))
+          .child(div().h_full().bg(pal.gold).flex_grow(Math.max(1, b.resPct || 30))))
         .child(v_flex().w_full().gap(5).pt(2).text_size(10.5).font_medium()
           .child(h_flex().w_full().gap(10)
             .child(h_flex().flex_1().justify_between().items_center()
               .child(h_flex().gap(5).items_center()
-                .child(div().size(6).rounded(1).bg("#818cf8"))
+                .child(div().size(6).rounded(1).bg(pal.purple))
                 .child(div().text_color(t.muted).child("System")))
               .child(div().text_color(t.dim).child(`${b.sysPct}%`)))
             .child(h_flex().flex_1().justify_between().items_center()
               .child(h_flex().gap(5).items_center()
-                .child(div().size(6).rounded(1).bg("#f472b6"))
+                .child(div().size(6).rounded(1).bg(pal.cyan))
                 .child(div().text_color(t.muted).child("Tools")))
               .child(div().text_color(t.dim).child(`${b.toolsPct}%`))))
           .child(h_flex().w_full().gap(10)
             .child(h_flex().flex_1().justify_between().items_center()
               .child(h_flex().gap(5).items_center()
-                .child(div().size(6).rounded(1).bg("#38bdf8"))
+                .child(div().size(6).rounded(1).bg(pal.blue))
                 .child(div().text_color(t.muted).child("Messages")))
               .child(div().text_color(t.dim).child(`${b.msgPct}%`)))
             .child(h_flex().flex_1().justify_between().items_center()
               .child(h_flex().gap(5).items_center()
-                .child(div().size(6).rounded(1).bg("#fb923c"))
+                .child(div().size(6).rounded(1).bg(pal.gold))
                 .child(div().text_color(t.muted).child("Results")))
               .child(div().text_color(t.dim).child(`${b.resPct}%`))))))
 
@@ -1098,7 +1124,7 @@ export default class Sessions extends View {
       .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
         .child(h_flex().w_full().justify_between().items_center().cursor_pointer()
           .on_click((_e, cx) => { this.toolsOpen = !this.toolsOpen; cx.notify(); })
-          .child(this.sectionHead("TOOLS & SKILLS", "#c084fc", "mods/t3-sessions/icons/wrench.svg", t))
+          .child(this.sectionHead("TOOLS & SKILLS", pal.purple, "mods/t3-sessions/icons/wrench.svg", t))
           .child(h_flex().gap(6).items_center().flex_none()
             .child(div().text_size(10.5).font_medium().text_color(t.muted).child(`${tel.totalTools || 52} 项 · 已用 ${usedSet.size || tel.usedToolsCount || 0}`))
             .child(div().text_size(11).font_medium().text_color(t.muted)
@@ -1107,8 +1133,8 @@ export default class Sessions extends View {
           .child(h_flex().w_full().justify_between().items_center().text_size(10.5)
             .child(div().text_color(t.dim).child(`内置基元 ${tel.builtinTools || 13} · 扩展技能 ${tel.extTools || 39}`))
             .child(h_flex().gap(4).items_center()
-              .child(div().size(5).rounded_full().bg(usedSet.size > 0 ? "#10b981" : t.dim))
-              .child(div().font_bold().text_color(usedSet.size > 0 ? "#34d399" : t.dim).child(`已调用 ${usedSet.size || tel.usedToolsCount || 0} 项`))))
+              .child(div().size(5).rounded_full().bg(usedSet.size > 0 ? pal.green : t.dim))
+              .child(div().font_bold().text_color(usedSet.size > 0 ? pal.green : t.dim).child(`已调用 ${usedSet.size || tel.usedToolsCount || 0} 项`))))
           // Search Box
           .child(h_flex().w_full().h(26).px(6).gap(6).items_center().rounded(4).bg(t.background).border(1).border_color(t.border)
             .child(div().text_size(10).text_color(t.dim).child("🔍"))
@@ -1125,37 +1151,37 @@ export default class Sessions extends View {
               .on_click((_e, cx) => { this.toolCategory = "all"; cx.notify(); })
               .child(`全部 (${tel.totalTools || 52})`))
             .child(div().px(6).py(2).rounded(3).cursor_pointer().text_size(10.5).font_medium()
-              .when(this.toolCategory === "builtin", (tEl) => tEl.bg(t.border).text_color("#38bdf8"))
+              .when(this.toolCategory === "builtin", (tEl) => tEl.bg(t.border).text_color(pal.cyan))
               .when(this.toolCategory !== "builtin", (tEl) => tEl.text_color(t.muted).hover((s) => s.text_color(t.foreground)))
               .on_click((_e, cx) => { this.toolCategory = "builtin"; cx.notify(); })
               .child(`内置 (${tel.builtinTools || 13})`))
             .child(div().px(6).py(2).rounded(3).cursor_pointer().text_size(10.5).font_medium()
-              .when(this.toolCategory === "ext", (tEl) => tEl.bg(t.border).text_color("#c084fc"))
+              .when(this.toolCategory === "ext", (tEl) => tEl.bg(t.border).text_color(pal.purple))
               .when(this.toolCategory !== "ext", (tEl) => tEl.text_color(t.muted).hover((s) => s.text_color(t.foreground)))
               .on_click((_e, cx) => { this.toolCategory = "ext"; cx.notify(); })
               .child(`技能 (${tel.extTools || 39})`))
             .child(div().px(6).py(2).rounded(3).cursor_pointer().text_size(10.5).font_medium()
-              .when(this.toolCategory === "used", (tEl) => tEl.bg("#065f46").text_color("#34d399"))
-              .when(this.toolCategory !== "used", (tEl) => tEl.text_color(usedSet.size > 0 ? "#34d399" : t.muted).hover((s) => s.text_color("#34d399")))
+              .when(this.toolCategory === "used", (tEl) => tEl.bg(t.selected).text_color(pal.green))
+              .when(this.toolCategory !== "used", (tEl) => tEl.text_color(usedSet.size > 0 ? pal.green : t.muted).hover((s) => s.text_color(pal.green)))
               .on_click((_e, cx) => { this.toolCategory = "used"; cx.notify(); })
               .child(`已调用 (${usedSet.size})`)))
-          // 2-Column Responsive Chips Matrix: Invoked tools prominently highlighted in Emerald
+          // 2-Column Responsive Chips Matrix: Invoked tools highlighted in theme accent
           .child(h_flex().id("tools-chips-grid").w_full().flex_wrap().gap(4).pt(2)
             .children(displayedTools.map((tool) => {
               const isUsed = usedSet.has(tool.name);
-              const chipColor = isUsed ? "#34d399" : (tool.type === "builtin" ? "#38bdf8" : "#c084fc");
+              const chipColor = isUsed ? pal.green : (tool.type === "builtin" ? pal.cyan : pal.purple);
               return h_flex().id(`tool-chip-${tool.name}`).items_center().gap(4).px(6).py(3).rounded(4)
-                .bg(isUsed ? "#064e3b4d" : t.background)
+                .bg(isUsed ? t.selected : t.background)
                 .border(1)
-                .border_color(isUsed ? "#10b981" : t.border)
+                .border_color(isUsed ? pal.green : t.border)
                 .cursor_pointer()
-                .hover((s) => s.border_color(isUsed ? "#34d399" : (tool.type === "builtin" ? "#38bdf8" : "#c084fc")).bg(t.hover))
+                .hover((s) => s.border_color(isUsed ? pal.green : (tool.type === "builtin" ? pal.cyan : pal.purple)).bg(t.hover))
                 .child(svg(isUsed ? "mods/t3-sessions/icons/check.svg" : (tool.type === "builtin" ? "mods/t3-sessions/icons/terminal.svg" : "mods/t3-sessions/icons/sparkles.svg")).size(10).text_color(chipColor).flex_none())
                 .child(div().text_size(10.5).font_family("JetBrains Mono")
-                  .when(isUsed, (d) => d.font_bold().text_color("#34d399"))
-                  .when(!isUsed, (d) => d.text_color(tool.type === "builtin" ? "#38bdf8" : t.foreground))
+                  .when(isUsed, (d) => d.font_bold().text_color(pal.green))
+                  .when(!isUsed, (d) => d.text_color(tool.type === "builtin" ? pal.cyan : t.foreground))
                   .child(tool.name))
-                .when(isUsed, (elChip) => elChip.child(div().text_size(8.5).font_bold().px(3).py(0.5).rounded(2).bg("#059669").text_color("#ffffff").child("ACTIVE")));
+                .when(isUsed, (elChip) => elChip.child(div().text_size(8.5).font_bold().px(3).py(0.5).rounded(2).bg(pal.green + "26").text_color(pal.green).child("ACTIVE")));
             })))
           .when(displayedTools.length === 0, (el3) => el3.child(
             div().p(8).text_size(11).text_color(t.dim).child("没有匹配的工具或技能"))))))
@@ -1164,13 +1190,13 @@ export default class Sessions extends View {
       .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
         .child(h_flex().w_full().justify_between().items_center().cursor_pointer()
           .on_click((_e, cx) => { this.activityOpen = !this.activityOpen; cx.notify(); })
-          .child(this.sectionHead("ACTIVITY", "#34d399", "mods/t3-sessions/icons/terminal.svg", t))
+          .child(this.sectionHead("ACTIVITY", pal.green, "mods/t3-sessions/icons/terminal.svg", t))
           .child(h_flex().gap(5).items_center().text_size(10).flex_none()
             .when((tel.readFilesCount || 0) > 0 || (tel.editedFilesCount || 0) > 0, (el) => el.child(
               div().px(5).py(1).rounded(3).bg(t.background).text_color(t.muted).child(`读 ${tel.readFilesCount || 0} · 改 ${tel.editedFilesCount || 0}`)))
-            .child(div().px(5).py(1).rounded(3).bg("#064e3b66").font_bold().text_color("#34d399").child(`${tel.toolsOk || 0} ok`))
+            .child(div().px(5).py(1).rounded(3).bg(t.selected).font_bold().text_color(pal.green).child(`${tel.toolsOk || 0} ok`))
             .when((tel.toolsErr || 0) > 0, (el) => el.child(
-              div().px(5).py(1).rounded(3).bg("#7f1d1d66").font_bold().text_color("#ef4444").child(`${tel.toolsErr} err`)))
+              div().px(5).py(1).rounded(3).bg(pal.red + "26").font_bold().text_color(pal.red).child(`${tel.toolsErr} err`)))
             .when(Boolean(tel.avgToolMs), (el) => el.child(
               div().px(5).py(1).rounded(3).bg(t.background).font_family("JetBrains Mono").text_color(t.dim).child(`avg ${tel.avgToolMs}`)))
             .child(div().text_size(11).font_medium().text_color(t.muted)
@@ -1178,7 +1204,7 @@ export default class Sessions extends View {
         .when(this.activityOpen, (el) => el.child(v_flex().w_full().gap(6).pt(2)
           .children((tel.recentTools || []).map((tool, idx) => {
             const isOk = tool.status === "ok";
-            const stColor = isOk ? "#34d399" : "#fb923c";
+            const stColor = isOk ? pal.green : pal.gold;
             return v_flex().id(`tool-${idx}`).w_full().gap(2).py(5).px(7).rounded(5).bg(t.background).border(1).border_color(t.border)
               .child(h_flex().w_full().justify_between().items_center().gap(6)
                 .child(h_flex().gap(6).items_center().min_w(0).flex_1()
@@ -1283,19 +1309,19 @@ export default class Sessions extends View {
         .child(h_flex().w_full().gap(4).items_center().overflow_x_scrollbar().pb(1)
           .child(this.categoryTab("all", "全部", null, counts.all, null, t))
           .when(counts[AGY] > 0 || this.historyAgentFilter === AGY, (el) => el.child(
-            this.categoryTab(AGY, "Antigravity", "mods/t3-sessions/icons/sparkles.svg", counts[AGY], "#818cf8", t)
+            this.categoryTab(AGY, "Antigravity", "mods/t3-sessions/icons/sparkles.svg", counts[AGY], agentColorOf(AGY, t), t)
           ))
           .when(counts[CDX] > 0 || this.historyAgentFilter === CDX, (el) => el.child(
-            this.categoryTab(CDX, "Codex", "mods/t3-sessions/icons/terminal.svg", counts[CDX], "#10b981", t)
+            this.categoryTab(CDX, "Codex", "mods/t3-sessions/icons/terminal.svg", counts[CDX], agentColorOf(CDX, t), t)
           ))
           .when(counts[CC] > 0 || this.historyAgentFilter === CC, (el) => el.child(
-            this.categoryTab(CC, "Claude", "mods/t3-sessions/icons/sparkles.svg", counts[CC], "#f59e0b", t)
+            this.categoryTab(CC, "Claude", "mods/t3-sessions/icons/sparkles.svg", counts[CC], agentColorOf(CC, t), t)
           ))
           .when(counts[PI] > 0 || this.historyAgentFilter === PI, (el) => el.child(
-            this.categoryTab(PI, "Pi", "mods/t3-sessions/icons/zap.svg", counts[PI], "#a855f7", t)
+            this.categoryTab(PI, "Pi", "mods/t3-sessions/icons/zap.svg", counts[PI], agentColorOf(PI, t), t)
           ))
           .when(counts[OMP] > 0 || this.historyAgentFilter === OMP, (el) => el.child(
-            this.categoryTab(OMP, "OMP", "mods/t3-sessions/icons/terminal.svg", counts[OMP], "#38bdf8", t)
+            this.categoryTab(OMP, "OMP", "mods/t3-sessions/icons/terminal.svg", counts[OMP], agentColorOf(OMP, t), t)
           ))
         )
 
@@ -1382,8 +1408,8 @@ export default class Sessions extends View {
             .child(`📜 History (${this.sessions.length})`)))
         .child(div().flex_1())
         .when(this.viewMode === "inspector", (el) => el.child(
-          h_flex().gap(4).items_center().text_size(10.5).font_medium().text_color("#34d399")
-            .child(div().size(6).rounded_full().bg("#34d399"))
+          h_flex().gap(4).items_center().text_size(10.5).font_medium().text_color(paletteOf(t).green)
+            .child(div().size(6).rounded_full().bg(paletteOf(t).green))
             .child("LIVE")))
         .when(this.viewMode === "history", (el) => el
           .child(div().id("sess-root").max_w(160).truncate().text_size(11).cursor_pointer()

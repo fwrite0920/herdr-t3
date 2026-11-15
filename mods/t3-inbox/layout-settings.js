@@ -19,6 +19,7 @@ const DEFAULTS = {
   afterAway: "home",
   homeMod: "t3-home",
   livePorts: true,
+  unifiedChat: true,
   panelTabs: DEFAULT_PANEL_TABS
 };
 

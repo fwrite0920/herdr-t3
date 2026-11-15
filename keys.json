@@ -5,6 +5,8 @@
     "cmd-alt-b": "t3-tabs.panel",
     "cmd-shift-s": "t3-tabs.settle",
     "cmd-p": "mod.open:t3-picker",
+    "cmd-i": "new-chat.open",
+    "ctrl-i": "new-chat.open",
     "cmd-]": "t3-tabs.next",
     "cmd-[": "t3-tabs.prev",
     "cmd-w": "t3-tabs.close-tab",
@@ -241,5 +243,14 @@
     "ctrl-alt-shift-x": "review.close",
     "ctrl-w": "review.close",
     "ctrl-shift-w": "review.close"
+  },
+  "mod:new-chat": {
+    "cmd-w": "overlay.close",
+    "ctrl-alt-shift-x": "overlay.close",
+    "cmd-shift-w": "overlay.close",
+    "ctrl-alt-x": "overlay.close",
+    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
   }
 }
