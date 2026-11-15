@@ -133,7 +133,7 @@ const NL = String.fromCharCode(10);
 function norm(p) { return p ? p.replace(/\\\\/g, '/') : ''; }
 
 const h = (process.argv[1] || os.homedir()).replace(/\\\\/g, '/');
-const cacheFile = norm(os.tmpdir()) + '/herdr-t3-sessions-cache-v1.json';
+const cacheFile = norm(os.tmpdir()) + '/herdr-t3-sessions-cache-v2.json';
 let cache = {};
 let cacheDirty = false;
 try { cache = JSON.parse(fs.readFileSync(cacheFile, 'utf8')); } catch { cache = {}; }
@@ -352,18 +352,25 @@ function scanCodexDirs(base, prefix = '', wslDistro = '') {
         if (stat.isDirectory()) walk(full, depth + 1);
         else if (item.endsWith('.jsonl')) {
           try {
-            const head = readHead(full, stat.size);
-            let title = '', cwd = '';
-            for (const line of head.split(NL)) {
-              try {
-                const o = JSON.parse(line);
-                if (o.type === 'session_meta' && o.payload?.cwd) cwd = o.payload.cwd;
-                if (o.payload?.item?.type === 'UserMessage' && !title) title = o.payload.item.content?.[0]?.text || '';
-                if (title && cwd) break;
-              } catch {}
-            }
-            const id = item.replace(/\\.jsonl$/, '').split('-').pop();
-            out.push({ agent: 'codex', id: prefix ? prefix + '/' + id : id, file: item, cwd: norm(cwd), mtime: stat.mtimeMs, title: (title.slice(0, 200) || 'Codex Session'), ...(wslDistro ? { wslDistro } : {}) });
+            out.push(cached(full, stat.mtimeMs, () => {
+              const head = readHead(full, stat.size, 131072);
+              let title = '', cwd = '';
+              for (const line of head.split(NL)) {
+                if (!line.trim()) continue;
+                try {
+                  const o = JSON.parse(line);
+                  if ((o.type === 'session_meta' || o.type === 'turn_context') && o.payload?.cwd && !cwd) cwd = o.payload.cwd;
+                  if (o.payload?.item?.type === 'UserMessage' && !title) {
+                    const c = o.payload.item.content;
+                    title = Array.isArray(c) ? c.map((x) => x?.text || '').join(' ').trim() : String(c || o.payload.item.text || '').trim();
+                  }
+                  if (title && cwd) break;
+                } catch {}
+              }
+              const um = item.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+              const id = um ? um[1] : item.replace(/\\.jsonl$/, '').split('-').pop();
+              return { agent: 'codex', id: prefix ? prefix + '/' + id : id, file: item, cwd: norm(cwd), mtime: stat.mtimeMs, title: (title.slice(0, 200) || 'Codex Session'), ...(wslDistro ? { wslDistro } : {}) };
+            }));
           } catch {}
         }
       }
@@ -600,7 +607,7 @@ export default class Sessions extends View {
     const wanted = [...raw.matchAll(/#([^\s#]+)/g)].map((m) => m[1].toLowerCase());
     const q = raw.replace(/#[^\s#]+/g, " ").trim().toLowerCase();
     return this.sessions.filter((s) => {
-      if (!this.showAll && root && s.cwd && !pathMatches(root, s.cwd)) return false;
+      if (!this.showAll && root && (!s.cwd || !pathMatches(root, s.cwd))) return false;
       if (this.historyAgentFilter !== "all" && s.agent !== this.historyAgentFilter) return false;
       const own = this.tagsOf(s).map((x) => String(x).toLowerCase());
       if (this.tagOnly && !own.includes(String(this.tagOnly).toLowerCase())) return false;
@@ -617,9 +624,16 @@ export default class Sessions extends View {
     let argv = [];
     let folder = session.cwd || home();
     if (session.agent === "codex" && String(session.id).startsWith("wsl/")) {
-      const cleanId = String(session.id).replace(/^wsl\//, "");
-      argv = ["wsl", ...(session.wslDistro ? ["-d", session.wslDistro] : []), ...(session.cwd ? ["--cd", session.cwd] : []), "codex", "resume", cleanId];
-      folder = undefined;
+      const um = String(session.file || session.id).match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+      const cleanId = um ? um[1] : String(session.id).replace(/^wsl\//, "");
+      const activeMachine = (typeof spaces === "function" ? spaces().find((s) => s.active)?.machine : null) || null;
+      if (activeMachine === "wsl") {
+        argv = ["codex", "resume", cleanId];
+        folder = session.cwd || undefined;
+      } else {
+        argv = ["wsl", ...(session.wslDistro ? ["-d", session.wslDistro] : []), ...(session.cwd ? ["--cd", session.cwd] : []), "codex", "resume", cleanId];
+        folder = undefined;
+      }
     } else if (typeof agent.argv === "function") {
       argv = agent.argv(session.id, session.file);
     }
@@ -1128,7 +1142,7 @@ export default class Sessions extends View {
     const wanted = [...raw.matchAll(/#([^\s#]+)/g)].map((m) => m[1].toLowerCase());
     const q = raw.replace(/#[^\s#]+/g, " ").trim().toLowerCase();
     const scopedList = this.sessions.filter((s) => {
-      if (!this.showAll && root && s.cwd && !pathMatches(root, s.cwd)) return false;
+      if (!this.showAll && root && (!s.cwd || !pathMatches(root, s.cwd))) return false;
       const own = this.tagsOf(s).map((x) => String(x).toLowerCase());
       if (this.tagOnly && !own.includes(String(this.tagOnly).toLowerCase())) return false;
       if (wanted.some((tag) => !own.some((x) => x.includes(tag)))) return false;
