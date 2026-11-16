@@ -452,8 +452,9 @@ export default class Tabs extends View {
         .when(!over, el => el.child(glyph))
         .when(over, el => stop(this, t, closeId, el, radiusOf("tiny"))), { action: c.active ? "t3-tabs.close-tab" : undefined, below: true, delay: 500 });
       const tab = h_flex().id(tabId).relative().h(28).w(widths.get(c.id)).pl(8).pr(10).gap(6).rounded(6).items_center().flex_none().text_size(12)
-        .border_1().border_color(c.active ? t.border : t.chrome)
+        .border_1().border_color(c.active ? t.foreground + "26" : t.chrome)
         .bg(c.active ? t.selected : t.chrome).text_color(c.active || over ? t.foreground : t.muted)
+        .when(c.active, el => el.font_medium().child(div().absolute().bottom(0).left(8).right(8).h(2).rounded_full().bg(t.accent)))
         .role("button").accessibility_label(name)
         .on_hover((on, cx) => {
           if (on) { this.overTab = c.id; detailsWatch(this, c.id, cx); }
@@ -639,7 +640,8 @@ export default class Tabs extends View {
       const glyph = programIcon(programOf(p), 12, t.muted) ?? svg("mods/t3-tabs/icons/terminal.svg").size(12).text_color(t.muted);
       return stop(this, t, id, h_flex().id(id).relative().h_full().pl(6).pr(8).gap(2).rounded(6).items_center().min_w(0).flex_shrink(1)
         .max_w(on ? TAB_ACTIVE : TAB_FLOOR).text_size(12).text_color(on || this.hot === id ? t.foreground : t.muted)
-        .when(on, el => el.bg(t.selected)).when(!on, el => el.hover(s => s.bg(t.hover))).on_hover(glow(this, id))
+        .when(on, el => el.bg(t.selected).font_medium().child(div().absolute().bottom(0).left(6).right(6).h(2).rounded_full().bg(t.accent)))
+        .when(!on, el => el.hover(s => s.bg(t.hover))).on_hover(glow(this, id))
         .role("button").accessibility_label(label)
         .on_mouse_down("left", stopPress).on_click(() => focusPane(p.pane))
         .on_mouse_down("right", (_e, cx) => openMenu(this, "pane", { pane: p.pane, terminal: p.terminal }, cx))
