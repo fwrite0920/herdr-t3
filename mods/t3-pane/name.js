@@ -13,6 +13,7 @@ const MARK = { pi: /^π - /u, opencode: /^OC \| / };
 const OWN = {
   pi: (s, folder) => { s = s.replace(MARK.pi, ""); return folder && s.endsWith(` - ${folder}`) ? s.slice(0, -folder.length - 3) : s; },
   opencode: (s) => s.replace(MARK.opencode, ""),
+  codex: (s) => s.replace(/\s+\|\s+[^|]+$/, ""),
 };
 
 // What a pane runs, for its icon: its program, or for a mod pane what its mod gives in shared("<mod>.program") ({ icon, tint }).
