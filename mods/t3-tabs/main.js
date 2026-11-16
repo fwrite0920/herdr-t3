@@ -48,14 +48,10 @@ const TAB_GAP = 4;
 // A tab's name gives way to T3's 144px at most, the active one's to 240px; past that the strip scrolls.
 // Unlike T3's, a tab is 96px at least: a short name (`Pi`) left one too small to aim at.
 const TAB_FLOOR = 144, TAB_ACTIVE = 240, TAB_MIN = 96;
-// A tab around its name: padding, the icon's slot, the gaps and the slot its status mark and × share.
-const TAB_CHROME = 51;
-// With the Inbox, the tools at the right hug their icon and name: padding, the icon's slot and the gap. Their tabs have no status
-// mark (docs/adr/0002), so the end slot a Lists tab keeps for its mark and × would hold nothing at rest; hovered, the × takes the
-// icon's slot. Nothing kept empty, they sit flush and evenly against Actions.
-const SNUG_CHROME = 32;
+// A tab around its name: 8px left + 16px icon/close slot + 6px gap + 10px right = 40px; a status mark adds 6px + 16px.
+const TAB_CHROME = 40, SNUG_CHROME = 40, STATUS_SLOT = 22;
 // A zoomed tab's pane segment around its name: a tab's padding, icon slot and gap, with no ×. The rule between the Inbox's groups.
-const SEG_CHROME = 32, RULE_W = 9;
+const SEG_CHROME = 40, RULE_W = 9;
 // With the Inbox showing, the breadcrumb shows whole while it can: the strip beside it gives way first, down to
 // nothing (it scrolls), and the names shorten only when the breadcrumb alone is wider than the row; under NARROW, a parent's
 // name turns to `…`.
@@ -414,7 +410,7 @@ export default class Tabs extends View {
     const segWant = (p, on) => Math.min(on ? TAB_ACTIVE : TAB_FLOOR, this.nameW[`seg-${p.pane}`] ? Math.ceil(this.nameW[`seg-${p.pane}`]) + SEG_CHROME : TAB_FLOOR);
     const want = (e) => e.rule ? RULE_W
       : e.group ? e.group.panes.reduce((sum, p) => sum + segWant(p, p === e.group.z), 2 + (e.group.status ? 16 : 0))
-      : this.nameW[e.id] ? (ctx ? Math.ceil(this.nameW[e.id]) + SNUG_CHROME : Math.max(TAB_MIN, Math.ceil(this.nameW[e.id]) + TAB_CHROME)) : TAB_FLOOR;
+      : this.nameW[e.id] ? (ctx ? Math.ceil(this.nameW[e.id]) + SNUG_CHROME : Math.max(TAB_MIN, Math.ceil(this.nameW[e.id]) + TAB_CHROME + (!inbox && statusOf(e.c) ? STATUS_SLOT : 0))) : TAB_FLOOR;
     // With the Inbox the strip asks for what its tabs want and gets what the breadcrumb leaves (measured: stripW); in Lists, the row.
     const area = this.area ?? 0, stripWant = Math.max(0, entries.reduce((sum, e) => sum + want(e) + TAB_GAP, -TAB_GAP));
     this.room = ctx ? this.stripW ?? Math.min(stripWant, area) : area;
@@ -441,9 +437,9 @@ export default class Tabs extends View {
       // (the tab's 6px padding, 16px icon slot and 2px gap, less the label's 1px border and 8px padding). Up from the hover on: a Popup must
       // have measured its anchor before the frame a label starts to fade in. It says the status too, as × covers the mark while it shows.
       // Only what the tab isn't showing: a name cut short or that status. Not yet measured counts as cut.
-      const says = status || !(widths.get(c.id) >= Math.ceil(this.nameW[c.id]) + (ctx ? SNUG_CHROME : TAB_CHROME));
+      const says = status || !(widths.get(c.id) >= Math.ceil(this.nameW[c.id]) + (ctx ? SNUG_CHROME : TAB_CHROME + (status ? STATUS_SLOT : 0)));
       const cardShown = /** @type {any} */ (this).details === c.id && /** @type {any} */ (this).detailsIn && !this.hot, cardFade = /** @type {const} */ ({ duration: 150, easing: "ease-out" });
-      const details = Popup.new(`details-${c.id}`, div()).absolute().bottom(0).left(6 + 16 + 2 - (1 + 8)).size(1)
+      const details = Popup.new(`details-${c.id}`, div()).absolute().bottom(0).left(8 + 16 + 6 - (1 + 8)).size(1)
         .when((/** @type {any} */ (this).details === c.id && this.pressed === null) || /** @type {any} */ (this).detailsOut === c.id, pop => pop.content(div().id(`details-card-${c.id}`)
           .mt(4).max_w(320).px(8).py(4).rounded(6).border(1).border_color(t.border).bg(t.chrome).shadow_md().text_size(12).text_color(t.foreground)
           .opacity(cardShown ? 1 : 0).top(cardShown ? 0 : -4).transition("opacity", cardFade).transition("top", cardFade)
@@ -453,9 +449,10 @@ export default class Tabs extends View {
         size: "tiny", surface: "tab", icon: over ? "mods/t3-tabs/icons/x.svg" : undefined, label: `Close ${name}`, hot: over })
         .on_hover(glow(this, closeId))
         .on_mouse_down("left", stopPress).on_click((_e, cx) => { cx.stop_propagation(); run(`t3-tabs.close-tab:${c.id}`); })
-        .when(!over && status != null, el => el.child(mark(t, status)))
+        .when(!over, el => el.child(glyph))
         .when(over, el => stop(this, t, closeId, el, radiusOf("tiny"))), { action: c.active ? "t3-tabs.close-tab" : undefined, below: true, delay: 500 });
-      const tab = h_flex().id(tabId).relative().h(24).w(widths.get(c.id)).pl(6).pr(8).gap(2).rounded(6).items_center().flex_none().text_size(12)
+      const tab = h_flex().id(tabId).relative().h(28).w(widths.get(c.id)).pl(8).pr(10).gap(6).rounded(6).items_center().flex_none().text_size(12)
+        .border_1().border_color(c.active ? t.border : t.chrome)
         .bg(c.active ? t.selected : t.chrome).text_color(c.active || over ? t.foreground : t.muted)
         .role("button").accessibility_label(name)
         .on_hover((on, cx) => {
@@ -463,7 +460,7 @@ export default class Tabs extends View {
           else if (this.overTab === c.id) { this.overTab = null; detailsFor(this, null, cx); }
           cx.notify();
         })
-        .when(!c.active, el => el.hover(s => s.bg(t.hover)))
+        .when(!c.active, el => el.hover(s => s.bg(t.hover).border_color(t.hover)))
         // Dragged as a space is: the source fades, a line shows where it lands. `over` is null until the drag starts.
         .when(pressedAt === i && this.over !== null && this.over !== c.id, el => el.opacity(0.5))
         .when(pressedAt >= 0 && this.over === c.id && pressedAt !== i, el => el.child(
@@ -492,16 +489,17 @@ export default class Tabs extends View {
           else if (strip.some(x => x.id === from)) run("tab.select", { id: from });
           cx.notify();
         })
+        .on_mouse_down("middle", (_e, cx) => { cx.stop_propagation(); run(`t3-tabs.close-tab:${c.id}`); })
         .on_mouse_down("right", (_e, cx) => { detailsFor(this, null, cx); openMenu(this, "tab", { id: c.id, space: space.id }, cx); })
         // Its name's whole width, whatever the tab's: clipped to nothing, it only measures.
         .child(div().id(`name-${c.id}`).absolute().top(0).left(0).h(0).overflow_hidden().whitespace_nowrap().child(label)
           .on_size_change((size, cx) => { this.nameW[c.id] = size.width / settings().zoom; cx.notify(); }))
         // The card belongs to the icon and name, as T3's and Zed's: on the way to the × it goes.
-        .child(h_flex().id(`label-${c.id}`).flex_1().min_w(0).h_full().gap(2).items_center()
+        .child(h_flex().id(`label-${c.id}`).flex_1().min_w(0).h_full().gap(6).items_center()
           .on_hover((on, cx) => { detailsFor(this, on && says ? c.id : null, cx); cx.notify(); })
-          .child(ctx && over ? close : div().size(16).flex_none().flex().items_center().justify_center().child(glyph))
+          .child(close)
           .child(div().flex_1().min_w(0).truncate().child(label)))
-        .when(!ctx, el => el.child(close))
+        .when(status != null, el => el.child(div().size(16).flex_none().flex().items_center().justify_center().child(mark(t, status))))
         .when([this.overTab, /** @type {any} */ (this).details, /** @type {any} */ (this).detailsOut].includes(c.id), el => el.child(details));
       // A tab goes by its mouse-up, which a key isn't.
       return stop(this, t, tabId, tab, 6, { enter: () => run("tab.select", { id: c.id }) });
@@ -650,7 +648,7 @@ export default class Tabs extends View {
         .child(div().size(16).flex_none().flex().items_center().justify_center().child(glyph))
         .child(div().flex_1().min_w(0).truncate().child(label)), 6);
     };
-    return h_flex().id(`group-${e.id}`).w(width).h(24).flex_none().rounded(6).border(1).border_dashed().border_color(t.border).items_center().overflow_hidden()
+    return h_flex().id(`group-${e.id}`).w(width).h(28).flex_none().rounded(6).border(1).border_dashed().border_color(t.border).items_center().overflow_hidden()
       .children(list.map(segment))
       .when(Boolean(status), el => el.child(div().w(16).flex_none().flex().items_center().justify_center().child(mark(t, status))));
   }

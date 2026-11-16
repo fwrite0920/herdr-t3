@@ -71,7 +71,9 @@ const close = click(root, "close-b");
 assert.equal(close.style.h, 16); assert.equal(close.items.length, 1); assert.equal(close.items[0].style.size, 12);
 assert.equal(close.hoverStyle.bg, t.raised, "as T3's tab close, bg-muted"); assert.equal(calls.pop()[0], "t3-tabs.close-tab:b");
 tabs.overTab = null;
-assert.equal(find(tabs.render(), "close-b").items.length, 0, "the close icon still hides until the tab is hovered");
+assert.notEqual(find(tabs.render(), "close-b").items[0]?.src, "mods/t3-tabs/icons/x.svg", "the close icon still hides until the tab is hovered");
+find(tabs.render(), "tab-b").handlers.middle({}, cx);
+assert.equal(calls.pop()[0], "t3-tabs.close-tab:b", "a middle press closes the tab");
 
 const chrome = load(path.join(__dirname, "../t3-chrome"));
 part = { footer: true };
