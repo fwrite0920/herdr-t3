@@ -431,7 +431,8 @@ export default class Tabs extends View {
       // As T3's panel tabs: 24px, 12px words. Unlike T3's, the icon stays: it tells tabs apart, so hovering puts × over the status mark instead.
       const tabId = `tab-${c.id}`, closeId = `close-${c.id}`;
       const over = this.overTab === c.id || within(this, [tabId, closeId]);
-      const glyph = programIcon(program, 12, t.muted) ?? svg("mods/t3-tabs/icons/terminal.svg").size(12).text_color(t.muted);
+      const iconColor = c.active || over ? t.foreground : t.dim;
+      const glyph = programIcon(program, 12, iconColor) ?? svg("mods/t3-tabs/icons/terminal.svg").size(12).text_color(iconColor);
       // Its whole name, in a hover label's quiet style: the project, branch and program are already in the sidebar and the pane's header.
       // A Popup hanging from a 1px anchor at the tab's bottom, with an Inbox row's timing; the label's words start where the tab's name does
       // (the tab's 6px padding, 16px icon slot and 2px gap, less the label's 1px border and 8px padding). Up from the hover on: a Popup must
@@ -452,8 +453,8 @@ export default class Tabs extends View {
         .when(!over, el => el.child(glyph))
         .when(over, el => stop(this, t, closeId, el, radiusOf("tiny"))), { action: c.active ? "t3-tabs.close-tab" : undefined, below: true, delay: 500 });
       const tab = h_flex().id(tabId).relative().h(28).w(widths.get(c.id)).pl(8).pr(10).gap(6).rounded(6).items_center().flex_none().text_size(12)
-        .border_1().border_color(c.active ? t.accent + "55" : t.chrome)
-        .bg(c.active ? t.accent + "22" : t.chrome).text_color(c.active || over ? t.foreground : t.dim)
+        .border_1().border_color(c.active ? t.foreground + "1a" : t.chrome)
+        .bg(c.active ? t.raised : t.chrome).text_color(c.active || over ? t.foreground : t.dim)
         .when(c.active, el => el.font_medium())
         .role("button").accessibility_label(name)
         .on_hover((on, cx) => {
@@ -640,7 +641,7 @@ export default class Tabs extends View {
       const glyph = programIcon(programOf(p), 12, t.muted) ?? svg("mods/t3-tabs/icons/terminal.svg").size(12).text_color(t.muted);
       return stop(this, t, id, h_flex().id(id).relative().h_full().pl(6).pr(8).gap(2).rounded(6).items_center().min_w(0).flex_shrink(1)
         .max_w(on ? TAB_ACTIVE : TAB_FLOOR).text_size(12).text_color(on || this.hot === id ? t.foreground : t.dim)
-        .when(on, el => el.bg(t.accent + "22").font_medium())
+        .when(on, el => el.bg(t.raised).font_medium())
         .when(!on, el => el.hover(s => s.bg(t.hover))).on_hover(glow(this, id))
         .role("button").accessibility_label(label)
         .on_mouse_down("left", stopPress).on_click(() => focusPane(p.pane))
