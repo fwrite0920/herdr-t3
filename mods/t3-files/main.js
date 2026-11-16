@@ -3,7 +3,7 @@
 // One copy serves every space, here or on another machine: what each one shows is kept by its id.
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Editor, EditorState, TextView } from "gpui-base";
-import { spaces, panes, focused, nextCommand, exec, readTextFile, theme, settings, shared, setShared, appHome, window } from "herdr";
+import { spaces, panes, focused, nextCommand, exec, readTextFile, theme, settings, shared, setShared, appHome, window, watchFolder } from "herdr";
 import * as fs from "fs/promises";
 import uFuzzy from "./vendor/ufuzzy.js";
 import { panelState, hidePanel } from "./panel.js";
@@ -88,7 +88,34 @@ export default class Files extends View {
 
   // Its images go with it; one a crash left is cleared at the next start.
   async close() {
+    this.stopWatch();
     await Promise.all([...this.cached].map((f) => fs.unlink(`${appHome()}/${f}`).catch(() => null)));
+  }
+
+  stopWatch() {
+    if (!this.watchToken) return;
+    this.watchToken.stopped = true;
+    this.watchToken.wait?.cancel?.();
+    this.watchToken = null;
+  }
+
+  watchLocal(st, cx) {
+    if (st.on || !st.root || typeof watchFolder !== "function") { this.stopWatch(); return; }
+    if (this.watchToken?.root === st.root && !this.watchToken.stopped) return;
+    this.stopWatch();
+    const token = { root: st.root, stopped: false, wait: null };
+    this.watchToken = token;
+    cx.spawn(async (cx) => {
+      try {
+        while (!token.stopped && this.watchToken === token && this.awake === st) {
+          token.wait = watchFolder(st.root);
+          await token.wait;
+          token.wait = null;
+          if (token.stopped || this.watchToken !== token || this.awake !== st) return;
+          if (st.git !== undefined && Date.now() - (st.refreshed ?? 0) >= 300) this.recheck(st, cx);
+        }
+      } catch {}
+    });
   }
 
   current() {
@@ -135,7 +162,8 @@ export default class Files extends View {
     const st = sp && this.shown() ? this.stateFor(sp) : null;
     if (st === this.awake) return;
     this.awake = st; this.gen++;
-    if (!st?.root) return;
+    if (!st?.root) { this.stopWatch(); return; }
+    this.watchLocal(st, cx);
     if (st.git === undefined) this.load(st, cx); else this.recheck(st, cx);
   }
 
@@ -606,6 +634,7 @@ export default class Files extends View {
       })
       .child(svg(`${MOD}/icons/search.svg`).size(16).flex_none().text_color(t.dim))
       .child(Input.new(this.search).flex_1().h(28).text_size(12).text_color(t.foreground))
+      .child(ghostButton(t, MOD, "t3-files-refresh", "rotate-cw", "Refresh files", (cx) => this.recheck(st, cx), { view: this }))
       .child(foldAllButton(t, MOD, "t3-files-fold-all", st.expanded.size === 0, (cx) => this.foldAll(st, cx), this));
   }
 

@@ -84,7 +84,15 @@ function makePage({ page = "files", spaces = [space("s1", "/r", true)] } = {}) {
     shared: (k) => shared[k], setShared: (k, v) => { wrote.push(k); shared[k] = v; },
     run() {}, notify() {}, exec,
     readTextFile: async (p) => { w.read.push(p); return w.hold && p.startsWith(w.hold) ? new Promise((r) => w.held.push(() => r("held\n"))) : "const a = 1;\n"; },
-    watchFolder: (p) => new Promise((resolve, reject) => w.watchers.push({ path: p, task: running, resolve, reject })),
+    watchFolder: (p) => {
+      let finish;
+      const wait = new Promise((resolve, reject) => {
+        const entry = { path: p, task: running, resolve: (paths) => { w.watchers.splice(w.watchers.indexOf(entry) >>> 0, 1); resolve(paths); }, reject };
+        w.watchers.push(entry); finish = entry.resolve;
+      });
+      wait.cancel = () => finish([]);
+      return wait;
+    },
     nextCommand: () => commands.length ? Promise.resolve(commands.shift()) : new Promise((r) => { wake = r; }),
     fs: { unlink: async () => {}, mkdir: async () => {}, writeFile: async () => {} },
     localStorage: { getItem: (k) => store.has(k) ? store.get(k) : null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) },
@@ -277,7 +285,7 @@ async function resources() {
   w.windowActive = true; await tick();
   assert.ok(w.read.includes("/x/a.js"), "back: read");
   ran();
-  assert.equal(w.watchers.length, 0, "nothing ever watched");
+  assert.ok(w.watchers.length <= 1, "at most one active watch for the shown local space");
 
   // Four spaces, a file open in each: the oldest lets go of what it read, its editor released, and keeps its file and folders.
   w.spaces = ["s1", "s2", "s3", "s4"].map((id, i) => space(id, `/r${i + 1}`, id === "s1"));
