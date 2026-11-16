@@ -40,7 +40,9 @@ export function namer() {
     // would read as Pi's session. Not an agent and in an agent's marks, the title is one left behind.
     const left = !x.program?.agent && Object.values(MARK).some((m) => m.test(clean(x.title)));
     const raw = left ? "" : own ? own(clean(x.title), folder) : clean(x.title);
-    const live = raw.replace(WIN_ADMIN, "");
+    let live = raw.replace(WIN_ADMIN, "");
+    const suffix = [folder, x.space_name ?? tab?.space].find((v) => v && live.endsWith(` | ${v}`) && live.length > v.length + 3);
+    if (suffix) live = live.slice(0, -suffix.length - 3).trim();
     const telling = live && live !== x.program?.name && live.toLowerCase() !== x.program?.key
       && !/^[~/]|^[A-Za-z]:[\\/]/.test(live) && !live.includes("@") && live !== address
       && live !== folder && live !== (x.space_name ?? tab?.space);
