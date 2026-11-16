@@ -5,6 +5,8 @@
 import { terminals, spaces, shared, agents } from "herdr";
 
 const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
+// Windows consoles/ConPTY prepend "Administrator: " / "管理员: " (sometimes repeated) to the executable path or title.
+const WIN_ADMIN = /^(?:(?:Administrator|管理员):\s*)+/i;
 // Agents' own title marks, by program (the key their status report names): Pi's "π - <session> - <folder>",
 // OpenCode's "OC | <session>". Only theirs come off: another agent's title that happens to look alike stays.
 const MARK = { pi: /^π - /u, opencode: /^OC \| / };
@@ -37,9 +39,10 @@ export function namer() {
     // An agent's session and title outlive it: lazygit, started after Pi in the same shell, sets no title and
     // would read as Pi's session. Not an agent and in an agent's marks, the title is one left behind.
     const left = !x.program?.agent && Object.values(MARK).some((m) => m.test(clean(x.title)));
-    const live = left ? "" : own ? own(clean(x.title), folder) : clean(x.title);
+    const raw = left ? "" : own ? own(clean(x.title), folder) : clean(x.title);
+    const live = raw.replace(WIN_ADMIN, "");
     const telling = live && live !== x.program?.name && live.toLowerCase() !== x.program?.key
-      && !/^[~/]|^[A-Za-z]:\\/.test(live) && !live.includes("@") && live !== address
+      && !/^[~/]|^[A-Za-z]:[\\/]/.test(live) && !live.includes("@") && live !== address
       && live !== folder && live !== (x.space_name ?? tab?.space);
     return (x.program?.key === "pi" && term.get(address)?.labels?.["pi.session"]) || (x.status != null && tab?.named && !sub(address) && (leads.get(x.tab) ?? 0) < 2 && tab.name)
       || (telling && live) || x.program?.name || address || "shell";
