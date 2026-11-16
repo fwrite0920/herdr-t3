@@ -106,9 +106,10 @@ export function treeList(view, id, rows, draw) {
  * name, then a change's letter and the page's own `trailing`. Selected on the text color at 12%, hovered at 7%; the row the keys are on ringed. `mod` is the mod's folder,
  * whose icons/ hold the chevrons and file-icons.js's; `icon`, a 16 element, stands in for the file or folder icon.
  */
-/** @param {any} t @param {string} mod @param {any} row @param {string} id @param {{ selected?: boolean, focused?: boolean, status?: string, dim?: boolean, struck?: boolean, leading?: any, trailing?: any, icon?: any }} options */
-export function treeRow(t, mod, row, id, { selected = false, focused = false, status, dim = false, struck = false, leading, trailing, icon } = {}) {
+/** @param {any} t @param {string} mod @param {any} row @param {string} id @param {{ selected?: boolean, focused?: boolean, status?: string, dim?: boolean, struck?: boolean, leading?: any, trailing?: any, icon?: any, drag?: { path: string, on: string } }} options */
+export function treeRow(t, mod, row, id, { selected = false, focused = false, status, dim = false, struck = false, leading, trailing, icon, drag } = {}) {
   return h_flex().id(id).h(TREE_ROW).mx(2).pl(PAD + row.depth * LEVEL).pr(PAD).gap(GAP).items_center().rounded(6).text_size(12)
+    .when(Boolean(drag), el => el.drag_paths([drag.path], { on: drag.on }))
     .border_1().border_color(focused ? t.ring : CLEAR)
     .when(selected, (el) => el.bg(t.foreground + "1f")).when(!selected, (el) => el.hover((s) => s.bg(t.foreground + "12")))
     .child(div().size(16).flex_none().flex().items_center().justify_center()

@@ -25,6 +25,16 @@ const EXPAND_MAX = 200;
 // Asked again while it shows: here every 5 s, another machine every 10; a refresh that took long, 10 times as long, a minute at
 // most. Nothing is watched: Herdr's folder watch can't be stopped once asked, and a hidden page runs nothing.
 const LOCAL_EVERY = 5000, REMOTE_EVERY = 10000, SLOWEST = 60000;
+// Herdr runs each exec as a process with two pipes: listing every folder Expand all opened at once can exhaust open files.
+// Listing reads go READ_AT_ONCE at a time across every space this copy reads.
+const READ_AT_ONCE = 8;
+let reading = 0;
+const waiting = [];
+const limited = async (read) => {
+  while (reading >= READ_AT_ONCE) await new Promise((go) => waiting.push(go));
+  reading++;
+  try { return await read(); } finally { reading--; waiting.shift()?.(); }
+};
 const FULL = 3; // the spaces last shown that keep all they read; older ones keep their file, open folders and search
 const CACHE = "cache/t3-files"; // under the app's home, where image() can read
 const MARKDOWN = "t3-files.markdown"; // "code" once someone picked it; Preview otherwise
@@ -240,8 +250,9 @@ export default class Files extends View {
     }
 
     const [r, ig] = await Promise.all([
-      exec("sh", ["-c", LIST, "files", dir], { on: st.on }).catch((e) => ({ code: 1, stdout: "", stderr: String(e) })),
-      st.git && !inIgnored ? exec("sh", ["-c", IGNORED, "files", dir, rel ? `${rel}/` : ""], { cwd: st.root, on: st.on }).catch(() => null) : null,
+      limited(() => exec("sh", ["-c", LIST, "files", dir], { on: st.on })).catch((e) => ({ code: 1, stdout: "", stderr: String(e?.message ?? e) })),
+      // Asked in the folder itself, so Git answers for the repository it's in (including nested clones); in none, nothing is ignored.
+      !inIgnored ? limited(() => exec("sh", ["-c", IGNORED, "files", dir, ""], { cwd: dir, on: st.on })).catch(() => null) : null,
     ]);
     if (!fresh()) return;
     if (r.code !== 0) {
@@ -251,7 +262,7 @@ export default class Files extends View {
       st.entries.set(rel, entries);
       if (!rel) st.error = null;
       if (ig) {
-        markIgnored(st.ignored, rel, entries, parseIgnored(ig.stdout));
+        markIgnored(st.ignored, rel, entries, new Set([...parseIgnored(ig.stdout)].map((name) => join(rel, name))));
       }
     }
     this.changed(st);
@@ -627,6 +638,7 @@ export default class Files extends View {
     const draw = (r, i) => {
       const mark = !r.dir && st.marks.get(r.path), open = r.dir && r.open;
       return treeRow(t, MOD, r, `row-${r.path}`, { selected: r.path === st.file || i === lit, focused: i === ringed, status: mark || undefined, dim: r.ignored || r.gone, struck: r.gone,
+        drag: { path: join(st.root, r.path), on: st.on },
         trailing: r.dir && !open && st.dirs.has(r.path) ? div().size(6).mr(5).flex_none().rounded_full().bg(t.muted) : null })
         .on_click((_e, cx) => { st.focus = null; act(r, cx); })
         .on_mouse_down("right", () => { this.menuFor = r.path; });
