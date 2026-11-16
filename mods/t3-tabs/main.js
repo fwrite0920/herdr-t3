@@ -48,10 +48,10 @@ const TAB_GAP = 4;
 // A tab's name gives way to T3's 144px at most, the active one's to 240px; past that the strip scrolls.
 // Unlike T3's, a tab is 96px at least: a short name (`Pi`) left one too small to aim at.
 const TAB_FLOOR = 144, TAB_ACTIVE = 240, TAB_MIN = 96;
-// A tab around its name: 8px left + 16px icon/close slot + 6px gap + 10px right = 40px; a status mark adds 6px + 16px.
-const TAB_CHROME = 40, SNUG_CHROME = 40, STATUS_SLOT = 22;
+// A tab around its name: 2px border + 8px left + 16px icon/close slot + 6px gap + 10px right = 42px; a status mark adds 6px + 16px.
+const TAB_CHROME = 42, SNUG_CHROME = 42, STATUS_SLOT = 22;
 // A zoomed tab's pane segment around its name: a tab's padding, icon slot and gap, with no ×. The rule between the Inbox's groups.
-const SEG_CHROME = 40, RULE_W = 9;
+const SEG_CHROME = 42, RULE_W = 9;
 // With the Inbox showing, the breadcrumb shows whole while it can: the strip beside it gives way first, down to
 // nothing (it scrolls), and the names shorten only when the breadcrumb alone is wider than the row; under NARROW, a parent's
 // name turns to `…`.
