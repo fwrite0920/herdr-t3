@@ -1,6 +1,6 @@
 import { spaces, panes, agents, terminals, machines, run, openOverlay, closeOverlay, focused, hc, notify, layout, shared, setShared, home, window } from "herdr";
 import { namer, programOf } from "./name.js";
-import { descendants, kidStatus, ownStatus, treeStatus } from "./tree.js";
+import { descendants, kidStatus, ownStatus, stillSettled, treeStatus } from "./tree.js";
 import { focusAgent, focusPane } from "./zoom.js";
 import { sidebarParts } from "./sidebar.js";
 import { newTab } from "./project.js";
@@ -391,10 +391,17 @@ export function navigation(beforeAsk = (_cx) => {}, core = { spaces, panes, agen
       }
       return null;
     };
+    const statuses = new Map(every.map(a => [a.address, a.status]));
+    const putAway = (a) => {
+      const k = byAddress.get(a.address), own = ownStatus(a.status, a.address, all);
+      const kids = descendants(all, a.address).map(d => kidStatus(d, statuses));
+      if (treeStatus(own, kids) === "blocked") return false;
+      return stillSettled(k, own, kids) || Number(k?.labels?.snoozed) > Date.now();
+    };
     const shownTab = going?.tab ?? space.tabs.find(c => c.active)?.id;
     // Until a close's target shows, the focus is on Herdr's pick, not on anyone the person went to.
     const current = going ? null : every.find(a => a.address === inViewAgent(all, every) && space.tabs.some(c => c.id === a.tab));
-    const tab = current?.tab ?? (fresh.has(space.id) ? [shownTab] : [shownTab, ...(trail[space.id] ?? [])]).find(id => every.some(a => a.tab === id));
+    const tab = current?.tab ?? (fresh.has(space.id) ? [shownTab] : [shownTab, ...(trail[space.id] ?? [])]).find(id => every.some(a => a.tab === id && (id === shownTab || !putAway(a))));
     const here = every.filter(a => a.tab === tab), heads = here.filter(a => above(a.address)?.tab !== tab);
     const viewed = current ?? here.find(a => a.address === lastIn[tab]) ?? heads[0];
     let head = viewed;
@@ -402,33 +409,35 @@ export function navigation(beforeAsk = (_cx) => {}, core = { spaces, panes, agen
     // A sub-agent counts as the agent at its top, whose family the bar holds.
     let top = viewed?.address;
     for (let up = viewed && above(top); up; up = above(top)) top = up.address;
-    return { space, every, all, tab, shownTab, heads, head, viewed, held: !current, parent: head ? above(head.address) : null, top, above };
+    return { space, every, all, tab, shownTab, heads, head, viewed, held: !current, parent: head ? above(head.address) : null, top, above, putAway };
   }
 
-  // With the Inbox showing, keep all top-level agent tabs in their own order, then the viewed agent's sub-agent tabs, then
-  // tabs with no agent. Home has no tabs to show.
+  // With the Inbox showing, keep active (non-settled/non-snoozed, or currently viewed) top-level agent tabs in their own order,
+  // then the viewed agent's sub-agent tabs, then tabs with no agent. Home has no tabs to show.
   function visibleTabs(w = work()) {
     if (!w) return [];
-    const { space, every, all, top, above } = w;
+    const { space, every, all, shownTab, top, above, putAway } = w;
     if (!inboxShown()) return space.tabs;
     // No agent in view, no family: descendants() of nothing would be every top-level agent.
     const family = new Set(top ? [top, ...descendants(all, top).map(k => k.address)] : []);
-    const topTabs = space.tabs.filter(c => every.some(a => a.tab === c.id && !above(a.address)));
+    const awakeIn = (c, match = (_a) => true) => c.id === shownTab || every.some(a => a.tab === c.id && match(a) && !putAway(a));
+    const topTabs = space.tabs.filter(c => every.some(a => a.tab === c.id && !above(a.address)) && awakeIn(c, a => !above(a.address)));
     const lead = space.tabs.find(c => c.id === every.find(a => a.address === top)?.tab);
-    const kin = space.tabs.filter(c => !topTabs.includes(c) && c !== lead && every.some(a => a.tab === c.id && family.has(a.address)));
-    return [...topTabs, ...(lead && !topTabs.includes(lead) ? [lead] : []), ...kin, ...space.tabs.filter(c => !every.some(a => a.tab === c.id))];
+    const kin = space.tabs.filter(c => !topTabs.includes(c) && c !== lead && every.some(a => a.tab === c.id && family.has(a.address)) && awakeIn(c, a => family.has(a.address)));
+    return [...topTabs, ...(lead && !topTabs.includes(lead) && awakeIn(lead) ? [lead] : []), ...kin, ...space.tabs.filter(c => !every.some(a => a.tab === c.id))];
   }
 
-  // The Inbox's bar as it draws: top-level agent tabs (with the viewed one / sub-agent lit), then the viewed family's
+  // The Inbox's bar as it draws: active top-level agent tabs (with the viewed one / sub-agent lit), then the viewed family's
   // sub-agent tabs and the space's programs.
   function context(w, tabs) {
     if (!w || !inboxShown()) return null;
-    const { space, every, tab, shownTab, heads, head, viewed, held, parent, above } = w;
+    const { space, every, tab, shownTab, heads, head, viewed, held, parent, above, putAway } = w;
+    const shownHeads = heads.filter(a => a === head || a === viewed || !putAway(a));
     const agentTabs = tabs.filter(c => every.some(a => a.tab === c.id && !above(a.address)));
     const skip = new Set([tab, parent?.tab, ...agentTabs.map(c => c.id)]);
     const others = tabs.filter(c => !skip.has(c.id));
     return {
-      space, tab: tab ?? null, parent: parent?.address ?? null, heads: heads.map(a => a.address), head: head?.address ?? null,
+      space, tab: tab ?? null, parent: parent?.address ?? null, heads: shownHeads.map(a => a.address), head: head?.address ?? null,
       sub: viewed && viewed !== head ? viewed.address : null, held, away: Boolean(tab) && shownTab !== tab, agentTabs,
       kin: others.filter(c => every.some(a => a.tab === c.id)), programs: others.filter(c => !every.some(a => a.tab === c.id)),
     };

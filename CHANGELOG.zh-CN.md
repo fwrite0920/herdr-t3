@@ -5,7 +5,7 @@
 ## 2026-11-18
 
 - Inbox 模式顶部标签与窗格标题精简优化（`t3-tabs`、`t3-pane`）：
-  - 修复 Inbox 模式下同一 space 打开多个 Agent 时顶部只显示一个的问题：所有顶层 Agent 标签（及同标签分屏的多个 Agent）均按原顺序并排显示为紧凑程序胶囊，不再只显示当前一个。
+  - 修复 Inbox 模式下同一 space 打开多个 Agent 时顶部只显示一个的问题：所有未收起（非 Settled／Snoozed，或正在查看中）的顶层 Agent 标签（及同标签分屏的多个 Agent）均按原顺序并排显示为紧凑程序胶囊；已 Settle／Snooze 的标签离开视野后自动从顶栏隐去，有新工作时再回来。
   - 将工具与终端标签条（如 `pwsh`、`shell`、子 agent 标签、被 zoom 藏住的非 agent pane）移至紧挨 Agent 胶囊右侧，有内容时以更清晰的 `dim` 16px 细竖线分隔；留白集中在右侧 Actions / Review / 面板按钮前，溢出改从左起正常滚动。
   - 优化 `t3-pane`：Inbox 单窗格/zoom 下的终端窗格（Agent 与 `pwsh` / `zsh`）都不再重复画程序图标与名字，只保留并加深显示工作目录（聚焦 `foreground`、非聚焦 `muted`）。
   - 统一右侧 space 面板顶栏页签（`t3-chrome`：Files、Sessions、Changes 等）为与顶栏一致的 28px `raised` 细描边胶囊样式，并将顶栏标签悬停详情延迟调至 350ms（`shared/details.js`、`t3-tabs`），避免鼠标快速划过时遮挡下方目录。

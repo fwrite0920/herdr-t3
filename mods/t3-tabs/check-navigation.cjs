@@ -259,6 +259,26 @@ async function check() {
     assert.deepEqual(taken(), [["tab.select", { id: "kid" }]]);
     f.slots.lists.active = "inbox";
 
+    // Settled or snoozed agent tabs leave the Inbox tab bar when not in view, returning if viewed, waking, or back at work.
+    const termB = f.terminals().find(k => k.address === "B"), agentB = f.agents().find(a => a.address === "B");
+    agentB.status = "done"; termB.status = "done"; termB.turn = 1; termB.labels = { settled: "100:1" };
+    pick("mine", "A");
+    assert.deepEqual(shown(), ["mine", "kid", "prog", "rev"], "a settled agent tab hides from Inbox tab bar");
+    pick("prog");
+    assert.deepEqual(shown(), ["mine", "kid", "prog", "rev"], "and stays hidden when viewing a tool tab");
+    pick("other", "B");
+    assert.deepEqual(shown(), ["other", "mine", "prog", "rev"], "opening the settled tab itself still shows it while viewed");
+    pick("mine", "A");
+    assert.deepEqual(shown(), ["mine", "kid", "prog", "rev"], "leaving it hides it again");
+    agentB.status = "working"; termB.status = "working";
+    assert.deepEqual(shown(), ["other", "mine", "kid", "prog", "rev"], "new work brings it back to the tab bar");
+    agentB.status = "idle"; termB.status = "idle"; delete termB.labels.settled;
+    termB.labels = { snoozed: String(Date.now() + 3600000) };
+    assert.deepEqual(shown(), ["mine", "kid", "prog", "rev"], "a snoozed agent tab hides from Inbox tab bar too");
+    f.slots.lists.active = "lists";
+    assert.deepEqual(shown(), ["prog", "other", "mine", "kid", "rev"], "Lists still shows all tabs");
+    f.slots.lists.active = "inbox";
+    delete termB.labels.snoozed; agentB.status = "blocked"; termB.status = "blocked";
   }
 
   // The Inbox's bar names who's in view, the lit card: a tab's agents side by side, the one last looked at held while a program
