@@ -2,6 +2,13 @@
 
 [English](CHANGELOG.md) · 中文
 
+## 2026-11-18
+
+- Inbox 模式顶部标签与窗格标题精简优化（`t3-tabs`、`t3-pane`）：
+  - 去掉顶部栏与下方窗格目录重复的 space 名和长会话标题，改为展示正在看 Agent 的程序图标与简短程序名胶囊（如 `Codex`、`Pi`、`OMP`、`Antigravity`），悬停仍可查看完整会话标题，并将 `+` 新建标签按钮保留回顶栏右侧。
+  - 将工具与终端标签条（如 `pwsh`、`shell`、子 agent 标签、被 zoom 藏住的非 agent pane）移至紧挨 Agent 胶囊右侧，有内容时以更清晰的 `dim` 16px 细竖线分隔；留白集中在右侧 Actions / Review / 面板按钮前，溢出改从左起正常滚动。
+  - 优化 `t3-pane`：Inbox 单窗格/zoom 下的 agent 窗格头不再重复画程序图标，只保留并加深显示工作目录（聚焦 `foreground`、非聚焦 `muted`）。
+
 ## 2026-11-15
 
 - 运行时与遥测全链路性能深度优化（`t3-sessions`）：

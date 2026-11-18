@@ -265,7 +265,8 @@ export default class Pane extends View {
       .id(head)
       .size_full()
       // 4 + the frame's 2 is a tab's 6: with its 16px slot and 2 to the name, the icon and first word stand under the first tab's.
-      .pl(4)
+      // When crumbed (icon + program name already in the tab bar), only the directory shows, aligned cleanly at the left.
+      .pl(crumbed ? 8 : 4)
       .pr(2)
       .gap(6)
       .items_center()
@@ -275,10 +276,10 @@ export default class Pane extends View {
       .on_click(() => run("pane.focus", { pane }))
       // The terminal's own right-click menu (the layout's terminal_menu), whose Copy address gives the address.
       .on_mouse_down("right", (_e, cx) => openMenu(this, "pane", { pane, terminal: p.terminal }, cx))
-      .child(div().id(`ph-icon-${pane}`).size(16).mr(-4).flex_none().flex().items_center().justify_center().when(quiet, (el) => el.opacity(0.5)).when(Boolean(pic), (el) => el.child(pic)))
+      .when(!crumbed, el => el.child(div().id(`ph-icon-${pane}`).size(16).mr(-4).flex_none().flex().items_center().justify_center().when(quiet, (el) => el.opacity(0.5)).when(Boolean(pic), (el) => el.child(pic))))
       .when(Boolean(name), (el) => el.child(div().id(`ph-name-${pane}`).min_w(0).truncate().font_medium().text_color(p.focused ? t.foreground : t.muted).when(quiet, (e) => e.opacity(0.5)).child(name)))
-      .child(div().relative().flex_1().min_w(0).h_full().ml(6).flex().items_center()
-        .child(div().id(`ph-folder-${pane}`).flex_1().min_w(0).truncate().pr(12).text_color(t.dim).when(quiet, (el) => el.opacity(0.5)).child(folder(p.cwd)))
+      .child(div().relative().flex_1().min_w(0).h_full().when(!crumbed, el => el.ml(6)).flex().items_center()
+        .child(div().id(`ph-folder-${pane}`).flex_1().min_w(0).truncate().pr(12).text_color(crumbed ? (p.focused ? t.foreground : t.muted) : t.muted).when(quiet, (el) => el.opacity(0.5)).child(folder(p.cwd)))
         // Over the folder's end, so hovering moves nothing else, as in the agents list and the inbox.
         .when(this.hovered || within(this, [head, ...tools]), el => el.child(h_flex().absolute().top(0).bottom(0).right(0).pl(12).flex_none().gap(4).items_center().bg(t.background)
           .child(this.button(t, `ph-r-${pane}`, "mods/t3-pane/icons/square-split-horizontal.svg", "Split right", () => run("pane.split", { direction: "right", pane }), "pane.split:right"))

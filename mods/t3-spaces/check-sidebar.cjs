@@ -2354,7 +2354,7 @@ for (const width of [208, 240, 256, 320, 480]) {
     assert.deepEqual(shown(), ["kid", "|", "prog", "rev"], "the agent in view is the breadcrumb's; its sub-agent's tab, a rule, then tabs with no agent; no other agent");
     // What shows: a name's measure is clipped to nothing.
     const shownText = (n) => typeof n === "string" ? [n] : n && typeof n === "object" && !String(n.key).startsWith("crumb-measure-") ? n.items.flatMap(shownText) : [];
-    assert.deepEqual(shownText(find(view.render(cx), "crumb")).filter(s => s !== "/"), ["P", "project 0", "mine"], "the breadcrumb: the space, then the agent in view");
+    assert.deepEqual(shownText(find(view.render(cx), "crumb")).filter(s => s !== "/"), ["Pi"], "the breadcrumb: the viewed agent's program");
     assert.ok(!spins() && !bang(), "no marks: that's the sidebar's");
     f.slots.sidebar.hidden = true;
     assert.deepEqual(shown(), ["kid", "|", "prog", "rev"], "the same with the sidebar hidden");
@@ -2422,27 +2422,29 @@ for (const width of [208, 240, 256, 320, 480]) {
     let root = at("mine", "p-A");
     // Only the agent in view, the card the Inbox lights: another agent in the tab is reached by its own card, or its pane.
     assert.equal(find(root, "peer-C"), null, "only the one in view");
-    assert.equal(find(root, "peer-A").style.text_color, f.theme().foreground, "a plain title, as T3's");
-    assert.ok(find(find(root, "peer-A"), "crumb-menu"), "the one in view has its tab's menu, its ⌄ part of the title, as T3's");
-    assert.equal(find(root, "crumb-menu").style.opacity, 0, "shown only hovered or with the keyboard on it, as T3's");
-    assert.equal(find(root, "crumb").style.gap, 12, "T3's breadcrumb gap (sm:gap-3)");
+    assert.equal(find(root, "peer-A").style.text_color, f.theme().foreground, "lit agent pill");
+    assert.ok(find(find(root, "peer-A"), "crumb-menu"), "the one in view has its tab's menu, its ⌄ part of the pill");
+    assert.equal(find(root, "crumb-menu").style.opacity, 0.6, "subtle chevron until hovered or focused");
+    assert.equal(find(root, "crumb").style.gap, 6, "compact gap between parent and agent pill");
     // The breadcrumb whole first: it takes its own width, the strip beside it gives way and scrolls, down to a tab's width, and
-    // only then do its names shorten. No cap on the space's or the parent's name.
+    // only then do its names shorten.
     // Where you are shows whole first: the crumb never shrinks for the strip, the strip gives way to nothing and scrolls.
     assert.deepEqual([find(root, "crumb").style.flex_shrink, find(root, "tab-scroll").style.min_w], [0, 0], "the strip gives way, the crumb doesn't");
-    assert.equal(find(root, "crumb-space").style.max_w, undefined, "the space's name has no cap");
+    assert.equal(find(root, "crumb-space"), null, "space crumb omitted so it doesn't duplicate the pane folder");
     fire(find(root, "tab-scroll"), "on_size_change", { width: 300 }, cx);
     view.render(cx);
     assert.equal(view.room, 300, "its tabs share the width it got");
-    // Anchored at the right, beside Actions with 8 between: short of room the strip shows its end and is cut at the start, which
-    // fades out, as T3's scrollFade; scrolled back to its start, the end fades instead.
+    // Beside the breadcrumb after a rule, with free space in a flex-1 tail: short of room the strip shows its start and is
+    // cut at the end, which fades out, as T3's scrollFade; scrolled to its end, the start fades instead.
+    assert.ok(find(root, "crumb-rule"), "a rule separates the breadcrumb and tool tabs");
+    assert.equal(find(root, "crumb").style.flex_grow, undefined, "the breadcrumb hugs its content instead of pushing tabs to the right");
     fire(find(view.render(cx), "tab-scroll"), "on_size_change", { width: 100 }, cx);
     let bar = view.render(cx);
-    assert.deepEqual([find(bar, "tab-strip").style.ml < 0, Boolean(find(bar, "strip-fade-start")), find(bar, "strip-fade-end"), find(bar, "tab-scroll").style.mr], [true, true, null, 4], "its end shows, its start fades");
-    fire(bar, "on_scroll_wheel", { delta: { x: 1000, y: 0 } }, cx);
-    bar = view.render(cx);
-    assert.deepEqual([find(bar, "tab-strip").style.ml, find(bar, "strip-fade-start"), Boolean(find(bar, "strip-fade-end"))], [-0, null, true], "scrolled to its start, the end fades");
+    assert.deepEqual([find(bar, "tab-strip").style.ml, find(bar, "strip-fade-start"), Boolean(find(bar, "strip-fade-end")), find(bar, "tab-tail").style.mr], [-0, null, true, 4], "its start shows, its end fades");
     fire(bar, "on_scroll_wheel", { delta: { x: -1000, y: 0 } }, cx);
+    bar = view.render(cx);
+    assert.deepEqual([find(bar, "tab-strip").style.ml < 0, Boolean(find(bar, "strip-fade-start")), find(bar, "strip-fade-end")], [true, true, null], "scrolled to its end, the start fades");
+    fire(bar, "on_scroll_wheel", { delta: { x: 1000, y: 0 } }, cx);
     fire(find(view.render(cx), "tab-scroll"), "on_size_change", { width: 300 }, cx);
     // Its tabs hug their icon and name, as T3's panel tabs: no 96px floor, no slot kept for the ×, so the group sits flush
     // against Actions and the gaps between them are even. Hovered, the icon turns to the ×, as T3's does.
@@ -2470,12 +2472,10 @@ for (const width of [208, 240, 256, 320, 480]) {
     f.state["t3-menu.closed"] = Date.now();
     fire(title(), "on_click", {}, cx);
     assert.equal(f.overlays.length, 0, "a second click closes it, as every popup's button");
-    // A right-click is the menu of what's under it, on the pointer: the space's, as in Spaces; an agent's pane's, as its header's.
-    fire(find(view.render(cx), "crumb-space"), "on_mouse_down:right", {}, cx);
+    // A right-click on the agent pill opens its menu on the pointer, as its card's.
     fire(find(view.render(cx), "peer-A"), "on_mouse_down:right", {}, cx);
-    // The title's right-click is its click's menu, on the pointer, as T3's header.
-    assert.deepEqual(f.overlays.splice(0).map(o => [o.props.tab, o.props.target.id ?? o.props.target.address, o.at]), [["space", "s0", undefined], ["agent", "A", undefined]]);
-    // A name shown whole has no label, as a tab's (T3's title only repeats it); cut short, the tab's hover label holds it whole.
+    assert.deepEqual(f.overlays.splice(0).map(o => [o.props.tab, o.props.target.id ?? o.props.target.address, o.at]), [["agent", "A", undefined]]);
+    // Shown whole with its full title matching program name: no card; when the full title differs (or is clipped), hover shows it.
     assert.equal(find(view.render(cx), "tip-over-peer-A"), null, "no tooltip repeating a name");
     const crumbCard = (id) => find(view.render(cx), `details-${id}`)?.style.content;
     const wait = () => [150, 34].forEach(ms => cx.timers.filter(t => t.ms === ms && !t.gone).forEach(t => { t.gone = true; t.fn(cx); }));
@@ -2484,21 +2484,14 @@ for (const width of [208, 240, 256, 320, 480]) {
     fire(find(view.render(cx), "crumb-measure-peer-A"), "on_size_change", { width: 80 }, cx);
     fire(find(view.render(cx), "crumb-name-peer-A"), "on_size_change", { width: 80 }, cx);
     hoverTitle(true);
-    assert.equal(crumbCard("peer-A"), undefined, "shown whole: no label");
+    assert.deepEqual([strings(crumbCard("peer-A")), crumbCard("peer-A").style.opacity], [["layout"], 1], "full session title shows on hover when it differs from program name");
+    assert.deepEqual([find(view.render(cx), "details-peer-A").style.bottom, find(view.render(cx), "details-peer-A").style.left], [0, 21], "under it, aligned with the label");
     hoverTitle(false);
-    fire(find(view.render(cx), "crumb-name-peer-A"), "on_size_change", { width: 40 }, cx);
-    hoverTitle(true);
-    assert.deepEqual([strings(crumbCard("peer-A")), crumbCard("peer-A").style.opacity], [["layout"], 1], "cut short: its whole name");
-    assert.deepEqual([find(view.render(cx), "details-peer-A").style.bottom, find(view.render(cx), "details-peer-A").style.left], [0, -9], "under it, its words where the name starts");
-    hoverTitle(false);
-    assert.equal(find(root, "crumb-space").style.accessibility_label, "Open a tab in project 0", "the space's label says what it does");
-    fire(find(root, "crumb-space"), "on_click", {}, cx);
-    assert.deepEqual(taken().at(-1), ["t3-tabs.open-empty", {}], "the space is the Inbox's way to a tab to work in");
-    assert.equal(find(f.load("t3-tabs", { part: "end" }).render(cx), "tab-new"), null, "so the Inbox has no + beside it");
+    assert.ok(find(f.load("t3-tabs", { part: "end" }).render(cx), "tab-new"), "Inbox keeps + at the bar's end");
     root = at("mine", "p-C");
     assert.deepEqual([Boolean(find(root, "peer-C")), find(root, "peer-A")], [true, null], "the other one focused: the title is it");
     root = at("mine", "p-git");
-    assert.deepEqual([find(root, "peer-C").style.text_color, find(root, "peer-A")], [f.theme().muted, null], "a program beside them: the one last looked at stays, dim");
+    assert.deepEqual([find(root, "peer-C").style.text_color, find(root, "peer-A")], [f.theme().dim, null], "a program beside them: the one last looked at stays, dim");
     assert.equal(find(root, "crumb-menu"), null);
     fire(find(root, "peer-C"), "on_click", {}, cx);
     assert.deepEqual(taken().at(-1), ["agent.focus", { terminal: "C" }], "and leads back");

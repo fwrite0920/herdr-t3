@@ -36,6 +36,7 @@ const env = {
   toggleWide: () => calls.push(["wide"]), hidePanel: () => calls.push(["hide"]), updates: () => ({ app: {} }), KEY: {},
   navigation: () => ({ atHome: false, frame: () => ({ tabs: [tab], context: null }) }),
   subAgents: () => () => [], namer: () => p => p.title, programIcon: () => null,
+  programOf: () => null, ownStatus: s => s, treeStatus: s => s, projectMark: () => element(), detailsFor() {}, detailsAt() {}, detailsWatch() {},
 };
 function load(dir) {
   const scope = vm.createContext({ ...env });
@@ -74,6 +75,32 @@ tabs.overTab = null;
 assert.notEqual(find(tabs.render(), "close-b").items[0]?.src, "mods/t3-tabs/icons/x.svg", "the close icon still hides until the tab is hovered");
 find(tabs.render(), "tab-b").handlers.middle({}, cx);
 assert.equal(calls.pop()[0], "t3-tabs.close-tab:b", "a middle press closes the tab");
+
+// Inbox mode: viewed agent pill (program icon + name) sits left, followed by a rule and the tool strip in a flex-1 tail; + stays in tabs-end.
+const origSidebar = env.sidebarParts, origAgents = env.agents, origPanes = env.panes, origNav = env.navigation;
+let inboxCtx = { space, tab: "ag", parent: null, heads: ["a1"], head: "a1", sub: null, held: false, away: false, kin: [], programs: [tab] };
+env.sidebarParts = () => ({ stack: { active: "inbox" } });
+env.agents = () => [{ address: "a1", tab: "ag", pane: "p1", title: "Fix auth", program: { key: "codex", name: "Codex" }, status: "idle" }];
+env.panes = () => [{ pane: "p1", tab: "ag", terminal: "a1" }, { pane: "p2", tab: "b", terminal: "sh", title: "pwsh" }];
+env.navigation = () => ({ atHome: false, frame: () => ({ tabs: [{ id: "ag", active: true }, tab], context: inboxCtx }) });
+part = { part: "end" };
+const inboxEnd = load(__dirname);
+assert.ok(find(inboxEnd.render(), "tab-new"), "Inbox keeps + in tabs-end since space crumb is gone");
+part = {};
+const inboxTabs = load(__dirname);
+const inboxRoot = inboxTabs.render();
+const area = find(inboxRoot, "tab-area");
+assert.deepEqual(area.items.map(n => n.key), ["crumb", "crumb-rule", "tab-tail"], "Inbox: agent pill, rule, then tool tail");
+assert.equal(find(inboxRoot, "crumb-space"), undefined, "space crumb removed to avoid duplicating pane folder");
+assert.equal(find(inboxRoot, "crumb-name-peer-a1").items[0], "Codex", "agent pill shows program name instead of session title");
+assert.equal(find(inboxRoot, "crumb").style.flex_grow, undefined, "breadcrumb hugs its content");
+assert.ok("flex_1" in find(inboxRoot, "tab-tail").style, "free space stays to the right of tool tabs");
+find(inboxRoot, "tab-scroll").handlers.on_size_change({ width: 50 }, cx);
+const tight = inboxTabs.render();
+assert.deepEqual([find(tight, "tab-strip").style.ml, Boolean(find(tight, "strip-fade-start")), Boolean(find(tight, "strip-fade-end"))], [-0, false, true], "overflow starts at the left and fades the end");
+inboxCtx = { space, tab: "ag", parent: null, heads: [], head: null, sub: null, held: false, away: true, kin: [], programs: [tab] };
+assert.deepEqual(find(inboxTabs.render(), "tab-area").items.map(n => n.key), ["tab-tail"], "without an agent in context, only the tool tail shows");
+env.sidebarParts = origSidebar; env.agents = origAgents; env.panes = origPanes; env.navigation = origNav;
 
 const chrome = load(path.join(__dirname, "../t3-chrome"));
 part = { footer: true };

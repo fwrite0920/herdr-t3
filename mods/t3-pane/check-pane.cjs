@@ -189,6 +189,21 @@ terms[0].labels.settled = "1:1"; terms[0].turn = 2;
 assert.equal(dots(), shown, "a new turn's done shows, the label still on");
 delete terms[0].labels.settled; delete terms[0].turn;
 
+// In Inbox, a lone/zoomed agent's icon and program name are already in the tab bar, so its pane header shows only the folder (brightened when focused).
+{
+  const savedTab = tab.named; tab.named = false;
+  sidebar.children[0].active = "inbox";
+  agentList = [{ address: "t2", tab: "b" }];
+  pane.zoomed = true; pane.focused = true;
+  pane.program = { ...program, icon: "pi.svg", tint: true };
+  const r = header.render();
+  assert.equal(find(r, "ph-icon-p2"), null, "no duplicate agent icon when crumbed");
+  assert.equal(find(r, "ph-name-p2"), null, "no duplicate agent name when crumbed");
+  assert.ok(find(r, "ph-folder-p2"), "folder stays visible when crumbed");
+  pane.zoomed = false; pane.focused = false; pane.program = program;
+  agentList = []; sidebar.children[0].active = "lists"; tab.named = savedTab;
+}
+
 // The buttons go with the pointer, even when the header's leave never comes (tip.js).
 {
   const hover = load(...parts);

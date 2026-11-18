@@ -2,6 +2,13 @@
 
 English · [中文](CHANGELOG.zh-CN.md)
 
+## 2026-11-18
+
+- Left-aligned Inbox tool & shell tabs and streamlined agent/pane headers (`t3-tabs`, `t3-pane`):
+  - Replaced the Inbox space & long session-title breadcrumb with a compact program pill (program icon + short name such as `Codex`, `Pi`, `OMP`, `Antigravity`), showing the full session title on hover when different and keeping the `+` New tab button at the bar's right end so it no longer duplicates the folder below.
+  - Moved the Inbox tool/program strip (`pwsh`, `shell`, sub-agent tabs, zoomed non-agent panes) from the far right to immediately follow the agent pill, separated by a brighter `dim` 16px hairline divider when present, leaving free drag space before Actions/Review/panel controls and scrolling from left to right.
+  - Updated `t3-pane` so a lone/zoomed Inbox agent pane omits the duplicate program icon and renders its folder clearly in `foreground` (when focused) / `muted`.
+
 ## 2026-11-15
 
 - Comprehensive Runtime & Telemetry Performance Optimization (`t3-sessions`):

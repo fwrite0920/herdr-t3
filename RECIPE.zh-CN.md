@@ -60,17 +60,17 @@ Agents 行高 36、圆角 6、行间隔 1、内边距 10、间隔 10，16px 程�
 
 标签高 24、圆角 6、字号 12，当前为 `selected`。Lists 显示当前 space 全部标签：12px 程序／终端图标、名字，末尾 16px 状态槽，悬停换成 16px 关闭按钮、12px `×`。短标签至少 96px。放得下就显示全名；放不下时最长的先让步，当前降到 240、其余 144，再放不下就滚动。两种模式被裁的一端都在 16px 内渐隐。只在当前标签或可用空间改变时，以最小移动保持当前可见；滚轮滚开的不拉回。
 
-Inbox 左边改成面包屑：space／适用时的父级／当前查看的 agent，14px medium、间隔 12、淡色斜线。space 是 `muted`、当前 agent 是 `foreground`；与父级分屏的子 agent 再隔斜线跟在后面。同标签的同级 agent 不另造切换器，用卡片或 pane 进入。右边是按图标名字收紧的工具标签，不设最小宽度或状态槽，悬停 `×` 替换图标。顺序：当前标签被 zoom 藏住的非 agent pane、当前家族其他标签、不含 agent 的标签，非空组间用 16px 高细线分开。面包屑已写的当前／父级标签不重复。
+Inbox 左侧放当前查看的 agent（看子 agent 时前面带父级和 `/`），做成高 28、12px 程序图标加简短程序名（如 Codex、Pi、OMP、Antigravity）的胶囊，不重复显示 space 名或长会话标题；当前查看的胶囊用 `raised` 底和 `⌄` 菜单箭头，悬停在标题不同或截断时提示完整会话名。同标签的同级 agent 不另造切换器，用卡片或 pane 进入。后方隔一根 16px 高 `dim` 细线（有内容时才画），紧跟按图标名字收紧的工具标签，不设最小宽度或状态槽，悬停 `×` 替换图标，留白留在右侧 Actions 前。顺序：当前标签被 zoom 藏住的非 agent pane、当前家族其他标签、不含 agent 的标签，非空组间同样用 16px 高 `dim` 细线分开。前面已写的当前／父级标签不重复。
 
-面包屑先取完整宽度，最宽到整行；靠右工具条让到零宽，保持末端可见，滚轮移动、被裁边渐隐。面包屑可用宽不足 360 时父级变 `…`，只有面包屑本身超出整行才截名字。截断的名字、或 Lists 有状态的标签，下方 4px 有 12px 提示，文字起点对齐；全名已显示就不重复。Inbox 提示没有状态。关闭提示等 500ms，只有当前标签附快捷键。
+前面部分先取完整宽度，最宽到整行；工具条让到零宽，从左端起显示，滚轮移动、被裁边渐隐。可用宽不足 360 时父级变 `…`，只有本身超出整行才截名字。截断或带完整标题、或 Lists 有状态的标签，下方 4px 有 12px 提示，文字起点对齐；全名与程序名相同时不重复。Inbox 提示没有状态。关闭提示等 500ms，只有当前标签附快捷键。
 
-多 pane 标签进入 Herdr 原生 zoom 后，标签变为高 24、圆角 6、虚线框的分段组：每 pane 一段图标名字，被 zoom 的为 `selected`、最宽 240，其余最宽 144。Lists 在组末尾保留状态，组没有关闭、标签菜单或拖动。Inbox 的 agent 仍在面包屑，工具段只含非 agent pane。用 pane 缩放按钮或 `cmd-shift-enter` 恢复分屏，标签栏不重复放按钮。
+多 pane 标签进入 Herdr 原生 zoom 后，标签变为高 24、圆角 6、虚线框的分段组：每 pane 一段图标名字，被 zoom 的为 `selected`、最宽 240，其余最宽 144。Lists 在组末尾保留状态，组没有关闭、标签菜单或拖动。Inbox 的 agent 仍在前面，工具段只含非 agent pane。用 pane 缩放按钮或 `cmd-shift-enter` 恢复分屏，标签栏不重复放按钮。
 
-标签后是各自定宽的 Actions、可选 Review 栏、末尾。Actions 是高 24、圆角 8、一圈描边的 `▶ <名字> | ▾`，或 `+ Add action`。Lists 末尾有 24px `+` 新标签，Inbox 改用面包屑 space。24px `panel-right` 面板开关打开时 `foreground` 加 `selected`。只保留一份开关：Review 栏有 `toggle` prop 时由它画。最后普通控件的方框距窗口边 12，与 pane 控件对齐（Windows 窗口按钮距边 2）。工作列窄于 1024 逻辑 px 时 Actions 隐去文字，无 toggle 的 Review 栏隐去计数文字。侧栏隐藏时左侧出现开关，按所选模式统计 blocked、working、未读 done。
+标签后是各自定宽的 Actions、可选 Review 栏、末尾。Actions 是高 24、圆角 8、一圈描边的 `▶ <名字> | ▾`，或 `+ Add action`。两种模式末尾都保留 24px `+` 新标签。24px `panel-right` 面板开关打开时 `foreground` 加 `selected`。只保留一份开关：Review 栏有 `toggle` prop 时由它画。最后普通控件的方框距窗口边 12，与 pane 控件对齐（Windows 窗口按钮距边 2）。工作列窄于 1024 逻辑 px 时 Actions 隐去文字，无 toggle 的 Review 栏隐去计数文字。侧栏隐藏时左侧出现开关，按所选模式统计 blocked、working、未读 done。
 
 ### 窗格与子 agent
 
-标题依次是程序图标、有意义的名字（14px medium）、隔 12 的目录、子 agent 按钮、状态、右／下分屏、zoom／还原、关闭。控件 24、图标 14，悬停或键盘聚焦时显示。名字只是程序名时省略。Inbox 里单独显示或 zoom 的 agent 名已在面包屑，标题不重复；分屏保留。Inbox 标题用 14px `dim` 勾标已 Settle，用 12px `accent` 闹钟加剩余时间标 Snooze；working/blocked 优先。Lists 不画这两种收起标记。首图标文字对齐首标签，最后控件／状态距窗口边 12。
+标题依次是程序图标、有意义的名字（14px medium）、隔 12 的目录、子 agent 按钮、状态、右／下分屏、zoom／还原、关闭。控件 24、图标 14，悬停或键盘聚焦时显示。名字只是程序名时省略。Inbox 里单独显示或 zoom 的 agent 图标与程序名已在标签栏，这里只保留加深的目录（聚焦时 `foreground`，否则 `muted`）；分屏保留图标和名字。Inbox 标题用 14px `dim` 勾标已 Settle，用 12px `accent` 闹钟加剩余时间标 Snooze；working/blocked 优先。Lists 不画这两种收起标记。首图标文字对齐首标签，最后控件／状态距窗口边 12。
 
 子 agent 按钮统计所有层级活着的 agent：`3 agents ⌄`，或 `blocked` 色 `1 needs you ⌄`；高 24、12px medium、内边距 8、14px 箭头、圆角 8。弹层宽 280，在下方 4、右对齐，内缩 4、28px 行、无标题，超过十行滚动；随启动／结束改变高度，全结束就关闭。每层缩进 16。行含程序图标、名字、工作时长（`4m`、每秒更新）／`Needs you`／`Idle`，以及自己的 12px 转圈／徽章或 6px idle 环；首次状态上报前无状态文字／标记。行表示自身状态，按钮和 pane 状态汇总子树。点击／Enter 用 `terminal.peek` 并关闭，详情卡向左打开。纯跑命令的 shell 不算子 agent。
 
