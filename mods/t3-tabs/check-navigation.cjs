@@ -232,26 +232,26 @@ async function check() {
     const shown = () => plain(view.frame().tabs.map(c => c.id));
     f.slots.lists = { id: "sidebar-lists", active: "inbox" };
     pick("mine", "A");
-    assert.deepEqual(shown(), ["mine", "kid", "prog", "rev"]);
+    assert.deepEqual(shown(), ["other", "mine", "kid", "prog", "rev"]);
     pick("prog");
-    assert.deepEqual(shown(), ["mine", "kid", "prog", "rev"], "gone to a tool's tab from the bar, the agent last looked at stays: the tool is its work's");
+    assert.deepEqual(shown(), ["other", "mine", "kid", "prog", "rev"], "gone to a tool's tab from the bar, the agent last looked at stays: the tool is its work's");
     pick("kid", "K");
-    assert.deepEqual(shown(), ["mine", "kid", "prog", "rev"], "a sub-agent counts as the agent at its top");
+    assert.deepEqual(shown(), ["other", "mine", "kid", "prog", "rev"], "a sub-agent counts as the agent at its top");
     pick("other", "B");
-    assert.deepEqual(shown(), ["other", "prog", "rev"], "another agent takes the place");
+    assert.deepEqual(shown(), ["other", "mine", "prog", "rev"], "another agent keeps all top-level agent tabs in order");
     pick("prog");
-    assert.deepEqual(shown(), ["other", "prog", "rev"]);
+    assert.deepEqual(shown(), ["other", "mine", "prog", "rev"]);
 
     // Keys go by what's shown, around the ends; Lists keeps Herdr's own.
     pick("mine", "A"); view.frame(); taken();
-    await say("tab:3");
-    assert.deepEqual(taken(), [["tab.select", { id: "prog" }]], "the third shown, not the third of the space");
+    await say("tab:4");
+    assert.deepEqual(taken(), [["tab.select", { id: "prog" }]], "the fourth shown, not the first of the space");
     await say("tab:9");
     assert.deepEqual(taken(), [], "past the end, nothing");
     await say("tab-prev");
-    assert.deepEqual(taken(), [["tab.select", { id: "rev" }]], "round the start");
+    assert.deepEqual(taken(), [["tab.select", { id: "other" }]], "back to the other top-level agent tab");
     await say("tab-next");
-    assert.deepEqual(taken(), [["tab.select", { id: "kid" }]], "the other agent's tab between them is skipped");
+    assert.deepEqual(taken(), [["tab.select", { id: "kid" }]], "forward to the sub-agent tab");
     f.slots.lists.active = "lists"; view.frame(); taken();
     await say("tab:3");
     assert.deepEqual(taken(), [["tab.select", { id: "mine" }]], "in Lists, the third of the space");
@@ -282,9 +282,9 @@ async function check() {
       f.agents().forEach(a => { a.focused = a.pane === pane; });
       Object.assign(f.shown, { tab, pane, terminal: p.terminal, agent: null });
       const c = view.frame().context;
-      return c && plain({ ...c, space: c.space.id, kin: c.kin.map(t => t.id), programs: c.programs.map(t => t.id) });
+      return c && plain({ ...c, space: c.space.id, agentTabs: c.agentTabs.map(t => t.id), kin: c.kin.map(t => t.id), programs: c.programs.map(t => t.id) });
     };
-    const who = (heads, head, more = {}) => ({ space: "s0", tab: "mine", parent: null, heads, head, sub: null, held: false, away: false, kin: ["kid"], programs: ["prog"], ...more });
+    const who = (heads, head, more = {}) => ({ space: "s0", tab: "mine", parent: null, heads, head, sub: null, held: false, away: false, agentTabs: ["mine"], kin: ["kid"], programs: ["prog"], ...more });
 
     assert.deepEqual(at("mine", "p-A"), who(["A", "C"], "A"), "a tab's agents are side by side; the focused one is in view");
     assert.deepEqual(at("mine", "p-C"), who(["A", "C"], "C", { kin: [] }), "focusing the other moves which is in view, and the family is its own");
@@ -303,7 +303,7 @@ async function check() {
     assert.deepEqual(at("mine", "p-git"), who(["A", "K2"], "A", { held: true }), "a gone agent isn't held");
     f.terminals().find(k => k.address === "A").state = "exited";
     f.agents().splice(f.agents().findIndex(a => a.address === "A"), 1);
-    assert.deepEqual(at("kid", "p-K"), who(["K"], "K", { tab: "kid", kin: [] }), "with its parent gone, a sub-agent has none to lead back to");
+    assert.deepEqual(at("kid", "p-K"), who(["K"], "K", { tab: "kid", agentTabs: ["mine", "kid"], kin: [] }), "with its parent gone, a sub-agent has none to lead back to");
 
     // After a restart nothing is remembered: the tab's first agent is held.
     f.terminals().find(k => k.address === "A").state = "live";
@@ -592,9 +592,11 @@ async function check() {
     pick("prog"); pick("new"); taken();
     gone("new"); pick("other", "B");
     assert.deepEqual(taken(), [["tab.select", { id: "prog" }]], "the neighbour's an agent: still back to where they were");
-    assert.deepEqual(shown(), ["mine", "prog"], "and while it goes, the neighbour doesn't take the bar's place");
+    assert.deepEqual(view.frame().context.head, "A", "and while it goes, the neighbour doesn't become the viewed agent");
+    assert.deepEqual(shown(), ["mine", "other", "prog"]);
     pick("prog"); taken();
-    assert.deepEqual(shown(), ["mine", "prog"], "the agent the bar holds is still the one they last looked at");
+    assert.deepEqual(view.frame().context.head, "A", "the agent the bar holds is still the one they last looked at");
+    assert.deepEqual(shown(), ["mine", "other", "prog"]);
 
     // A close this mod makes goes first, so Herdr's neighbour is never shown: that would cost an agent its unread done.
     {
@@ -657,7 +659,9 @@ async function check() {
     pick("next", "N");
     assert.deepEqual(plain(f.calls.splice(0)), [["t3-tabs.home", {}]]);
     pick("prog");
-    assert.deepEqual(plain(view.frame().tabs.map(c => c.id)), ["was", "prog"], "the agent last looked at is still the one the bar holds, not Herdr's pick of a neighbour");
+    const frame = view.frame();
+    assert.equal(frame.context.head, "W", "the agent last looked at is still the one the bar holds, not Herdr's pick of a neighbour");
+    assert.deepEqual(plain(frame.tabs.map(c => c.id)), ["was", "next", "prog"]);
   }
 
   // In Lists, the agent in view closed goes back where the person was, as any tab: landing on Home is the Inbox's.

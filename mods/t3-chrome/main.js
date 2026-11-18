@@ -231,9 +231,11 @@ export default class WorkspaceChrome extends View {
     const own = (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation());
     const page = (id) => {
       const [label, icon, colored] = PAGES[id] ?? [id, "folder-tree"], on = s.page === id, key = `page-${id}`;
-      return stop(this, t, key, own(h_flex().id(key).h(24).pl(6).pr(8).gap(6).flex_none().items_center().rounded(6).text_size(12)
-        .bg(on ? t.selected : t.chrome).text_color(on || this.hot === key ? t.foreground : t.muted)
-        .when(!on, el => el.hover(st => st.bg(t.hover))).on_hover(glow(this, key))
+      return stop(this, t, key, own(h_flex().id(key).h(28).pl(8).pr(10).gap(6).flex_none().items_center().rounded(6).text_size(12)
+        .border_1().border_color(on ? t.foreground + "1a" : t.chrome)
+        .bg(on ? t.raised : t.chrome).text_color(on || this.hot === key ? t.foreground : t.dim)
+        .when(on, el => el.font_medium())
+        .when(!on, el => el.hover(st => st.bg(t.hover).border_color(t.hover))).on_hover(glow(this, key))
         .role("tab").accessibility_label(label)
         .on_click(() => showPage(id))
         // A colored mark waits at 70% until its tab is shown or hovered, as the brand bar's Herdr mark.

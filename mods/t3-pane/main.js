@@ -240,7 +240,7 @@ export default class Pane extends View {
     // doesn't say it again. Split, the names tell the panes apart.
     const alone = p.zoomed || panes().filter((q) => q.tab === p.tab).length === 1;
     const inbox = sidebarParts(layout()).stack?.active === "inbox";
-    const crumbed = alone && inbox && agents().some((a) => a.address === p.terminal);
+    const crumbed = alone && inbox && Boolean(p.terminal);
     const name = crumbed || (!p.mod && pic && named === p.program?.name) ? "" : named;
     // Split, the panes beside the focused one recede, as T3's split terminals do, with no ring: their icon, name and folder a
     // step down, back up while hovered. Its status mark (what needs the person) and its buttons stay as they are.

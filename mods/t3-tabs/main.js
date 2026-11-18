@@ -489,7 +489,7 @@ export default class Tabs extends View {
           .on_size_change((size, cx) => { this.nameW[c.id] = size.width / settings().zoom; cx.notify(); }))
         // The card belongs to the icon and name, as T3's and Zed's: on the way to the × it goes.
         .child(h_flex().id(`label-${c.id}`).flex_1().min_w(0).h_full().gap(6).items_center()
-          .on_hover((on, cx) => { detailsFor(this, on && says ? c.id : null, cx); cx.notify(); })
+          .on_hover((on, cx) => { detailsFor(this, on && says ? c.id : null, cx, 350); cx.notify(); })
           .child(close)
           .child(div().flex_1().min_w(0).truncate().child(label)))
         .when(status != null, el => el.child(div().size(16).flex_none().flex().items_center().justify_center().child(mark(t, status))))
@@ -516,7 +516,7 @@ export default class Tabs extends View {
       // a narrow tab. 16px of the bar's own color in steps, there being no gradient fill for an element.
       .when(at > 0.5, el => el.child(fade("strip-fade-start", true)))
       .when(at < over - 0.5, el => el.child(fade("strip-fade-end", false)));
-    const hasCrumb = Boolean(ctx && (ctx.parent || ctx.head || ctx.sub));
+    const hasCrumb = Boolean(ctx && (ctx.agentTabs?.length || ctx.parent || ctx.head || ctx.sub));
     return focusRoot(this, h_flex().size_full().min_w(0).pl(lightsPadding).pr(4).gap(4).items_center().bg(t.chrome)
       .when(this.over !== null, el => el.track_focus(this.dragKeys).on_key_down((e, cx) => {
         if (e.keystroke !== "escape" || this.over === null) return;
@@ -585,7 +585,7 @@ export default class Tabs extends View {
           .opacity(on ? 1 : 0).top(on ? 0 : -4).transition("opacity", fade).transition("top", fade).child(cardLabel)));
       return stop(this, t, id, el.id(id).relative().role("button").accessibility_label(cardLabel)
         .on_mouse_down("left", press).on_click(act(action)).on_mouse_down("right", context("agent", { address: own ? titled : agent }))
-        .on_hover((hovered, cx) => { glow(this, id)(hovered, cx); detailsFor(this, hovered && cut ? id : null, cx); })
+        .on_hover((hovered, cx) => { glow(this, id)(hovered, cx); detailsFor(this, hovered && cut ? id : null, cx, 350); })
         .on_mouse_move((e) => detailsAt(this, id, e))
         // Its whole name's width, clipped to nothing.
         .child(div().id(`crumb-measure-${id}`).absolute().top(0).left(0).h(0).overflow_hidden().whitespace_nowrap().child(label)
@@ -597,24 +597,65 @@ export default class Tabs extends View {
       return div().id("crumb-menu").flex_none().opacity(shown ? 1 : 0.6).transition("opacity", { duration: 150, easing: "ease-out" })
         .child(svg("mods/t3-tabs/icons/chevron-down.svg").size(12).text_color(t.muted));
     };
-    const pill = (id, address, lit, shown = true) => {
-      const label = progLabel(address), full = nameOf(address), iconColor = lit || this.hot === id ? t.foreground : t.dim;
+    const pill = (id, address, lit, shown = true, { closeTabId = null, selectTabId = null } = {}) => {
+      const label = progLabel(address), full = nameOf(address), closeId = closeTabId ? `close-${closeTabId}` : null;
+      const over = this.hot === id || (closeId && (this.hot === closeId || within(this, [id, closeId])));
+      const iconColor = lit || over ? t.foreground : t.dim;
       const glyph = programIcon(progOf(address), 12, iconColor) ?? svg("mods/t3-tabs/icons/terminal.svg").size(12).text_color(iconColor);
+      const slot = closeId
+        ? tip(this, t, closeId, "Close tab", drawButton(t, closeId, {
+          size: "tiny", surface: "tab", icon: over ? "mods/t3-tabs/icons/x.svg" : undefined, label: `Close ${full}`, hot: Boolean(over) })
+          .on_hover(glow(this, closeId))
+          .on_mouse_down("left", stopPress).on_click((_e, cx) => { cx.stop_propagation(); run(`t3-tabs.close-tab:${closeTabId}`); })
+          .when(!over, el => el.child(glyph))
+          .when(Boolean(over), el => stop(this, t, closeId, el, radiusOf("tiny"))), { action: undefined, below: true, delay: 500 })
+        : div().size(16).flex_none().flex().items_center().justify_center().child(glyph);
       const el = h_flex().h(28).pl(8).pr(lit ? 6 : 8).gap(6).rounded(6).items_center().min_w(0).flex_shrink(1)
         .border_1().border_color(lit ? t.foreground + "1a" : t.chrome)
-        .bg(lit ? t.raised : t.chrome).text_color(lit || this.hot === id ? t.foreground : t.dim)
+        .bg(lit ? t.raised : t.chrome).text_color(lit || over ? t.foreground : t.dim)
         .when(lit, e => e.font_medium())
         .when(!lit, e => e.hover(s => s.bg(t.hover).border_color(t.hover)))
-        .child(div().size(16).flex_none().flex().items_center().justify_center().child(glyph))
+        .when(Boolean(closeTabId), e => e.on_mouse_down("middle", (_e, cx) => { cx.stop_propagation(); run(`t3-tabs.close-tab:${closeTabId}`); }))
+        .child(slot)
         .child(shown ? nameText(id, label) : div().child("…"))
         .when(lit, e => e.child(chevron(id)));
-      return named(id, label, full, el, lit ? fromTitle : () => focusAgent(address), { agent: address, titled: lit, shown, at: 8 + 16 + 6, radius: 6 });
+      const onClick = lit ? fromTitle : selectTabId ? () => run("tab.select", { id: selectTabId }) : () => focusAgent(address);
+      return named(id, label, full, el, onClick, { agent: address, titled: lit, shown, at: 8 + 16 + 6, radius: 6 });
     };
+    const renderHead = () => {
+      if (!ctx.head) return [];
+      const heads = ctx.heads?.length > 1 && !ctx.sub ? ctx.heads : [ctx.head];
+      return heads.map(addr => pill(`peer-${addr}`, addr, !dim && !ctx.sub && addr === ctx.head));
+    };
+    const agentTabs = ctx.agentTabs?.length ? ctx.agentTabs : null;
+    const children = [];
+    if (agentTabs) {
+      let headShown = false;
+      for (const c of agentTabs) {
+        if (c.id === ctx.tab) {
+          children.push(...renderHead());
+          if (ctx.sub) children.push(sep("crumb-sep-sub"), pill(`peer-${ctx.sub}`, ctx.sub, !dim));
+          headShown = true;
+        } else if (ctx.parent && every.some(a => a.address === ctx.parent && a.tab === c.id)) {
+          children.push(pill("crumb-parent", ctx.parent, false, !narrow), sep("crumb-sep-parent"), ...renderHead());
+          headShown = true;
+        } else {
+          const lead = every.find(a => a.tab === c.id);
+          if (lead) children.push(pill(`agent-tab-${c.id}`, lead.address, false, true, { closeTabId: c.id, selectTabId: c.id }));
+        }
+      }
+      if (!headShown && ctx.head) {
+        if (ctx.parent) children.push(pill("crumb-parent", ctx.parent, false, !narrow), sep("crumb-sep-parent"));
+        children.push(...renderHead());
+        if (ctx.sub) children.push(sep("crumb-sep-sub"), pill(`peer-${ctx.sub}`, ctx.sub, !dim));
+      }
+    } else {
+      if (ctx.parent) children.push(pill("crumb-parent", ctx.parent, false, !narrow), sep("crumb-sep-parent"));
+      children.push(...renderHead());
+      if (ctx.sub) children.push(sep("crumb-sep-sub"), pill(`peer-${ctx.sub}`, ctx.sub, !dim));
+    }
     return h_flex().id("crumb").flex_shrink(0).min_w(0).when(this.area > 0, el => el.max_w(crumbMax)).h_full().gap(6).items_center().text_size(12)
-      .when(Boolean(ctx.parent), el => el.child(pill("crumb-parent", ctx.parent, false, !narrow)))
-      .when(Boolean(ctx.parent && ctx.head), el => el.child(sep("crumb-sep-parent")))
-      .when(Boolean(ctx.head), el => el.child(pill(`peer-${ctx.head}`, ctx.head, !dim && !ctx.sub)))
-      .when(Boolean(ctx.sub), el => el.child(sep("crumb-sep-sub")).child(pill(`peer-${ctx.sub}`, ctx.sub, !dim)));
+      .children(children);
   }
 
   // A zoomed tab's panes, a segment each with the zoomed one lit: a click moves the zoom there (zoom.js).

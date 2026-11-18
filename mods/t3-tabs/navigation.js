@@ -402,32 +402,34 @@ export function navigation(beforeAsk = (_cx) => {}, core = { spaces, panes, agen
     // A sub-agent counts as the agent at its top, whose family the bar holds.
     let top = viewed?.address;
     for (let up = viewed && above(top); up; up = above(top)) top = up.address;
-    return { space, every, all, tab, shownTab, heads, head, viewed, held: !current, parent: head ? above(head.address) : null, top };
+    return { space, every, all, tab, shownTab, heads, head, viewed, held: !current, parent: head ? above(head.address) : null, top, above };
   }
 
-  // With the Inbox showing, cards lead to the agents, so the bar holds what's around the work in view: the agent, its
-  // sub-agents' tabs, then the tabs with no agent in their own order. Home has no tabs to show.
+  // With the Inbox showing, keep all top-level agent tabs in their own order, then the viewed agent's sub-agent tabs, then
+  // tabs with no agent. Home has no tabs to show.
   function visibleTabs(w = work()) {
     if (!w) return [];
-    const { space, every, all, top } = w;
+    const { space, every, all, top, above } = w;
     if (!inboxShown()) return space.tabs;
     // No agent in view, no family: descendants() of nothing would be every top-level agent.
     const family = new Set(top ? [top, ...descendants(all, top).map(k => k.address)] : []);
+    const topTabs = space.tabs.filter(c => every.some(a => a.tab === c.id && !above(a.address)));
     const lead = space.tabs.find(c => c.id === every.find(a => a.address === top)?.tab);
-    const kin = space.tabs.filter(c => c !== lead && every.some(a => a.tab === c.id && family.has(a.address)));
-    return [...(lead ? [lead] : []), ...kin, ...space.tabs.filter(c => !every.some(a => a.tab === c.id))];
+    const kin = space.tabs.filter(c => !topTabs.includes(c) && c !== lead && every.some(a => a.tab === c.id && family.has(a.address)));
+    return [...topTabs, ...(lead && !topTabs.includes(lead) ? [lead] : []), ...kin, ...space.tabs.filter(c => !every.some(a => a.tab === c.id))];
   }
 
-  // The Inbox's bar as it draws: who's in view (docs/research/inbox-tab-bar-plan.md), then its family's other tabs and the
-  // space's programs. The tab in view and the parent's are in the breadcrumb, so not again among them.
+  // The Inbox's bar as it draws: top-level agent tabs (with the viewed one / sub-agent lit), then the viewed family's
+  // sub-agent tabs and the space's programs.
   function context(w, tabs) {
     if (!w || !inboxShown()) return null;
-    const { space, every, tab, shownTab, heads, head, viewed, held, parent } = w;
-    const skip = new Set([tab, parent?.tab]);
+    const { space, every, tab, shownTab, heads, head, viewed, held, parent, above } = w;
+    const agentTabs = tabs.filter(c => every.some(a => a.tab === c.id && !above(a.address)));
+    const skip = new Set([tab, parent?.tab, ...agentTabs.map(c => c.id)]);
     const others = tabs.filter(c => !skip.has(c.id));
     return {
       space, tab: tab ?? null, parent: parent?.address ?? null, heads: heads.map(a => a.address), head: head?.address ?? null,
-      sub: viewed && viewed !== head ? viewed.address : null, held, away: Boolean(tab) && shownTab !== tab,
+      sub: viewed && viewed !== head ? viewed.address : null, held, away: Boolean(tab) && shownTab !== tab, agentTabs,
       kin: others.filter(c => every.some(a => a.tab === c.id)), programs: others.filter(c => !every.some(a => a.tab === c.id)),
     };
   }

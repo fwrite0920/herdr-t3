@@ -39,7 +39,7 @@ export function detailsWatch(view, key, cx) {
 // 150ms to the first card, which fades in. What opens at once does so unfaded, and what it replaces goes with no fade:
 // T3's tooltip group (data-instant) switches cards in one frame, where two cards crossing would flicker.
 // A transition adopts the first value it sees, so a card draws clear for a frame or two before its target changes.
-export function detailsFor(view, key, cx) {
+export function detailsFor(view, key, cx, delay = 150) {
   if (!key) view.detailsHold = null;
   view.detailsWait?.cancel();
   view.detailsWait = null;
@@ -62,7 +62,7 @@ export function detailsFor(view, key, cx) {
     view.detailsIn = true;
     return;
   }
-  view.detailsWait = cx.timer.after(150, (cx) => {
+  view.detailsWait = cx.timer.after(delay, (cx) => {
     view.details = key;
     view.detailsIn = false;
     cx.notify();

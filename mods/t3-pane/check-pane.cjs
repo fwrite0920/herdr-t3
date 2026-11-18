@@ -189,7 +189,7 @@ terms[0].labels.settled = "1:1"; terms[0].turn = 2;
 assert.equal(dots(), shown, "a new turn's done shows, the label still on");
 delete terms[0].labels.settled; delete terms[0].turn;
 
-// In Inbox, a lone/zoomed agent's icon and program name are already in the tab bar, so its pane header shows only the folder (brightened when focused).
+// In Inbox, a lone/zoomed terminal pane's icon and name are already in the tab bar, so its pane header shows only the folder (brightened when focused).
 {
   const savedTab = tab.named; tab.named = false;
   sidebar.children[0].active = "inbox";
@@ -200,6 +200,13 @@ delete terms[0].labels.settled; delete terms[0].turn;
   assert.equal(find(r, "ph-icon-p2"), null, "no duplicate agent icon when crumbed");
   assert.equal(find(r, "ph-name-p2"), null, "no duplicate agent name when crumbed");
   assert.ok(find(r, "ph-folder-p2"), "folder stays visible when crumbed");
+  props = { pane: "p3" };
+  shell.zoomed = true;
+  const rs = header.render();
+  assert.equal(find(rs, "ph-icon-p3"), null, "no duplicate shell icon when crumbed in Inbox");
+  assert.equal(find(rs, "ph-name-p3"), null, "no duplicate shell name when crumbed in Inbox");
+  assert.ok(find(rs, "ph-folder-p3"), "folder stays visible for lone shell panes too");
+  shell.zoomed = false; props = { pane: "p2" };
   pane.zoomed = false; pane.focused = false; pane.program = program;
   agentList = []; sidebar.children[0].active = "lists"; tab.named = savedTab;
 }

@@ -2354,7 +2354,7 @@ for (const width of [208, 240, 256, 320, 480]) {
     assert.deepEqual(shown(), ["kid", "|", "prog", "rev"], "the agent in view is the breadcrumb's; its sub-agent's tab, a rule, then tabs with no agent; no other agent");
     // What shows: a name's measure is clipped to nothing.
     const shownText = (n) => typeof n === "string" ? [n] : n && typeof n === "object" && !String(n.key).startsWith("crumb-measure-") ? n.items.flatMap(shownText) : [];
-    assert.deepEqual(shownText(find(view.render(cx), "crumb")).filter(s => s !== "/"), ["Pi"], "the breadcrumb: the viewed agent's program");
+    assert.deepEqual(shownText(find(view.render(cx), "crumb")).filter(s => s !== "/"), ["Pi", "Pi"], "the breadcrumb: all top-level agent tabs in the space");
     assert.ok(!spins() && !bang(), "no marks: that's the sidebar's");
     f.slots.sidebar.hidden = true;
     assert.deepEqual(shown(), ["kid", "|", "prog", "rev"], "the same with the sidebar hidden");
@@ -2420,8 +2420,8 @@ for (const width of [208, 240, 256, 320, 480]) {
       return view.render(cx);
     };
     let root = at("mine", "p-A");
-    // Only the agent in view, the card the Inbox lights: another agent in the tab is reached by its own card, or its pane.
-    assert.equal(find(root, "peer-C"), null, "only the one in view");
+    // Split top-level agents in the same tab show side by side, with the viewed one lit.
+    assert.equal(find(root, "peer-C").style.text_color, f.theme().dim, "split peer stays dim beside the active one");
     assert.equal(find(root, "peer-A").style.text_color, f.theme().foreground, "lit agent pill");
     assert.ok(find(find(root, "peer-A"), "crumb-menu"), "the one in view has its tab's menu, its ⌄ part of the pill");
     assert.equal(find(root, "crumb-menu").style.opacity, 0.6, "subtle chevron until hovered or focused");
@@ -2478,7 +2478,7 @@ for (const width of [208, 240, 256, 320, 480]) {
     // Shown whole with its full title matching program name: no card; when the full title differs (or is clipped), hover shows it.
     assert.equal(find(view.render(cx), "tip-over-peer-A"), null, "no tooltip repeating a name");
     const crumbCard = (id) => find(view.render(cx), `details-${id}`)?.style.content;
-    const wait = () => [150, 34].forEach(ms => cx.timers.filter(t => t.ms === ms && !t.gone).forEach(t => { t.gone = true; t.fn(cx); }));
+    const wait = () => [150, 350, 34].forEach(ms => cx.timers.filter(t => t.ms === ms && !t.gone).forEach(t => { t.gone = true; t.fn(cx); }));
     const hoverTitle = (on) => { fire(find(view.render(cx), "peer-A"), "on_hover", on, cx); wait(); };
     fire(find(view.render(cx), "tab-area"), "on_size_change", { width: 1200 }, cx);
     fire(find(view.render(cx), "crumb-measure-peer-A"), "on_size_change", { width: 80 }, cx);
@@ -2489,9 +2489,9 @@ for (const width of [208, 240, 256, 320, 480]) {
     hoverTitle(false);
     assert.ok(find(f.load("t3-tabs", { part: "end" }).render(cx), "tab-new"), "Inbox keeps + at the bar's end");
     root = at("mine", "p-C");
-    assert.deepEqual([Boolean(find(root, "peer-C")), find(root, "peer-A")], [true, null], "the other one focused: the title is it");
+    assert.deepEqual([find(root, "peer-C").style.text_color, find(root, "peer-A").style.text_color], [f.theme().foreground, f.theme().dim], "the other one focused: it lights and its peer dims");
     root = at("mine", "p-git");
-    assert.deepEqual([find(root, "peer-C").style.text_color, find(root, "peer-A")], [f.theme().dim, null], "a program beside them: the one last looked at stays, dim");
+    assert.deepEqual([find(root, "peer-C").style.text_color, find(root, "peer-A").style.text_color], [f.theme().dim, f.theme().dim], "a program beside them: both agents stay dim");
     assert.equal(find(root, "crumb-menu"), null);
     fire(find(root, "peer-C"), "on_click", {}, cx);
     assert.deepEqual(taken().at(-1), ["agent.focus", { terminal: "C" }], "and leads back");

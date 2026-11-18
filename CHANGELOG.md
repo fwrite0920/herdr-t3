@@ -5,9 +5,10 @@ English · [中文](CHANGELOG.zh-CN.md)
 ## 2026-11-18
 
 - Left-aligned Inbox tool & shell tabs and streamlined agent/pane headers (`t3-tabs`, `t3-pane`):
-  - Replaced the Inbox space & long session-title breadcrumb with a compact program pill (program icon + short name such as `Codex`, `Pi`, `OMP`, `Antigravity`), showing the full session title on hover when different and keeping the `+` New tab button at the bar's right end so it no longer duplicates the folder below.
+  - Fixed Inbox mode hiding additional open agents in the same space: all top-level agent tabs (and split top-level agents in the active tab) now stay visible side by side as compact program pills in stable order instead of showing only one.
   - Moved the Inbox tool/program strip (`pwsh`, `shell`, sub-agent tabs, zoomed non-agent panes) from the far right to immediately follow the agent pill, separated by a brighter `dim` 16px hairline divider when present, leaving free drag space before Actions/Review/panel controls and scrolling from left to right.
-  - Updated `t3-pane` so a lone/zoomed Inbox agent pane omits the duplicate program icon and renders its folder clearly in `foreground` (when focused) / `muted`.
+  - Updated `t3-pane` so any lone/zoomed Inbox terminal pane (`agents`, `pwsh`, `zsh`) omits the duplicate program icon/name and renders its folder clearly in `foreground` (when focused) / `muted`.
+  - Unified the right-side space panel header tabs (`t3-chrome`: Files, Sessions, Changes, etc.) to match the 28px `raised` pill surface and subtle border of the top tab bar, and increased the top-bar hover title card delay to 350ms (`shared/details.js`, `t3-tabs`) to avoid covering the pane directory during quick pointer sweeps.
 
 ## 2026-11-15
 
