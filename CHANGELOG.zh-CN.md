@@ -21,6 +21,11 @@
   - **Chat 与 New Chat 优化（`extras/herdr-chat`）**：
     - 修复 `timeline.js` 向上滚动跳动；阻止后台 chat 抢夺输入焦点；发送失败时保留并恢复草稿与图片附件；修复 `fetchOlder` 高度前置计算与 Windows 绝对路径打开；将每个聊天实例的 `watchFolder` 改为共享 `keymap.js` 文件轮询；修复 `composer.js` 句中 `@files` 补全；修复 `dialogs.js` 长列表溢出、`Deny` 描边样式并释放 `InputState`；`viewer.js` 支持 `Esc` 关闭与 `Ctrl+±/0` 缩放；`new-chat` 保护 Home 空间且跳过不可用 CLI。
 
+  - **暗黑模式护眼对比度与降噪调色（`extras/themes/omarchy.json`、`t3-sessions`、`shared/file-tree.js`、`t3-inbox`）**：
+    - 保持 Omarchy 暖炭灰绿风格不变，适度提亮低对比度次要字与边界：`dim`/`idle`/`unknown`（`#6e6d6e` → `#848384`）、`muted`（`#949494` → `#a2a1a2`）、`border`（`#222122` → `#2b2a2b`）、`input`（`#282728` → `#353435`），让暗底小字与卡片轮廓清晰不费眼。
+    - 重构 `t3-sessions` 配色层次：区块标题、2×2 常规数字、环境信息与未调用工具全部回归中性灰白阶，彩色仅保留给语义预警（上下文阈值、错误、`accent` 轻点缀），并将 8px 四色霓虹占比条改为 5px 柔和色阶条。
+    - `shared/file-tree.js` 的 Git 状态标记改读主题 ANSI/语义色替代写死的荧光色，并将忽略文件透明度由 `0.5` 提至 `0.65`；`t3-inbox` 筛选复选框对勾按 `t.accent` 亮度自动选用深/浅高对比色。
+
 ## 2026-11-18
 
 - Inbox 模式顶部标签与窗格标题精简优化（`t3-tabs`、`t3-pane`）：

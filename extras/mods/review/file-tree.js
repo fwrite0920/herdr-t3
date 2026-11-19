@@ -115,14 +115,21 @@ export function treeRow(t, mod, row, id, { selected = false, focused = false, st
     .child(div().size(16).flex_none().flex().items_center().justify_center()
       .when(Boolean(row.dir), (el) => el.child(svg(`${mod}/icons/chevron-${row.open ? "down" : "right"}.svg`).size(12).text_color(t.dim))))
     .when(Boolean(leading), (el) => el.child(leading))
-    .child((icon ?? image(`${mod}/${row.dir ? folderIcon(row.path, row.open) : fileIcon(row.path)}`).size(16).flex_none()).when(dim, (el) => el.opacity(0.5)))
-    .child(div().flex_1().min_w(0).truncate().when(dim, (el) => el.opacity(0.5)).when(struck, (el) => el.line_through()).child(row.name))
-    .when(Boolean(status), (el) => el.child(statusBadge(status)))
+    .child((icon ?? image(`${mod}/${row.dir ? folderIcon(row.path, row.open) : fileIcon(row.path)}`).size(16).flex_none()).when(dim, (el) => el.opacity(0.65)))
+    .child(div().flex_1().min_w(0).truncate().when(dim, (el) => el.opacity(0.65)).when(struck, (el) => el.line_through()).child(row.name))
+    .when(Boolean(status), (el) => el.child(statusBadge(status, t)))
     .when(Boolean(trailing), (el) => el.child(trailing));
 }
 
-// The letter in its status's color, on a tenth of it; T3's sm Badge.
-export function statusBadge(letter) {
-  const color = STATUS[letter] ?? STATUS.M;
+// The letter in its status's color (from theme ANSI/semantic palette when available, avoiding harsh neon hexes on dark themes).
+export function statusBadge(letter, t = null) {
+  const map = t ? {
+    A: t.ansi2 || STATUS.A,
+    D: t.ansi1 || STATUS.D,
+    M: t.ansi3 || t.blocked || STATUS.M,
+    R: t.ansi4 || t.accent || STATUS.R,
+    C: t.ansi4 || t.accent || STATUS.C,
+  } : STATUS;
+  const color = map[letter] ?? map.M;
   return div().h(16).min_w(16).px(3).flex_none().flex().items_center().justify_center().rounded(4).font_medium().text_size(10).text_color(color).bg(color + "1a").child(letter);
 }

@@ -21,6 +21,11 @@ English · [中文](CHANGELOG.zh-CN.md)
   - **Chat & New Chat Polish (`extras/herdr-chat`)**:
     - Fixed upward scroll jump in `timeline.js`, prevented background chat focus stealing, preserved draft text & image chips on send failure, fixed `fetchOlder` prepend count and Windows absolute paths in `main.js`, replaced per-chat `watchFolder` with a shared `keymap.js` stat poll, fixed mid-message `@files` completion in `composer.js`, fixed modal overflow/styling and released `InputState`s in `dialogs.js`, added `Esc`/Ctrl-zoom in `viewer.js`, and protected Home space + disabled unavailable CLIs in `new-chat`.
 
+  - **Dark-Mode Eye-Comfort & Contrast Refinement (`extras/themes/omarchy.json`, `t3-sessions`, `shared/file-tree.js`, `t3-inbox`)**:
+    - Improved WCAG legibility in `omarchy.json` by lifting low-contrast `dim`/`idle`/`unknown` (`#6e6d6e` → `#848384`), `muted` (`#949494` → `#a2a1a2`), `border` (`#222122` → `#2b2a2b`), and `input` (`#282728` → `#353435`) while keeping its calm charcoal-sage palette.
+    - Toned down `t3-sessions` from 6 competing ANSI colors to neutral foreground/muted chrome, reserving color strictly for semantic states (warning/danger thresholds, errors, subtle `accent` highlights) and replacing the neon 4-color breakdown bar with a 5px calm tonal bar.
+    - Updated `shared/file-tree.js` Git status badges to follow theme ANSI/semantic colors instead of hardcoded neon Tailwind hexes and raised ignored-file opacity (`0.5` → `0.65`); switched `t3-inbox` filter checkmarks to luminance-aware contrast on `t.accent`.
+
 ## 2026-11-18
 
 - Left-aligned Inbox tool & shell tabs and streamlined agent/pane headers (`t3-tabs`, `t3-pane`):

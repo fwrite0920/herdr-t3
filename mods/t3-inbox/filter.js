@@ -54,9 +54,14 @@ export function inboxTop(view, t, model) {
       .child(div().relative().flex_none()
         .child(s.id ? avatar(s.id, s.name, 16) : svg("mods/t3-inbox/icons/folder.svg").size(16).text_color(t.muted))
         // T3's ring is outside its 12px badge; a border here is inside, so 16 and 2 further out.
-        .when(on, (el) => el.child(h_flex().absolute().right(-6).bottom(-6).size(16).rounded_full().bg(t.accent)
-          .border(2).border_color(t.popover).items_center().justify_center()
-          .child(svg("mods/t3-inbox/icons/check.svg").size(8).text_color("#ffffff")))))
+        .when(on, (el) => {
+          const hex = /^#([0-9a-f]{6})/i.exec(t.accent ?? "");
+          const n = hex ? parseInt(hex[1], 16) : 0;
+          const lightAccent = ((n >> 16) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114) >= 135;
+          return el.child(h_flex().absolute().right(-6).bottom(-6).size(16).rounded_full().bg(t.accent)
+            .border(2).border_color(t.popover).items_center().justify_center()
+            .child(svg("mods/t3-inbox/icons/check.svg").size(8).text_color(lightAccent ? "#0c0b0c" : "#ffffff")));
+        }))
       .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(s.name));
   };
   // As T3's: from the button's left edge, 288 wide, out over the work column; radius 8 and rows' 4, inset 4 (its rounded-lg, rounded-sm, px-1).

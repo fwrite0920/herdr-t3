@@ -29,10 +29,10 @@
     "raised": "#1d1c1d",
     "hover": "#171617",
     "selected": "#20231e",
-    "border": "#222122",
-    "input": "#282728",
-    "muted": "#949494",
-    "dim": "#6e6d6e",
+    "border": "#2b2a2b",
+    "input": "#353435",
+    "muted": "#a2a1a2",
+    "dim": "#848384",
     "accent": "#8a9a7b",
     "accent_foreground": "#0c0b0c",
     "ring": "#8a9a7b",
@@ -41,7 +41,7 @@
     "working": "#8a9a7b",
     "blocked": "#c4b28a",
     "done": "#c1c1c1",
-    "idle": "#6e6d6e",
-    "unknown": "#6e6d6e"
+    "idle": "#848384",
+    "unknown": "#848384"
   }
 }
