@@ -28,6 +28,11 @@ English · [中文](CHANGELOG.zh-CN.md)
 
     - Added matching warm matte-paper `extras/themes/omarchy-light.json` (low-glare warm stone surfaces + deep sage accent, WCAG AA verified) and wired `layouts/herdr-t3.json` `theme.light` to `"omarchy-light"`.
 
+  - **Changes Tree View & Folder Actions (`t3-changes`)**:
+    - Added a toolbar `folder-tree` toggle to switch between flat list (default) and compacted directory tree view, persisted per instance in `localStorage` (`list.mode`).
+    - Compacted single-child directory chains (`a / b`), sorted folders before files in natural order, defaulted folders to expanded with per-section (`STAGED` / `CHANGES`) collapse state, and followed visual tree order (auto-expanding ancestors) on `‹ / ›` navigation.
+    - Added folder-row aggregated file counts / `+add −del` stats and folder-level Stage / Unstage (`+` / `−`) and two-click Discard (`↺` → `Confirm?`) batched over the folder's changed files.
+
 ## 2026-11-18
 
 - Left-aligned Inbox tool & shell tabs and streamlined agent/pane headers (`t3-tabs`, `t3-pane`):

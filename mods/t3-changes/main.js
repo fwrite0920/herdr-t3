@@ -1,6 +1,10 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, theme, settings, window, layout } from "herdr";
+import {
+  readViewMode, writeViewMode, buildChangeTree, orderedTreeFiles,
+  expandAncestors, buildStageCommands, buildDiscardCommands,
+} from "./model.js";
 
 const MOD = "mods/t3-changes";
 
@@ -58,6 +62,9 @@ export default class Changes extends View {
     this.rows = [];
     this.diffWidth = 0;
     this.listOpen = true;
+    this.viewMode = readViewMode();
+    // Collapsed folder keys (`${group}:${dirPath}`) for tree view; memory-only for this run.
+    this.collapsed = new Set();
     this.confirmDiscard = null;
     this.message = "";
     this.gen = false;
@@ -95,6 +102,8 @@ export default class Changes extends View {
       this.watched = null;
       this.closed = false;
       this.limited = false;
+      this.collapsed = new Set();
+      this.confirmDiscard = null;
     }
     if (!cwd) return;
     this.loading = true;
@@ -220,20 +229,34 @@ export default class Changes extends View {
     cx.notify();
   }
 
-  stageFile(f, cx, unstageOnly = false) {
-    if (!this.root || this.busy || this.loading || this.context !== key()) return;
+  toggleViewMode(cx) {
+    this.viewMode = writeViewMode(this.viewMode === "tree" ? "list" : "tree");
+    this.confirmDiscard = null;
+    cx.notify();
+  }
+
+  toggleDir(collapsedKey, cx) {
+    if (this.collapsed.has(collapsedKey)) this.collapsed.delete(collapsedKey);
+    else this.collapsed.add(collapsedKey);
+    this.confirmDiscard = null;
+    cx.notify();
+  }
+
+  stageFiles(files, cx, unstageOnly = false) {
+    if (!this.root || this.busy || this.loading || this.context !== key() || !files.length) return;
     const root = this.root, on = this.on, context = this.context;
-    const unstage = unstageOnly || (f.staged && !f.unstaged);
-    const args = unstage
-      ? (this.hasHead ? ["reset", "HEAD", "--", f.path] : ["rm", "--cached", "--", f.path])
-      : ["add", "--", f.path];
+    const unstage = unstageOnly || files.every((f) => f.staged && !f.unstaged);
+    const steps = buildStageCommands(files, { unstage, hasHead: this.hasHead });
+    if (!steps.length) return;
     this.busy = true;
     this.note = null;
     this.confirmDiscard = null;
     cx.spawn(async (cx) => {
       try {
-        const r = await exec("git", args, { cwd: root, on });
-        if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim());
+        for (const args of steps) {
+          const r = await exec("git", args, { cwd: root, on });
+          if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim());
+        }
       } catch (e) {
         if (key() === context) this.note = `Stage failed: ${e}`;
       } finally {
@@ -243,6 +266,14 @@ export default class Changes extends View {
       }
     });
     cx.notify();
+  }
+
+  stageFile(f, cx, unstageOnly = false) {
+    this.stageFiles([f], cx, unstageOnly);
+  }
+
+  stageDir(dirRow, cx, unstageOnly = false) {
+    this.stageFiles(dirRow.files, cx, unstageOnly);
   }
 
   toggleStageAll(cx) {
@@ -270,20 +301,17 @@ export default class Changes extends View {
     cx.notify();
   }
 
-  discardFile(f, cx) {
-    if (!this.root || this.busy || this.loading || this.context !== key()) return;
-    if (this.confirmDiscard !== f.path) {
-      this.confirmDiscard = f.path;
+  discardFiles(files, confirmKey, cx) {
+    if (!this.root || this.busy || this.loading || this.context !== key() || !files.length) return;
+    if (this.confirmDiscard !== confirmKey) {
+      this.confirmDiscard = confirmKey;
       cx.notify();
       return;
     }
     this.confirmDiscard = null;
     const root = this.root, on = this.on, context = this.context;
-    const steps = f.fresh
-      ? [["clean", "-fd", "--", f.path]]
-      : f.status === "A"
-        ? [(this.hasHead ? ["reset", "HEAD", "--", f.path] : ["rm", "--cached", "--", f.path]), ["clean", "-fd", "--", f.path]]
-        : [["checkout", "HEAD", "--", f.path]];
+    const steps = buildDiscardCommands(files, { hasHead: this.hasHead });
+    if (!steps.length) return;
     this.busy = true;
     this.note = null;
     cx.spawn(async (cx) => {
@@ -301,6 +329,14 @@ export default class Changes extends View {
       }
     });
     cx.notify();
+  }
+
+  discardFile(f, cx, group = "all") {
+    this.discardFiles([f], `file:${group}:${f.path}`, cx);
+  }
+
+  discardDir(dirRow, cx) {
+    this.discardFiles(dirRow.files, `dir:${dirRow.group}:${dirRow.path}`, cx);
   }
 
   commit(cx) {
@@ -388,9 +424,20 @@ export default class Changes extends View {
 
   stepFile(dir, cx) {
     if (!this.files.length) return;
-    const idx = this.files.findIndex((f) => f.path === this.open);
-    const nextIdx = idx < 0 ? 0 : (idx + dir + this.files.length) % this.files.length;
-    this.pick(this.files[nextIdx].path, cx);
+    const stagedFiles = this.files.filter((f) => f.staged);
+    const unstagedFiles = this.files.filter((f) => f.unstaged);
+    const splitSections = stagedFiles.length > 0 && unstagedFiles.length > 0;
+    const rawOrder = this.viewMode === "tree"
+      ? (splitSections ? [...orderedTreeFiles(stagedFiles), ...orderedTreeFiles(unstagedFiles)] : orderedTreeFiles(this.files))
+      : (splitSections ? [...stagedFiles, ...unstagedFiles] : this.files);
+    const seen = new Set();
+    const ordered = rawOrder.filter((f) => (seen.has(f.path) ? false : (seen.add(f.path), true)));
+    if (!ordered.length) return;
+    const idx = ordered.findIndex((f) => f.path === this.open);
+    const nextIdx = idx < 0 ? 0 : (idx + dir + ordered.length) % ordered.length;
+    const target = ordered[nextIdx];
+    if (this.viewMode === "tree") expandAncestors(this.collapsed, target.path);
+    this.pick(target.path, cx);
   }
 
   diffRow({ kind, number, text }, t) {
@@ -410,32 +457,70 @@ export default class Changes extends View {
       .child(div().flex_1().min_w(0).truncate().child(text));
   }
 
-  fileRow(f, t, group = "all") {
+  dirRow(row, t) {
+    const confirmKey = `dir:${row.group}:${row.path}`;
+    const isConfirm = this.confirmDiscard === confirmKey;
+    const isStagedRow = row.group === "staged" || (row.group === "all" && row.allStaged);
+    const cardHover = t.foreground + "12";
+    return h_flex().id(`change-dir-${row.group}-${row.path}`).h(28).flex_none().pl(6 + row.depth * 14).pr(6).gap(6).items_center().rounded(6).cursor_pointer()
+      .hover((s) => s.bg(cardHover))
+      .on_click((_e, cx) => this.toggleDir(row.collapsedKey, cx))
+      .child(div().w(14).flex_none().flex().items_center().justify_center()
+        .child(svg(row.open ? `${MOD}/icons/chevron-down.svg` : `${MOD}/icons/chevron-right.svg`).size(12).text_color(t.dim)))
+      .child(svg(row.open ? `${MOD}/icons/folder-open.svg` : `${MOD}/icons/folder.svg`).size(13).flex_none().text_color(t.muted))
+      .child(h_flex().flex_1().min_w(0).gap(5).items_center()
+        .child(div().min_w(0).truncate().font_medium().text_color(t.foreground).child(row.name))
+        .child(div().flex_none().text_size(10.5).text_color(t.dim).child(String(row.count))))
+      .when(row.add > 0, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.ansi2).child(`+${row.add}`)))
+      .when(row.del > 0, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.ansi1).child(`−${row.del}`)))
+      .child(div().id(`stage-dir-${row.group}-${row.path}`).px(5).py(1).rounded(4).bg(t.raised).text_size(10.5).font_bold()
+        .text_color(isStagedRow ? t.ansi2 : t.muted)
+        .hover((s) => s.text_color(t.foreground).bg(cardHover))
+        .tooltip(isStagedRow ? "Unstage folder" : "Stage folder")
+        .on_click((_e, cx) => { cx.stop_propagation(); this.stageDir(row, cx, isStagedRow); })
+        .child(isStagedRow ? "−" : "+"))
+      .child(div().id(`discard-dir-${row.group}-${row.path}`).px(5).py(1).rounded(4).bg(isConfirm ? t.ansi1 + "33" : t.raised).text_size(10.5).font_medium()
+        .text_color(isConfirm ? t.ansi1 : t.dim)
+        .hover((s) => s.text_color(t.ansi1).bg(t.ansi1 + "22"))
+        .tooltip(isConfirm ? "Click again to discard folder changes" : "Discard folder changes")
+        .on_click((_e, cx) => { cx.stop_propagation(); this.discardDir(row, cx); })
+        .child(isConfirm ? "Confirm?" : "↺"));
+  }
+
+  fileRow(f, t, group = "all", treeDepth = null) {
     const parts = f.path.split("/"), name = parts.pop();
-    const isConfirm = this.confirmDiscard === f.path;
+    const inTree = treeDepth !== null;
+    const confirmKey = `file:${group}:${f.path}`;
+    const isConfirm = this.confirmDiscard === confirmKey;
     const isStagedRow = group === "staged" || (group === "all" && f.staged && !f.unstaged);
     const statusColor = f.status === "A" ? t.ansi2 : f.status === "D" ? t.ansi1 : f.status === "U" ? t.ansi1 : t.blocked;
     const cardHover = t.foreground + "12", cardOn = t.foreground + "1f";
-    return h_flex().id(`change-${group}-${f.path}`).h(28).flex_none().px(6).gap(6).items_center().rounded(6).cursor_pointer()
+    return h_flex().id(`change-${group}-${f.path}`).h(28).flex_none()
+      .when(inTree, (e) => e.pl(6 + treeDepth * 14).pr(6))
+      .when(!inTree, (e) => e.px(6))
+      .gap(6).items_center().rounded(6).cursor_pointer()
       .when(this.open === f.path, (e) => e.bg(cardOn))
       .when(this.open !== f.path, (e) => e.hover((s) => s.bg(cardHover)))
       .on_click((_e, cx) => this.pick(f.path, cx))
       .child(div().w(14).flex_none().text_size(11).font_bold().text_color(statusColor).child(f.status))
-      .child(h_flex().flex_1().min_w(0).gap(2).items_center()
+      .when(inTree, (e) => e.child(div().flex_1().min_w(0).truncate().font_medium().child(name)))
+      .when(!inTree, (e) => e.child(h_flex().flex_1().min_w(0).gap(2).items_center()
         .child(div().flex_none().max_w(160).truncate().font_medium().child(name))
-        .when(parts.length > 0, (el) => el.child(div().flex_1().min_w(0).text_size(11).text_color(t.dim).truncate().child(parts.join("/")))))
+        .when(parts.length > 0, (el) => el.child(div().flex_1().min_w(0).text_size(11).text_color(t.dim).truncate().child(parts.join("/"))))))
       .when(f.staged && group === "all", (el) => el.child(div().px(4).py(0.5).rounded(4).bg(t.ansi2 + "22").text_size(9.5).font_bold().text_color(t.ansi2).child("S")))
       .when(f.add > 0, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.ansi2).child(`+${f.add}`)))
       .when(f.del > 0, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.ansi1).child(`−${f.del}`)))
       .child(div().id(`stage-${group}-${f.path}`).px(5).py(1).rounded(4).bg(t.raised).text_size(10.5).font_bold()
         .text_color(isStagedRow ? t.ansi2 : t.muted)
         .hover((s) => s.text_color(t.foreground).bg(cardHover))
+        .tooltip(isStagedRow ? "Unstage file" : "Stage file")
         .on_click((_e, cx) => { cx.stop_propagation(); this.stageFile(f, cx, isStagedRow); })
         .child(isStagedRow ? "−" : "+"))
       .child(div().id(`discard-${group}-${f.path}`).px(5).py(1).rounded(4).bg(isConfirm ? t.ansi1 + "33" : t.raised).text_size(10.5).font_medium()
         .text_color(isConfirm ? t.ansi1 : t.dim)
         .hover((s) => s.text_color(t.ansi1).bg(t.ansi1 + "22"))
-        .on_click((_e, cx) => { cx.stop_propagation(); this.discardFile(f, cx); })
+        .tooltip(isConfirm ? "Click again to discard changes" : "Discard changes")
+        .on_click((_e, cx) => { cx.stop_propagation(); this.discardFile(f, cx, group); })
         .child(isConfirm ? "Confirm?" : "↺"));
   }
 
@@ -453,7 +538,20 @@ export default class Changes extends View {
     const openFile = this.files.find((f) => f.path === this.open);
     const hunkCount = this.rows.filter((r) => r.kind === "@").length;
     const enabled = Boolean(this.message.trim() && this.root && !this.busy && !this.loading);
-    const listRowCount = splitSections ? stagedFiles.length + unstagedFiles.length : this.files.length;
+    const isTree = this.viewMode === "tree";
+    const stagedItems = splitSections
+      ? (isTree ? buildChangeTree(stagedFiles, this.collapsed, "staged").map((row) => row.kind === "dir" ? this.dirRow(row, t) : this.fileRow(row.file, t, "staged", row.depth))
+        : stagedFiles.map((f) => this.fileRow(f, t, "staged")))
+      : [];
+    const unstagedItems = splitSections
+      ? (isTree ? buildChangeTree(unstagedFiles, this.collapsed, "unstaged").map((row) => row.kind === "dir" ? this.dirRow(row, t) : this.fileRow(row.file, t, "unstaged", row.depth))
+        : unstagedFiles.map((f) => this.fileRow(f, t, "unstaged")))
+      : [];
+    const allItems = !splitSections
+      ? (isTree ? buildChangeTree(this.files, this.collapsed, "all").map((row) => row.kind === "dir" ? this.dirRow(row, t) : this.fileRow(row.file, t, "all", row.depth))
+        : this.files.map((f) => this.fileRow(f, t, "all")))
+      : [];
+    const listRowCount = splitSections ? stagedItems.length + unstagedItems.length : allItems.length;
     return v_flex().id("t3-changes").size_full().min_h(0).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .on_key_down((e, cx) => {
         if (e.key === "escape" && this.typing) {
@@ -479,19 +577,26 @@ export default class Changes extends View {
             .hover((s) => s.bg(cardHover).text_color(t.foreground))
             .on_click((_e, cx) => this.toggleStageAll(cx))
             .child(allStaged ? "Unstage all" : "Stage all")))
+        .child(div().id("changes-view-mode").size(24).flex().items_center().justify_center().rounded(6).cursor_pointer()
+          .when(isTree, (el) => el.bg(t.foreground + "1f"))
+          .hover((s) => s.bg(isTree ? t.foreground + "26" : cardHover))
+          .tooltip(isTree ? "Switch to list view" : "Switch to tree view")
+          .on_click((_e, cx) => this.toggleViewMode(cx))
+          .child(svg(`${MOD}/icons/folder-tree.svg`).size(13).text_color(isTree ? t.foreground : t.muted)))
         .child(div().id("changes-refresh").size(24).flex().items_center().justify_center().rounded(6).cursor_pointer()
           .hover((s) => s.bg(cardHover))
+          .tooltip("Refresh changes")
           .on_click((_e, cx) => this.refresh(cx))
           .child(svg(`${MOD}/icons/refresh-cw.svg`).size(13).text_color(t.muted))))
       .when(this.listOpen, (el) => el.child(
-        v_flex().id("changes-list").flex_none().h(Math.min(220, Math.max(40, listRowCount * 28 + (splitSections ? 42 : 12)))).overflow_y_scrollbar().p(6).gap(2).border_b(1).border_color(t.border)
+        v_flex().id("changes-list").flex_none().h(Math.min(240, Math.max(40, listRowCount * 30 + (splitSections ? 44 : 12)))).overflow_y_scrollbar().p(6).gap(2).border_b(1).border_color(t.border)
           .when(splitSections, (g) => g.child(
             div().px(6).py(2).text_size(10).font_bold().text_color(t.ansi2).child(`STAGED (${stagedFiles.length})`)))
-          .when(splitSections, (g) => g.children(stagedFiles.map((f) => this.fileRow(f, t, "staged"))))
+          .when(splitSections, (g) => g.children(stagedItems))
           .when(splitSections, (g) => g.child(
             div().px(6).pt(4).pb(2).text_size(10).font_bold().text_color(t.muted).child(`CHANGES (${unstagedFiles.length})`)))
-          .when(splitSections, (g) => g.children(unstagedFiles.map((f) => this.fileRow(f, t, "unstaged"))))
-          .when(!splitSections, (g) => g.children(this.files.map((f) => this.fileRow(f, t, "all"))))
+          .when(splitSections, (g) => g.children(unstagedItems))
+          .when(!splitSections, (g) => g.children(allItems))
           .when(!this.files.length, (e) => e.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? "No uncommitted changes" : "No folder"))))))
       .when(this.limited, (el) => el.child(div().px(12).py(4).text_size(11).text_color(t.dim).child("Showing the first 1,000 changed files")))
       .when(Boolean(openFile), (el) => el.child(

@@ -76,7 +76,7 @@ Inbox 左侧列出当前 space 中未收起的（非 Settled／非 Snoozed，或
 
 ### space 面板与 Files
 
-只有一个右侧面板，跟随当前 space，跨标签固定。开关／页面／放大按 space（包括 Home）各记，未用过的默认关闭；宽度整个窗口共用。40px 固定头列出 `panel-body` 里的页（Files、Sessions、Favorites、Changes、Tools，加上装了才有的 Review）。页签高 28、圆角 6、12px 字、14px 图标，当前 `raised` 加细边框；右侧 24px 放大／还原、关闭隐藏或恢复工作列。Review 用 pulls.review 原色标记，未悬停／选中时 70%，并跟随该 space 分析状态。面板关闭时状态移到标签栏开关的图标左侧，不叠角标、不重复。
+只有一个右侧面板，跟随当前 space，跨标签固定。开关／页面／放大按 space（包括 Home）各记，未用过的默认关闭；宽度整个窗口共用。40px 固定头列出 `panel-body` 里的页（Files、Sessions、Favorites、Changes、Tools，加上装了才有的 Review）。页签高 28、圆角 6、12px 字、14px 图标，当前 `raised` 加细边框；右侧 24px 放大／还原、关闭隐藏或恢复工作列。Review 用 pulls.review 原色标记，未悬停／选中时 70%，并跟随该 space 分析状态。面板关闭时状态移到标签栏开关的图标左侧，不叠角标、不重复。Changes 默认扁平列表，工具栏提供 `folder-tree` 按钮（记住于 `localStorage`）切到压缩单目录链（`a / b`、目录优先、默认展开）的树状视图，并支持整目录暂存／取消暂存与二次确认丢弃。
 
 两页是同一张圆角 8、`background` 卡片；每页一条 40px 透明全宽工具栏，下面内容左、唯一导航列右；只靠细线分开，不换底色，代码行号栏也同色。加载是居中 14px 转圈加状态文字；空态是居中 24px 图标、13px medium 标题、12px 淡色提示、间隔 8；读取失败在工具栏下用 11px `ansi1` 错误条叠 `18` 透明底，带 Retry。空态也保留工具栏。
 

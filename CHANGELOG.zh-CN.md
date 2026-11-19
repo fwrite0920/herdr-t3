@@ -28,6 +28,11 @@
 
     - 新增配套浅色护眼主题 `extras/themes/omarchy-light.json`（暖米石哑光纸底 + 深苔绿强调色，全色阶通过 WCAG AA 对比度校验），并将 `layouts/herdr-t3.json` 的 `theme.light` 指向 `"omarchy-light"`。
 
+  - **Changes 树状视图与整目录操作（`t3-changes`）**：
+    - 在工具栏新增 `folder-tree` 视图切换按钮，支持在扁平列表（默认）与树状视图之间切换，并通过 `localStorage`（`list.mode`）记住上次选择。
+    - 树状模式下自动压缩单子目录链（`a / b`）、先目录后文件自然排序、默认展开且在 `STAGED` / `CHANGES` 分段间保持独立折叠状态，`‹ / ›` 切换文件按树顺序走并自动展开祖先目录。
+    - 目录行汇总文件数与 `+add −del`，并支持整目录一键 Stage / Unstage（`+` / `−`）以及二次确认 Discard（`↺` → `Confirm?`），按该目录下实际变动文件分批执行。
+
 ## 2026-11-18
 
 - Inbox 模式顶部标签与窗格标题精简优化（`t3-tabs`、`t3-pane`）：
