@@ -5,8 +5,13 @@ import { v_flex, Popup } from "gpui-base";
 import { keys, window } from "herdr";
 
 // An action's key as the new menu writes it: ⇧⌘O. Read from the bindings, so a rebound key says so.
+// Prefer a binding that matches this platform (cmd on macOS, non-cmd on Windows/Linux) when both exist.
 export function keyOf(action) {
-  return keyLabel(keys().find(b => b.action === action)?.keys ?? "");
+  const matches = keys().filter(b => b.action === action);
+  if (!matches.length) return "";
+  const mac = window()?.platform === "macos";
+  const pick = matches.find(b => mac ? /\bcmd-/i.test(b.keys ?? "") : !/\bcmd-/i.test(b.keys ?? "")) ?? matches[0];
+  return keyLabel(pick?.keys ?? "");
 }
 
 // Keys as keys.json writes them (`cmd-shift-o`), as this platform names them.
@@ -43,7 +48,7 @@ export function pointerMoved(p) {
 }
 export function pointerGone(box, from) {
   const p = pointerAt(), size = globalThis.window.viewport_size?.();
-  if (p && size && track.at?.x === p.x && track.at.y === p.y) {
+  if (window()?.platform === "macos" && p && size && track.at?.x === p.x && track.at.y === p.y) {
     const x = p.x + 2 * track.step.x, y = p.y + 2 * track.step.y;
     if (x < 0 || y < 0 || x >= size.width || y >= size.height) return true;
   }

@@ -44,11 +44,20 @@ async function openChat(provider) {
     notify({ title: "Unified Agent Chat disabled", body: "Turn on 'Unified Agent Chat' in Herdr T3 Settings (Space Panel → Developer Features) to use the GUI chat composer.", level: "info" });
     return;
   }
-  const f = focused();
-  const space = spaces().find((s) => s.id === f?.space);
-  const cwd = f?.cwd || space?.folder || null;
+  const f = focused(), homeId = shared("t3-tabs.home");
+  const allSpaces = spaces();
+  let space = allSpaces.find((s) => s.id === f?.space);
+  // Never spawn an agent chat inside Home (ADR 0005): target the most recent non-Home space instead.
+  if (!space || (homeId && space.id === homeId)) {
+    space = allSpaces.find((s) => s.id !== homeId) ?? null;
+  }
+  if (!space) {
+    notify({ title: "No workspace open", body: "Open a space first to start a chat.", level: "warning" });
+    return;
+  }
+  const cwd = (f?.space === space.id && f?.cwd) || space.folder || null;
   const chat = `c-${randHex(4)}`;
-  run("tab.new", { name: provider, mod: "chat", props: { chat, provider, ...(cwd ? { cwd } : {}) } });
+  run("tab.new", { space: space.id, name: provider, mod: "chat", props: { chat, provider, ...(cwd ? { cwd } : {}) } });
   await fs.mkdir(`${appHome()}/data/herdr-chat`, { recursive: true });
   await fs.writeFile(PREFS(), JSON.stringify({ last: provider }));
 }
@@ -276,7 +285,7 @@ export default class NewChat extends View {
       try {
         const cfg = await chatConfig().catch(() => ({}));
         const known = await knownAgents().catch(() => []);
-        this.installed = Object.fromEntries(CHOICES.map((c) => [c.id, Boolean(cfg[c.id]) || known.find((a) => a.key === c.id)?.installed !== false]));
+        this.installed = Object.fromEntries(CHOICES.map((c) => [c.id, Boolean(cfg[c.id] && /[\\/]/.test(String(cfg[c.id]))) || known.find((a) => a.key === c.id)?.installed !== false]));
       } catch {}
       cx.notify();
     });
@@ -298,7 +307,7 @@ export default class NewChat extends View {
   }
 
   open(i, cx) {
-    if (this.done || i < 0 || i >= CHOICES.length) return;
+    if (this.done || i < 0 || i >= CHOICES.length || !this.available(CHOICES[i])) return;
     this.done = true;
     const provider = CHOICES[i].id;
     const overlay = props()?.overlay;
@@ -313,13 +322,20 @@ export default class NewChat extends View {
     });
   }
 
+  stepSel(dir) {
+    for (let k = 1; k <= CHOICES.length; k++) {
+      const next = (this.sel + dir * k + CHOICES.length) % CHOICES.length;
+      if (this.available(CHOICES[next])) { this.sel = next; return; }
+    }
+  }
+
   key(e, cx) {
     const k = e.keystroke;
     const letter = CHOICES.findIndex((c) => c.letter === k && this.available(c));
     if (letter >= 0) this.open(letter, cx);
     else if (/^[1-9]$/.test(k)) this.open(Number(k) - 1, cx);
-    else if (k === "up") this.sel = (this.sel + CHOICES.length - 1) % CHOICES.length;
-    else if (k === "down" || k === "tab") this.sel = (this.sel + 1) % CHOICES.length;
+    else if (k === "up" || k === "shift-tab") this.stepSel(-1);
+    else if (k === "down" || k === "tab") this.stepSel(1);
     else if (k === "enter") this.open(this.sel, cx);
     else if (k === "escape") { const o = props()?.overlay; if (o) closeOverlay(o); }
     cx.notify();
@@ -337,12 +353,19 @@ export default class NewChat extends View {
     return v_flex().id("launcher").size_full().p(8).gap(2).bg(t.popover).text_color(t.foreground)
       .track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .child(div().px(8).pt(4).pb(6).text_size(11.5).text_color(t.dim).child("New chat"))
-      .children(CHOICES.map((c, i) => h_flex().id(`choice-${c.id}`).h(36).px(10).gap(10).items_center().rounded(8).cursor_pointer()
-        .when(i === this.sel, (e) => e.bg(t.selected))
-        .hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.open(i, cx))
-        .child(mark(c))
-        .child(div().flex_1().text_size(13).text_color(this.available(c) ? t.foreground : t.dim).child(this.available(c) ? c.label : `${c.label} (not installed)`))
-        .when(this.available(c), (e) => e.child(div().px(5).rounded(4).border_1().border_color(t.border).bg(t.raised).text_size(11).text_color(t.dim).child(c.letter.toUpperCase())))))
+      .children(CHOICES.map((c, i) => {
+        const ok = this.available(c);
+        return h_flex().id(`choice-${c.id}`).h(36).px(10).gap(10).items_center().rounded(8)
+          .when(ok, (e) => e.cursor_pointer()
+            .when(i === this.sel, (s) => s.bg(t.selected))
+            .when(i !== this.sel, (s) => s.hover((st) => st.bg(t.foreground + "12")))
+            .on_hover((over, cx) => { if (over && this.sel !== i) { this.sel = i; cx.notify(); } })
+            .on_click((_e, cx) => this.open(i, cx)))
+          .when(!ok, (e) => e.opacity(0.64))
+          .child(mark(c))
+          .child(div().flex_1().text_size(13).text_color(ok ? t.foreground : t.dim).child(ok ? c.label : `${c.label} (not installed)`))
+          .when(ok, (e) => e.child(div().px(5).rounded(4).border_1().border_color(t.border).bg(t.raised).text_size(11).text_color(t.dim).child(c.letter.toUpperCase())));
+      }))
       .child(div().px(8).pt(6).text_size(10.5).text_color(t.dim).child(`${letters} or ↑↓ Enter · Esc`));
   }
 }

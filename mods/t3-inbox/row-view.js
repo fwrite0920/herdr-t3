@@ -120,6 +120,7 @@ export function inboxRowView(view, t, model, actions, drag) {
       })
       .child(svg("mods/t3-inbox/icons/alarm-clock.svg").size(16).flex_none().text_color(t.blocked)).child("Woke"), 4), { delay });
     const acting = offer || napOffer, quiet = acting && (menu || !woke(a));
+    if (!acting && view.detailsHold === a.address) view.detailsHold = null;
     // Lifted, or marked by a sweep, the corner says what letting go will do instead.
     // The state or the time, faded out on hover where Settle fades in over it, as T3's corner.
     const word = running(a)
@@ -142,21 +143,27 @@ export function inboxRowView(view, t, model, actions, drag) {
         .when(acting, (el) => el.on_hover((on, cx) => { view.detailsHold = on ? a.address : null; cx.notify(); }))
         .child(div().flex_none().when(quiet, (el) => el.absolute().top(0).right(0)).opacity(quiet ? 0 : 1).transition("opacity", MOTION).child(status))
         .child(h_flex().id(`controls-${a.address}`).h(20).flex_none().items_center().when(!acting, (el) => el.absolute().top(0).right(0))
+        // When Settle is hidden (!offer, e.g. hovered Working card), keep its faded placeholder behind Snooze so it never steals clicks from Snooze.
+        .when(!offer, (el) => el.child(div().absolute().top(0).right(0).child(
+          h_flex().id(id).h(20).px(6).mr(-4).gap(4).flex_none().items_center().rounded(6).text_size(12).opacity(0).transition("opacity", MOTION)
+            .child(svg("mods/t3-inbox/icons/check.svg").size(14).flex_none().text_color(t.muted)).child("Settle"))))
         .when(Boolean(clock), (el) => el.child(clock))
-        .child(div().when(!offer, (el) => el.absolute().top(0).right(0)).child(tip(view, t, id, a.mod ? "Settle and close" : "Settle agent", h_flex().id(id).h(20).px(6).mr(-4).gap(4).flex_none().items_center().rounded(6)
-        .text_size(12).text_color(lit(id, t.muted)).opacity(offer ? 1 : 0).transition("opacity", MOTION)
-        // Faded out it's no button: a click there is the card's. As T3's row controls, hover only lights it: no ground.
-        .when(offer, (el) => el.on_hover(glow(view, id)).role("button").accessibility_label(a.mod ? "Settle and close" : "Settle").when(!a.mod, (b) => b.on_mouse_down("left", sweepFrom("settle", a))).on_click((_e, cx) => {
-          cx.stop_propagation();
-          if (justDropped()) return;
-          // A click is no sweep. Its release stops here, so the sidebar's mouse-up won't end the one the press began.
-          view.sweep = null;
-          settle([a], cx);
-          cx.notify();
-        }))
-        .child(svg("mods/t3-inbox/icons/check.svg").size(14).flex_none().text_color(lit(id, t.muted)))
-        .child("Settle")
-        .when(offer, (el) => stop(view, t, id, el, 6)), { action: on ? settleKey() : undefined, delay }))));
+        .when(offer, (el) => el.child(div().child(
+          tip(view, t, id, a.mod ? "Settle and close" : "Settle agent", h_flex().id(id).h(20).px(6).mr(-4).gap(4).flex_none().items_center().rounded(6)
+            .text_size(12).text_color(lit(id, t.muted)).opacity(1).transition("opacity", MOTION)
+            .on_hover(glow(view, id)).role("button").accessibility_label(a.mod ? "Settle and close" : "Settle")
+            .when(!a.mod, (b) => b.on_mouse_down("left", sweepFrom("settle", a)))
+            .on_click((_e, cx) => {
+              cx.stop_propagation();
+              if (justDropped()) return;
+              // A click is no sweep. Its release stops here, so the sidebar's mouse-up won't end the one the press began.
+              view.sweep = null;
+              settle([a], cx);
+              cx.notify();
+            })
+            .child(svg("mods/t3-inbox/icons/check.svg").size(14).flex_none().text_color(lit(id, t.muted)))
+            .child("Settle")
+            .when(offer, (el) => stop(view, t, id, el, 6)), { action: on ? settleKey() : undefined, delay })))));
     // T3's card row: 10 and 8 in, rounded-md, its lines 20, 20 and 16 tall, 4 and 2 apart: 78 with all three.
     const base = v_flex().id(`${ghost ? "ghost-" : ""}card-${a.address}`).relative().px(10).py(8).flex_none().rounded(6)
       .border(1).border_color(on ? t.accent + "55" : st === "blocked" ? t.blocked + "33" : t.border)

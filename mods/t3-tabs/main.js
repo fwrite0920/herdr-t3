@@ -15,7 +15,7 @@ import { KEY, migrate } from "./store.js";
 import { pinList, pin, unpin, putBack } from "./pins.js";
 import { writeLabel } from "./labels.js";
 import { openMenu } from "./menu.js";
-import { panelState, togglePanel, syncPanel, restorePanel } from "./panel.js";
+import { panelState, togglePanel, hidePanel, syncPanel, restorePanel } from "./panel.js";
 import { button as drawButton, radiusOf } from "./button.js";
 
 const inboxShown = () => sidebarParts(layout()).stack?.active === "inbox";
@@ -50,8 +50,8 @@ const TAB_GAP = 4;
 const TAB_FLOOR = 144, TAB_ACTIVE = 240, TAB_MIN = 96;
 // A tab around its name: 2px border + 8px left + 16px icon/close slot + 6px gap + 10px right = 42px; a status mark adds 6px + 16px.
 const TAB_CHROME = 42, SNUG_CHROME = 42, STATUS_SLOT = 22;
-// A zoomed tab's pane segment around its name: a tab's padding, icon slot and gap, with no ×. The rule between the Inbox's groups.
-const SEG_CHROME = 42, RULE_W = 9;
+// A zoomed tab's pane segment around its name: pl(6) + pr(8) + 16px icon slot + 2px gap = 32px. The rule between the Inbox's groups.
+const SEG_CHROME = 32, RULE_W = 9;
 // With the Inbox showing, the breadcrumb shows whole while it can: the strip beside it gives way first, down to
 // nothing (it scrolls), and the names shorten only when the breadcrumb alone is wider than the row; under NARROW, a parent's
 // name turns to `…`.
@@ -121,6 +121,7 @@ export default class Tabs extends View {
         // The space panel (docs/adr/0011), keyed as VS Code's: a page opens on it, or closes the panel already showing it; `panel` keeps the last page.
         else if (command === "files" || command === "review") togglePanel(command);
         else if (command === "panel") togglePanel();
+        else if (command === "panel-close") hidePanel();
         // An agent's menu (t3-menu): Settle, Un-settle or Wake the agent it was opened on, in view or not.
         else if (command.startsWith("settle:")) await this.settle(cx, command.slice("settle:".length));
         else if (command.startsWith("wake:")) await writeLabel(command.slice("wake:".length), "snoozed", "");
@@ -366,8 +367,9 @@ export default class Tabs extends View {
     const { tabs: shown, context: ctx } = this.navigation.frame(!props()?.part), inbox = inboxShown();
     // With the Inbox, the breadcrumb holds the tab in view and the parent's: the strip has the rest.
     const strip = ctx ? [...ctx.kin, ...ctx.programs] : shown;
+    const closable = ctx ? [...strip, ...(ctx.agentTabs ?? [])] : strip;
     // A tab that goes under the pointer reports no leaving, and a lit × would keep every tab's card away.
-    if (this.hot?.startsWith("close-") && !strip.some(c => this.hot === `close-${c.id}`)) this.hot = null;
+    if (this.hot?.startsWith("close-") && !closable.some(c => this.hot === `close-${c.id}`)) this.hot = null;
     // Each agent with its sub-agents (tree.js).
     const every = agents(), all = terminals(), under = subAgents(every, all);
     const st = (a) => treeStatus(ownStatus(a.status, a.address, all), under(a.address));
@@ -402,9 +404,10 @@ export default class Tabs extends View {
     const want = (e) => e.rule ? RULE_W
       : e.group ? e.group.panes.reduce((sum, p) => sum + segWant(p, p === e.group.z), 2 + (e.group.status ? 16 : 0))
       : this.nameW[e.id] ? (ctx ? Math.ceil(this.nameW[e.id]) + SNUG_CHROME : Math.max(TAB_MIN, Math.ceil(this.nameW[e.id]) + TAB_CHROME + (!inbox && statusOf(e.c) ? STATUS_SLOT : 0))) : TAB_FLOOR;
+    if (entries.length === 0) this.stripW = null;
     // With the Inbox the strip asks for what its tabs want and gets what the breadcrumb leaves (measured: stripW); in Lists, the row.
     const area = this.area ?? 0, stripWant = Math.max(0, entries.reduce((sum, e) => sum + want(e) + TAB_GAP, -TAB_GAP));
-    this.room = ctx ? this.stripW ?? Math.min(stripWant, area) : area;
+    this.room = ctx ? (this.stripW > 0 ? this.stripW : Math.min(stripWant, area)) : area;
     const widths = this.tabWidths(entries, want), at = this.stripAt(entries, widths);
     const over = Math.max(0, entries.reduce((sum, e) => sum + widths.get(e.id) + TAB_GAP, -TAB_GAP) - (this.room ?? 0));
     const fade = (id, start) => h_flex().id(id).absolute().top(0).bottom(0).w(16).when(start, el => el.left(0)).when(!start, el => el.right(0))
@@ -422,6 +425,8 @@ export default class Tabs extends View {
       // As T3's panel tabs: 24px, 12px words. Unlike T3's, the icon stays: it tells tabs apart, so hovering puts × over the status mark instead.
       const tabId = `tab-${c.id}`, closeId = `close-${c.id}`;
       const over = this.overTab === c.id || within(this, [tabId, closeId]);
+      // On active tabs hovering anywhere reveals ×; on inactive tabs only arm × when hovering/focusing the icon slot so switching tabs can't accidentally close them.
+      const closeOver = c.active ? over : (this.hot === closeId || within(this, [closeId]));
       const iconColor = c.active || over ? t.foreground : t.dim;
       const glyph = programIcon(program, 12, iconColor) ?? svg("mods/t3-tabs/icons/terminal.svg").size(12).text_color(iconColor);
       // Its whole name, in a hover label's quiet style: the project, branch and program are already in the sidebar and the pane's header.
@@ -438,11 +443,11 @@ export default class Tabs extends View {
           .child(status ? `${name} · ${WORDS[status]}` : name)));
       // Its label waits longer than a card's 150ms, so a straight click never meets it. Its key closes the active tab only.
       const close = tip(this, t, closeId, "Close tab", drawButton(t, closeId, {
-        size: "tiny", surface: "tab", icon: over ? "mods/t3-tabs/icons/x.svg" : undefined, label: `Close ${name}`, hot: over })
+        size: "tiny", surface: "tab", icon: closeOver ? "mods/t3-tabs/icons/x.svg" : undefined, label: `Close ${name}`, hot: closeOver })
         .on_hover(glow(this, closeId))
         .on_mouse_down("left", stopPress).on_click((_e, cx) => { cx.stop_propagation(); run(`t3-tabs.close-tab:${c.id}`); })
-        .when(!over, el => el.child(glyph))
-        .when(over, el => stop(this, t, closeId, el, radiusOf("tiny"))), { action: c.active ? "t3-tabs.close-tab" : undefined, below: true, delay: 500 });
+        .when(!closeOver, el => el.child(glyph))
+        .when(closeOver, el => stop(this, t, closeId, el, radiusOf("tiny"))), { action: c.active ? "t3-tabs.close-tab" : undefined, below: true, delay: 500 });
       const tab = h_flex().id(tabId).relative().h(28).w(widths.get(c.id)).pl(8).pr(10).gap(6).rounded(6).items_center().flex_none().text_size(12)
         .border_1().border_color(c.active ? t.foreground + "1a" : t.chrome)
         .bg(c.active ? t.raised : t.chrome).text_color(c.active || over ? t.foreground : t.dim)
@@ -461,7 +466,11 @@ export default class Tabs extends View {
             .when(pressedAt < i, line => line.right(0))
             .when(pressedAt > i, line => line.left(0)),
         ))
-        .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); detailsFor(this, null, cx); this.pressed = c.id; this.over = null; this.dragFrom = e.position; if (e.click_count === 2) run("tab.rename", { id: c.id }); })
+        .on_mouse_down("left", (e, cx) => {
+          cx.stop_propagation(); detailsFor(this, null, cx);
+          if (e.click_count === 2) { this.pressed = this.over = null; run("tab.rename", { id: c.id }); return; }
+          this.pressed = c.id; this.over = null; this.dragFrom = e.position;
+        })
         .on_mouse_move((e, cx) => {
           detailsAt(this, c.id, e);
           const held = strip.find(x => x.id === this.pressed);
@@ -542,7 +551,11 @@ export default class Tabs extends View {
       // inside a flex-1 tail so free space stays to the right before Actions.
       .child(h_flex().id("tab-area").flex_1().min_w(0).h_full().items_center().gap(8)
         .on_size_change((size, cx) => { this.area = size.width / settings().zoom; cx.notify(); })
-        .when(hasCrumb, el => el.child(this.crumb(t, ctx, { every, name: tabName, narrow: area - this.room - (hasCrumb && entries.length ? 17 : 8) < NARROW, crumbMax: Math.max(0, area - (entries.length ? 21 : 8)), stopPress })))
+        .when(hasCrumb, el => {
+          const reserve = entries.length ? Math.min(stripWant, area > 280 ? Math.max(120, Math.floor(area * 0.35)) : 0) : 0;
+          const crumbMax = Math.max(0, area - reserve - (entries.length ? 21 : 8));
+          return el.child(this.crumb(t, ctx, { every, name: tabName, narrow: area - this.room - (hasCrumb && entries.length ? 17 : 8) < NARROW, crumbMax, stopPress }));
+        })
         .when(hasCrumb && entries.length > 0, el => el.child(div().id("crumb-rule").w(1).h(16).flex_none().bg(t.dim)))
         .when(Boolean(ctx), el => el.child(h_flex().id("tab-tail").flex_1().min_w(0).when(entries.length > 0, el => el.mr(4)).h_full().items_center().child(tabScroll)))
         .when(!ctx, el => el.child(tabScroll))));
@@ -597,25 +610,27 @@ export default class Tabs extends View {
       return div().id("crumb-menu").flex_none().opacity(shown ? 1 : 0.6).transition("opacity", { duration: 150, easing: "ease-out" })
         .child(svg("mods/t3-tabs/icons/chevron-down.svg").size(12).text_color(t.muted));
     };
-    const pill = (id, address, lit, shown = true, { closeTabId = null, selectTabId = null } = {}) => {
+    const pill = (id, address, lit, shown = true, { closeTabId = null, selectTabId = null, middleCloseTabId = null } = {}) => {
       const label = progLabel(address), full = nameOf(address), closeId = closeTabId ? `close-${closeTabId}` : null;
       const over = this.hot === id || (closeId && (this.hot === closeId || within(this, [id, closeId])));
+      const closeOver = Boolean(closeId && (this.hot === closeId || within(this, [closeId])));
       const iconColor = lit || over ? t.foreground : t.dim;
       const glyph = programIcon(progOf(address), 12, iconColor) ?? svg("mods/t3-tabs/icons/terminal.svg").size(12).text_color(iconColor);
       const slot = closeId
         ? tip(this, t, closeId, "Close tab", drawButton(t, closeId, {
-          size: "tiny", surface: "tab", icon: over ? "mods/t3-tabs/icons/x.svg" : undefined, label: `Close ${full}`, hot: Boolean(over) })
+          size: "tiny", surface: "tab", icon: closeOver ? "mods/t3-tabs/icons/x.svg" : undefined, label: `Close ${full}`, hot: closeOver })
           .on_hover(glow(this, closeId))
           .on_mouse_down("left", stopPress).on_click((_e, cx) => { cx.stop_propagation(); run(`t3-tabs.close-tab:${closeTabId}`); })
-          .when(!over, el => el.child(glyph))
-          .when(Boolean(over), el => stop(this, t, closeId, el, radiusOf("tiny"))), { action: undefined, below: true, delay: 500 })
+          .when(!closeOver, el => el.child(glyph))
+          .when(closeOver, el => stop(this, t, closeId, el, radiusOf("tiny"))), { action: undefined, below: true, delay: 500 })
         : div().size(16).flex_none().flex().items_center().justify_center().child(glyph);
+      const midClose = closeTabId ?? middleCloseTabId;
       const el = h_flex().h(28).pl(8).pr(lit ? 6 : 8).gap(6).rounded(6).items_center().min_w(0).flex_shrink(1)
         .border_1().border_color(lit ? t.foreground + "1a" : t.chrome)
         .bg(lit ? t.raised : t.chrome).text_color(lit || over ? t.foreground : t.dim)
         .when(lit, e => e.font_medium())
         .when(!lit, e => e.hover(s => s.bg(t.hover).border_color(t.hover)))
-        .when(Boolean(closeTabId), e => e.on_mouse_down("middle", (_e, cx) => { cx.stop_propagation(); run(`t3-tabs.close-tab:${closeTabId}`); }))
+        .when(Boolean(midClose), e => e.on_mouse_down("middle", (_e, cx) => { cx.stop_propagation(); run(`t3-tabs.close-tab:${midClose}`); }))
         .child(slot)
         .child(shown ? nameText(id, label) : div().child("…"))
         .when(lit, e => e.child(chevron(id)));
@@ -625,7 +640,8 @@ export default class Tabs extends View {
     const renderHead = () => {
       if (!ctx.head) return [];
       const heads = ctx.heads?.length > 1 && !ctx.sub ? ctx.heads : [ctx.head];
-      return heads.map(addr => pill(`peer-${addr}`, addr, !dim && !ctx.sub && addr === ctx.head));
+      const soloTab = heads.length === 1 && !ctx.sub ? ctx.tab : null;
+      return heads.map(addr => pill(`peer-${addr}`, addr, !dim && !ctx.sub && addr === ctx.head, true, { middleCloseTabId: soloTab }));
     };
     const agentTabs = ctx.agentTabs?.length ? ctx.agentTabs : null;
     const children = [];
@@ -654,7 +670,7 @@ export default class Tabs extends View {
       children.push(...renderHead());
       if (ctx.sub) children.push(sep("crumb-sep-sub"), pill(`peer-${ctx.sub}`, ctx.sub, !dim));
     }
-    return h_flex().id("crumb").flex_shrink(0).min_w(0).when(this.area > 0, el => el.max_w(crumbMax)).h_full().gap(6).items_center().text_size(12)
+    return h_flex().id("crumb").flex_shrink(0).min_w(0).overflow_hidden().when(this.area > 0, el => el.max_w(crumbMax)).h_full().gap(6).items_center().text_size(12)
       .children(children);
   }
 
@@ -690,6 +706,6 @@ export default class Tabs extends View {
       .child(`${n.action}${n.count === 1 ? "" : ` ${n.count}`},`)
       .child(h_flex().id("undo-notice-undo").h(24).items_center().font_medium().text_color(t.foreground)
         .when(n.live && Date.now() - n.at < 5000, el => stop(this, t, "undo-notice-undo", el.hover(s => s.underline()).role("button")
-          .accessibility_label(`Undo: ${n.action}`).on_click(() => run("t3-tabs.undo")), 4)).child("Undo"));
+          .accessibility_label(`Undo: ${n.action}`).on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click(() => run("t3-tabs.undo")), 4)).child("Undo"));
   }
 }

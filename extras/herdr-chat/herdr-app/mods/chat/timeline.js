@@ -86,10 +86,12 @@ export class Timeline {
       .child(row(it)).on_size_change((s, cx) => {
       const old = this.heights.get(it.id);
       if (old === s.height) return;
+      // Capture estimated/previous height BEFORE overwriting the cache so scroll-anchor compensation actually runs on first measurement.
+      const prevH = old ?? this.h(it);
       this.heights.set(it.id, s.height);
       // A row above the viewport changed size: keep the view still.
       const off = this.offsets.get(it.id);
-      if (!this.sticky && off !== undefined && off < this.top) this.top += s.height - (old ?? this.h(it));
+      if (!this.sticky && off !== undefined && off < this.top) this.top += s.height - prevH;
       // Sticky, a known row growing needs no redraw: it's pinned to the bottom.
       if (!this.sticky || old === undefined) cx.notify();
     });

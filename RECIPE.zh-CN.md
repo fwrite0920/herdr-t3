@@ -209,7 +209,7 @@ Inbox 点面包屑 space 重用单独停在提示符的 shell 标签（最近看
 
 Go to（`cmd-p`／Inbox Search）一行一个 pane：agent、shell、程序、mod，没有无 pane 终端和 Home。最近的先、越近越前，再当前 space、当前机器、其他 space／tab 顺序，当前 pane 最后。所有导航入口共记最多 30 个活 pane。打开选之前 pane，`cmd-p`、Enter 来回。行是 space 标记、共用 pane 名，下方程序图标／名字、远程机器、space、活子 agent `+n`，右侧状态。匹配 space／机器、人为命名标签、pane 名、程序名／key、folder，pane 名命中优先元数据命中。Enter／点用跨 space 的 `pane.focus`，`ctrl-d` 走相同确认关闭。Footer 是 ↑/↓ Navigate、Enter Go、Ctrl-D Close pane、Esc Close，New tab 打开 New。
 
-New 当前 space 先，同机器聚合；第二行目录，远程加 server／机器。平台键 `1…9` 选编号，提示 macOS `⌘1`／其他 `Super+1`。Footer New space 在多机器时先选机器，未就绪禁用，`← Spaces` 返回。`cmd-n` 直接用当前机器，仅无需问机器时显示提示。侧栏 New space 直接选机器，一台时立即创建。New tab 用 space 当前所在目录（首终端，否则创建目录），不固定在初始目录。
+New 当前 space 先，同机器聚合；第二行目录，远程加 server／机器。平台键 `1…9` 选编号，提示 macOS `⌘1`／其他 `Ctrl+1`。Footer New space 在多机器时先选机器，未就绪禁用，`← Spaces` 返回。`cmd-n` 直接用当前机器，仅无需问机器时显示提示。侧栏 New space 直接选机器，一台时立即创建。New tab 用 space 当前所在目录（首终端，否则创建目录），不固定在初始目录。
 
 Actions 全局，不按项目。主动作是上次运行，否则第一个；`▶` 重跑，菜单选中运行并设主，行 gear 编辑，Add action 新建。编辑器必填去空白后的 Name／Command，可选 Folder、图标、Tab／Split right／Split down；不合格 Save 禁用，Delete 先问。每次运行新开有名字的标签／分屏：`terminal.open { argv:["sh","-c",command],name,place,folder? }`，结束后 shell 保留。没填 Folder 取聚焦终端 cwd、同 tab 终端 cwd、space folder，展开 `~`。列表／上次选择跨重启保留。别名／函数需显式 `zsh -ic '…'` 之类，纯 Windows 需另装 `sh`。
 
@@ -266,7 +266,7 @@ macOS 用 `osascript`、Linux `zenity` 选择，等待显示 Opening…；图片
 | `cmd-1…9`、`ctrl-alt-1…9` | `t3-tabs.tab:<n>`，显示的标签 |
 | `cmd-shift-]`／`[`、`ctrl-tab/ctrl-shift-tab`、`ctrl-alt-]`／`[` | `t3-tabs.tab-next/tab-prev`，循环 |
 
-按 Herdr 平台显示键名，非 macOS 的 cmd 是 Super。`cmd-d` 留给 Herdr 分屏，不是 Review。键盘在 Files/Review，`cmd-w`／`ctrl-alt-shift-x` 关面板而非背后标签；popup/dialog 持键盘时，四个标签／pane 关闭键都只关 overlay。浮动 `tabs-keys` 在侧栏隐藏、面板放大时也处理布局命令。
+按 Herdr 平台显示键名并优先匹配本平台绑定（macOS 选 `cmd-`，Windows/Linux 选终端安全的 `ctrl-shift-*`）。`cmd-d` 留给 Herdr 分屏，不是 Review。键盘在任意 Space 面板页时，关闭键只关面板（`t3-files.close`／`review.close`／`t3-tabs.panel-close`）不关背后标签；面板放大模式在 `panel-head` 补出侧栏开关与原生窗口按钮。popup/dialog 持键盘时，全部标签／pane 关闭键只关 overlay。浮动 `tabs-keys` 在侧栏隐藏、面板放大时也处理布局命令。
 
 ## 由什么构成
 

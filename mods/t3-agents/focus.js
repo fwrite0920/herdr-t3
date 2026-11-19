@@ -17,7 +17,7 @@ const LOST_TICKS = 3;
 
 // kind: "modal" for an overlay's copy, whose stops are always up: nothing's behind it to press.
 export function stopsInit(view, cx, kind) {
-  view.fs = { handles: new Map(), free: Array.from({ length: POOL }, () => cx.focus_handle()), modal: kind === "modal", me: String(Math.random()), keyboard: false, watch: null, last: null, hold: null };
+  view.fs = { handles: new Map(), external: new Set(), free: Array.from({ length: POOL }, () => cx.focus_handle()), modal: kind === "modal", me: String(Math.random()), keyboard: false, watch: null, last: null, hold: null };
   // Mods share one JS context, so the run's first copy knows nothing can be live yet: what's in shared state is a crash's.
   if (!globalThis.t3FocusRun) { globalThis.t3FocusRun = true; if (shared(MODE)) setShared(MODE, null); }
 }
@@ -64,7 +64,9 @@ function watch(view, cx) {
 // pane.go landed here: onto the stop it left, else `first`, which is always drawn. Once only: a stop gone from the list loses
 // the keyboard, and Herdr would hand it back here for another try.
 export function enter(view, cx, first) {
-  const s = view.fs, h = handleOf(s, s.last ?? first);
+  const s = view.fs;
+  while (s.free.length < POOL / 2) s.free.push(cx.focus_handle());
+  const h = handleOf(s, s.last ?? first);
   s.last = null;
   s.keyboard = true;
   setShared(MODE, s.me);
@@ -87,8 +89,9 @@ export function justClosed(view, key) {
 export function focusRoot(view, el) {
   const s = view.fs;
   if (!s.modal && !shared(MODE)) {
-    s.free.push(...s.handles.values());
+    for (const [id, h] of s.handles) if (!s.external?.has(id)) s.free.push(h);
     s.handles.clear();
+    s.external?.clear();
     return el;
   }
   return el
@@ -112,7 +115,7 @@ export function focusRoot(view, el) {
 export function stop(view, t, id, el, radius = 6, { enter: act, handle } = /** @type {{ enter?: any, handle?: any }} */ ({})) {
   const s = view.fs;
   if (!s.modal && !shared(MODE)) return el;
-  if (handle) s.handles.set(id, handle);
+  if (handle) { s.handles.set(id, handle); s.external?.add(id); }
   // shortcut: past the pool a new row isn't a stop until Tab lands in this mod and tops it up, enough for any list seen so far.
   const h = handleOf(s, id);
   if (!h) return el;

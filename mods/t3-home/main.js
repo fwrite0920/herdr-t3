@@ -2,7 +2,7 @@
 // t3-tabs owns the place itself (a space of its own); this is only what it shows until someone arranges something else there.
 import { View, div } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { layout, run, shared, theme } from "herdr";
+import { layout, run, shared, theme, window } from "herdr";
 import { keyOf } from "./tip.js";
 import { stopsInit, stopsEnd, stop, focusRoot, pressed, justClosed } from "./focus.js";
 import { sidebarParts } from "./sidebar.js";
@@ -17,8 +17,10 @@ const ACTIONS = [
   { id: "goto", word: "Go to", action: "mod.open:t3-picker", go: () => run("mod.open", { name: "t3-picker" }), pops: "t3-picker.closed" },
   { id: "new", word: "New tab", action: "t3-tabs.new", go: () => run("t3-tabs.new"), pops: "t3-new-menu.closed" },
 ];
-// A key as its strokes: each modifier, then the rest ("⇧⌘P", "Ctrl+Shift+P").
-const caps = (key) => key.match(/[⌃⌥⇧⌘]|[^⌃⌥⇧⌘+]+/gu);
+// A key as its strokes: each modifier, then the rest ("⇧⌘P", "Ctrl+Shift+P", "Ctrl++").
+const caps = (key) => key.includes("+")
+  ? key.replace(/\+\+$/, "+\u0000").split("+").map((p) => p === "\u0000" ? "+" : p).filter(Boolean)
+  : (key.match(/[⌃⌥⇧⌘]|[^⌃⌥⇧⌘]+/gu) ?? [key]);
 
 export default class Home extends View {
   init(_props, cx) {
@@ -41,8 +43,9 @@ export default class Home extends View {
       return off ? el.opacity(0.5) : stop(this, t, id, el.role("button").accessibility_label(a.word)
         .hover((s) => s.bg(t.foreground + "0f").text_color(t.foreground)).active((s) => s.bg(t.selected)).on_mouse_down("left", () => pressed(this)).on_click(() => { if (!a.pops || !justClosed(this, a.pops)) a.go(); }), 8);
     };
-    // As T3's launcher: pb its top bar's height, so the list centers on the whole panel.
-    return focusRoot(this, v_flex().size_full().px(24).pb(40).items_center().justify_center()
+    // Match the actual top bar height (8px when folded at Home, 40px when sidebar hidden or window buttons present) so the list centers visually.
+    const root = layout(), folded = !sidebarParts(root).rail?.hidden && !window()?.buttons;
+    return focusRoot(this, v_flex().size_full().px(24).pb(folded ? 8 : 40).items_center().justify_center()
       .child(v_flex().w_full().max_w(320).gap(2).text_size(14).children(ACTIONS.map(row))));
   }
 }

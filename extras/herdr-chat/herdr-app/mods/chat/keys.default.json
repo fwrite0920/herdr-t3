@@ -9,7 +9,7 @@
   "stop": "ctrl-c",
   "tui": "cmd-alt-t",
   "resume": "cmd-shift-r",
-  "latest": "cmd-shift-b",
+  "latest": "cmd-shift-down",
   "focusComposer": "cmd-l",
   "newChat": "cmd-shift-n"
 }

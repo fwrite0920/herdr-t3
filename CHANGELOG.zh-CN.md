@@ -2,6 +2,25 @@
 
 [English](CHANGELOG.md) · 中文
 
+## 2026-11-19
+
+- 全量界面、交互逻辑与跨平台稳定性三批次深度优化：
+  - **Windows / Linux 安全快捷键与平台键位提示（`keys.json`、`shared/tip.js`、`t3-new-menu`、`t3-menu`、`t3-chrome`、`extras/herdr-chat`）**：
+    - 将会劫持终端原生按键的 `ctrl-i`、`ctrl-p`、`ctrl-]`、`ctrl-[`、`ctrl-w`、`ctrl-t` 全面改为终端安全的 `ctrl-shift-i`、`ctrl-shift-p`、`ctrl-shift-]`、`ctrl-shift-[`、`ctrl-shift-w`（关闭标签）/ `ctrl-shift-x`（关闭窗格）、`ctrl-shift-t`。
+    - 为全部 Space 面板页面（`t3-sessions`、`t3-favorites`、`t3-changes`、`t3-tools`、`t3-todos`、`t3-files`、`review`）补齐关闭面板快捷键（`t3-tabs.panel-close`），并为 `mod:chat` 与所有弹窗补全全套关闭键映射。
+    - `keyOf()` 优先匹配当前平台快捷键（Windows/Linux 不再错误显示 `Super+...`）；`t3-new-menu` 非 macOS 改用 `Ctrl+1…9` 快捷跳转；解决 `herdr-chat` 与侧栏切换的 `cmd-shift-b` 冲突（改为 `cmd-shift-down`）；将 macOS 专属 `pointerGone` 边缘外推限制在 macOS，避免 Windows 侧栏左缘悬停误判。
+  - **顶栏、面板顶栏、窗格头与菜单体验（`t3-tabs`、`t3-chrome`、`t3-pane`、`t3-home`、`shared/button.js`、`shared/name.js`、`shared/panel.js`）**：
+    - 防止误关非激活标签/Agent 胶囊（非激活态仅在悬停或键盘聚焦左侧图标槽时才出现 `×`；Inbox 单个激活 Agent 胶囊同步支持中键关闭）；修复 Inbox 面包屑宽度挤压、双击重命名触发拖拽及撤销按钮事件冒泡。
+    - 右侧 Space 面板页签条改为横向可滚动裁剪带左右淡出，窄面板不再把放大/关闭按钮挤出屏幕；面板放大模式（Wide）在 Windows/Linux 同步露出侧栏开关与原生最小化/最大化/关闭按钮；修复 Dev Ports 悬停提示、IPv6 匹配、超过 3 个时的 `+N` 折叠与定时器清理。
+    - `t3-pane` 在窗格 Zoom 时常驻显示 `Unzoom pane` 按钮，修复 Windows `~` 路径缩写与子 Agent 弹层左边界裁剪；禁止在 Home 持久化打开右侧面板；`t3-home` 底部留白随顶栏折叠动态适配；所有可用共享按钮统一显示手型光标。
+  - **Space 面板各页、侧栏与跳转器（`t3-todos`、`t3-tools`、`t3-favorites`、`t3-sessions`、`t3-changes`、`t3-files`、`t3-inbox`、`t3-agents`、`t3-spaces`、`t3-picker`、`shared/*`）**：
+    - 修复 `t3-todos`、`t3-tools`、`t3-sessions`、`t3-changes` 中的异步过期 `Context` 与定时器泄漏，并加入代数防竞态与面板可见性门控；`t3-todos` 补齐原子对比写入（`writeTextFile`）、保留换行符、加载态与常驻 40px 顶栏。
+    - 消除 `t3-changes` 与 `t3-files` 的不可取消 `watchFolder` 泄漏（`t3-changes` 改为可见性门控轮询 + 刷新按钮；`t3-files` 补齐清理、防抖并忽略 `.git`/`node_modules`），将 `t3-files` 根目录锚定在 space 文件夹防止终端 `cd` 冲掉文件树，对 Windows `git check-ignore` 分批处理并新增搜索清空按钮。
+    - 修复 `t3-changes` 中 `MM` 部分暂存文件、无 `HEAD` 取消暂存、一键全部暂存/取消与 AI 提交超时；将 `t3-sessions` 的 `InputState` 移出 `render()`、移除写死的假遥测默认值、修正 `BLOCKED` 颜色与重复 ID 并遵循用户等宽字体配置；统一各页卡片悬停态并移除冗余背景层。
+    - 修复 `t3-inbox` 悬停 Working 卡片时隐形 `Settle` 遮挡 `Snooze` 点击、卡住的 `detailsHold` 并在筛选空态新增「Show all spaces」按钮；`t3-agents` 优先级排序与 `t3-spaces` 状态点统一应用 `notNews()`；`t3-picker` 支持多关键词与 Git 分支搜索。
+  - **Chat 与 New Chat 优化（`extras/herdr-chat`）**：
+    - 修复 `timeline.js` 向上滚动跳动；阻止后台 chat 抢夺输入焦点；发送失败时保留并恢复草稿与图片附件；修复 `fetchOlder` 高度前置计算与 Windows 绝对路径打开；将每个聊天实例的 `watchFolder` 改为共享 `keymap.js` 文件轮询；修复 `composer.js` 句中 `@files` 补全；修复 `dialogs.js` 长列表溢出、`Deny` 描边样式并释放 `InputState`；`viewer.js` 支持 `Esc` 关闭与 `Ctrl+±/0` 缩放；`new-chat` 保护 Home 空间且跳过不可用 CLI。
+
 ## 2026-11-18
 
 - Inbox 模式顶部标签与窗格标题精简优化（`t3-tabs`、`t3-pane`）：

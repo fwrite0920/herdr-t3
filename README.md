@@ -98,13 +98,13 @@ Dragging, sweeping across rows, pins and the rest: [Everyday use](docs/user/guid
 | --- | --- |
 | `cmd-shift-b` / `ctrl-shift-b` | Switch the sidebar between Inbox and Lists |
 | `cmd-shift-s` / `ctrl-shift-s` | Settle the agent you're looking at and go Home, or bring it back |
-| `cmd-]` / `ctrl-]`, `cmd-[` / `ctrl-[` | Next or previous agent, in the sidebar's order |
-| `cmd-p` / `ctrl-p` | Go to any pane |
+| `cmd-]` / `ctrl-shift-]`, `cmd-[` / `ctrl-shift-[` | Next or previous agent, in the sidebar's order |
+| `cmd-p` / `ctrl-shift-p` | Go to any pane |
 | `cmd-shift-h` / `ctrl-shift-h` | Go Home |
 | `cmd-shift-,` / `ctrl-shift-,` | The layout's settings |
 | `cmd-alt-b` / `ctrl-alt-b` | Show or hide the space panel, on the page last shown |
 | `cmd-shift-g` / `ctrl-shift-g` | Open Review, or close the panel showing it (Review extra) |
-| `cmd-t` / `ctrl-t` | New tab here; at Home, pick the space first |
+| `cmd-t` / `ctrl-shift-t` | New tab here; at Home, pick the space first |
 
 All of them: [Keys](docs/user/guide.md#keys).
 

@@ -207,10 +207,12 @@ function collectRules(dirPath) {
 function queryGitInfo(dirPath) {
   let gitBranch = "no repo", gitClean = true, gitChanges = "—";
   try {
-    const gCmd = isRemote && machine !== "wsl" ? ["exec", "--on", machine, "git -C " + dirPath] : isWsl ? ["exec", "--on", "wsl", "git -C " + dirPath] : ["-C", dirPath];
+    const q = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
+    const gCmd = isRemote && machine !== "wsl" ? ["exec", "--on", machine, `git -C ${q(dirPath)} status --porcelain -b`]
+      : isWsl ? ["exec", "--on", "wsl", `git -C ${q(dirPath)} status --porcelain -b`]
+      : ["-C", dirPath, "status", "--porcelain", "-b"];
     const gBin = isRemote || isWsl ? "hc" : "git";
-    const args = isRemote || isWsl ? [gCmd[0], gCmd[1], gCmd[2], gCmd[3] + " status --porcelain -b"] : [gCmd[0], gCmd[1], "status", "--porcelain", "-b"];
-    const out = execFileSync(gBin, args, { timeout: 1200, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const out = execFileSync(gBin, gCmd, { timeout: 1200, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
     if (out) {
       const lines = out.split(NL);
       const bLine = lines[0] || "";

@@ -292,9 +292,10 @@ export class Viewer {
     return v_flex().id("viewer").size_full().bg(t.background).p(16).gap(10)
       .track_focus(this.focus)
       .on_key_down((e, cx) => {
-        const m = e.modifiers;
-        if (m.platform || m.control || m.alt) return;
-        if (this.key(e.key_char ?? e.key)) { this.want(cx); cx.stop_propagation(); cx.notify(); }
+        if (e.key === "escape") { closeOverlay(props()?.overlay); cx.stop_propagation(); return; }
+        if (e.modifiers.alt) return;
+        const k = e.key_char ?? e.key;
+        if (this.key(k)) { this.want(cx); cx.stop_propagation(); cx.notify(); }
       })
       .on_mouse_move((e, cx) => {
         if (!this.drag || !this.dragOrigin) return;

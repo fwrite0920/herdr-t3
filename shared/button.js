@@ -50,8 +50,9 @@ export function button(t, id, { variant = "ghost", size = "xs", surface = "chrom
     .when(!filled, (b) => b.text_color(color ?? (lit ? t.foreground : t.dim)).when(on && surface !== "row", (h) => h.bg(tint(t, surface, true)))
       .when(!disabled && !on && surface !== "row", (h) => h.hover((st) => st.bg(tint(t, surface, false)))))
     .when(disabled, (b) => b.opacity(DISABLED))
+    .when(!disabled, (b) => b.cursor_pointer())
     .role("button").accessibility_label(label ?? text)
-    .when(Boolean(act) && !disabled, (b) => b.cursor_pointer().on_click((_e, cx) => act(cx)));
+    .when(Boolean(act) && !disabled, (b) => b.on_click((_e, cx) => act(cx)));
   return el.when(Boolean(icon), (b) => b.child(svg(icon).size(text ? s.icon : ICON[size]).flex_none()))
     .when(Boolean(text), (b) => b.child(text));
 }

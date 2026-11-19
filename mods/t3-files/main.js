@@ -68,8 +68,9 @@ export default class Files extends View {
     // The state being worked for, and a count that moves each time that changes (going).
     this.awake = null; this.gen = 0;
     cx.spawn(async () => {
-      if (window()?.platform === "windows") await exec("powershell", ["-NoProfile", "-Command", `if (Test-Path '${appHome()}/${CACHE}') { Remove-Item -Recurse -Force '${appHome()}/${CACHE}' }`]).catch(() => null);
-      else await exec("rm", ["-rf", `${appHome()}/${CACHE}`]).catch(() => null);
+      const cacheDir = `${appHome()}/${CACHE}`;
+      if (window()?.platform === "windows") await exec("powershell", ["-NoProfile", "-Command", `if (Test-Path -LiteralPath '${cacheDir.replace(/'/g, "''")}') { Remove-Item -Recurse -Force -LiteralPath '${cacheDir.replace(/'/g, "''")}' }`]).catch(() => null);
+      else await exec("rm", ["-rf", cacheDir]).catch(() => null);
     });
     // A hidden copy isn't drawn, so this is what sees it go out of view.
     cx.timer.every(1000, (cx) => { this.sync(cx); this.poll(cx); });
@@ -109,10 +110,12 @@ export default class Files extends View {
       try {
         while (!token.stopped && this.watchToken === token && this.awake === st) {
           token.wait = watchFolder(st.root);
-          await token.wait;
+          const changed = await token.wait;
           token.wait = null;
           if (token.stopped || this.watchToken !== token || this.awake !== st) return;
-          if (st.git !== undefined && Date.now() - (st.refreshed ?? 0) >= 300) this.recheck(st, cx);
+          // Ignore churn purely inside .git or node_modules when watchFolder reports changed paths.
+          if (Array.isArray(changed) && changed.length && changed.every((p) => /(?:^|[\\/])(?:\.git|node_modules)(?:[\\/]|$)/.test(String(p)))) continue;
+          if (st.git !== undefined && Date.now() - (st.refreshed ?? 0) >= 1000) this.recheck(st, cx);
         }
       } catch {}
     });
@@ -127,10 +130,8 @@ export default class Files extends View {
   // they read; older ones only how they were being read, and read again when back.
   stateFor(sp) {
     const ps = typeof panes === "function" ? panes() : [];
-    const f = typeof focused === "function" ? focused() : null;
-    const tabs = new Set((sp?.tabs ?? []).map((c) => c.id));
-    const focusPane = (f?.pane && tabs.has(f.tab)) ? ps.find((p) => p.pane === f.pane && p.cwd) : null;
-    const rawRoot = focusPane?.cwd || placeOf(sp, ps) || sp?.folder || "";
+    // Anchor Files to the space's folder (not transient terminal `cd` cwd) so reading a file isn't wiped when changing directories.
+    const rawRoot = sp?.folder || placeOf(sp, ps) || "";
     const root = rawRoot ? rawRoot.replace(/\\/g, "/") : "";
     let st = this.states.get(sp.id);
     if (!st || st.root !== root || st.on !== (sp.machine ?? null)) { if (st) this.drop(st); st = blank(sp, root); }
@@ -178,6 +179,7 @@ export default class Files extends View {
       if (this.gen !== gen || this.awake !== st || !this.live(st)) return false;
       if (this.shown() && spaces().find((s) => s.active)?.id === st.id) return true;
       this.awake = null; this.gen++;
+      this.stopWatch();
       return false;
     };
   }
@@ -227,16 +229,11 @@ export default class Files extends View {
     if (!st.on && window()?.platform === "windows") {
       let entries = null;
       try {
-        const items = await fs.readdir(dir);
-        const filtered = items.filter((d) => (typeof d === "string" ? d : d?.name) !== ".git").slice(0, 501);
-        entries = sortEntries(await Promise.all(filtered.map(async (d) => {
-          if (d && typeof d !== "string" && typeof d.isDirectory === "function") {
-            return { name: d.name, dir: d.isDirectory() };
-          }
-          const name = String(d);
-          const stInfo = await fs.stat(join(dir, name)).catch(() => null);
-          return { name, dir: Boolean(stInfo?.isDirectory?.()) };
-        })));
+        const items = await fs.readdir(dir, { withFileTypes: true });
+        entries = sortEntries(items
+          .filter((d) => d.name !== ".git")
+          .slice(0, 501)
+          .map((d) => ({ name: d.name, dir: d.isDirectory() })));
       } catch {
         const pr = await exec("powershell", ["-NoProfile", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); & { param($p) @(Get-ChildItem -LiteralPath $p -Force -ErrorAction Stop | Where-Object Name -ne '.git' | Select-Object -First 501 | ForEach-Object { @{ name=$_.Name; dir=($_.PSIsContainer -and (-not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $_.LinkType -or ($_.Target -and [IO.Directory]::Exists(([IO.Path]::Combine([IO.Path]::GetDirectoryName($_.FullName), $_.Target[0])))))) } }) | ConvertTo-Json -Compress } '" + dir.replace(/['‘’‚‛]/g, "$&$&") + "'"]).catch(() => null);
         if (pr?.code === 0) {
@@ -263,9 +260,15 @@ export default class Files extends View {
       if (st.git && !inIgnored && entries.length) {
         const paths = entries.map((e) => (rel ? `${rel}/` : "") + e.name + (e.dir ? "/" : ""));
         const applyIgnore = async () => {
-          const igRes = await exec("git", ["check-ignore", "--", ...paths], { cwd: st.root }).catch(() => null);
-          if (!fresh() || !igRes?.stdout) return;
-          const found = new Set(igRes.stdout.split(/\r?\n/).filter(Boolean).map((p) => p.replace(/[/\\]+$/, "")));
+          const found = new Set();
+          // Batch -z calls to avoid Windows 32KB argv limit and handle non-ASCII/spaced names without octal quoting.
+          for (let i = 0; i < paths.length; i += 100) {
+            const igRes = await exec("git", ["check-ignore", "-z", "--", ...paths.slice(i, i + 100)], { cwd: st.root }).catch(() => null);
+            if (!fresh()) return;
+            if (igRes?.stdout) {
+              for (const p of parseIgnored(igRes.stdout)) found.add(p.replace(/[/\\]+$/, ""));
+            }
+          }
           if (!found.size) return;
           markIgnored(st.ignored, rel, entries, found);
           this.changed(st);
@@ -466,10 +469,10 @@ export default class Files extends View {
         st.more = total >= RANKED;
       } else {
         if (!st.paths) {
-          let stdout = null;
+          let stdout = null, nul = false;
           if (st.git) {
             const r = await exec("git", [...GIT, "ls-files", "-co", "--exclude-standard", "-z"], { cwd: st.root }).catch(() => null);
-            if (r?.code === 0) stdout = r.stdout;
+            if (r?.code === 0) { stdout = r.stdout; nul = true; }
           }
           if (stdout === null) {
             if (window()?.platform === "windows") {
@@ -481,7 +484,7 @@ export default class Files extends View {
             }
           }
           if (!fresh()) return;
-          st.paths = (stdout ?? "").split(st.git && stdout ? "\0" : /\r?\n/).filter(Boolean);
+          st.paths = (stdout ?? "").split(nul ? "\0" : /\r?\n/).filter(Boolean);
           st.lower = st.paths.map((p) => p.toLowerCase());
           st.last = null;
         }
@@ -515,7 +518,7 @@ export default class Files extends View {
         icon: "code",
         hint: "",
         run: () => {
-          if (platform === "windows") exec("cmd", ["/c", "code", `"${abs}"`]).catch(() => null);
+          if (platform === "windows") exec("cmd", ["/c", "code", abs]).catch(() => null);
           else exec("code", [abs]).catch(() => null);
           return true;
         }
@@ -566,7 +569,7 @@ export default class Files extends View {
     const md = kindOf(st.file ?? "") === "markdown", code = shared(MARKDOWN) === "code";
     const parts = st.file?.split("/") ?? [];
     const crumb = (label, path, last) => div().id(`crumb-${path}`).flex_none().px(4).rounded(4).text_color(last ? t.foreground : t.muted)
-      .when(!last, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => this.reveal(st, path, cx)))
+      .when(!last, (el) => el.cursor_pointer().hover((s) => s.bg(t.foreground + "12").text_color(t.foreground)).on_click((_e, cx) => this.reveal(st, path, cx)))
       .child(label);
     const tab = (label, on, value) => div().id(`t3-files-${value}`).h(24).px(8).flex().items_center().rounded(8).text_size(12)
       .text_color(on ? t.foreground : t.muted).when(on, (el) => el.bg(t.selected)).when(!on, (el) => el.cursor_pointer().hover((s) => s.text_color(t.foreground)))
@@ -584,11 +587,11 @@ export default class Files extends View {
           .when(Boolean(st.root), (el) => el.child(ghostButton(t, MOD, "t3-files-open-vscode", "code", "Open in VS Code", () => {
             const target = st.file ? join(st.root, st.file) : st.root;
             const platform = window()?.platform;
-            if (platform === "windows") exec("cmd", ["/c", "code", `"${target}"`]).catch(() => null);
+            if (platform === "windows") exec("cmd", ["/c", "code", target]).catch(() => null);
             else exec("code", [target]).catch(() => null);
           }, { view: this })))
-          // Wrap or scroll long lines, this page's own choice.
-          .when(Boolean(st.view?.code), (el) => el.child(ghostButton(t, MOD, "t3-files-wrap", "text-wrap", wrapLines() ? "Scroll long lines" : "Wrap long lines", (cx) => { setWrapLines(!wrapLines()); cx.notify(); }, { on: wrapLines(), view: this })))
+          // Wrap or scroll long lines, this page's own choice (only shown when code view is active, not Markdown Preview).
+          .when(Boolean(st.view?.code && (!md || code)), (el) => el.child(ghostButton(t, MOD, "t3-files-wrap", "text-wrap", wrapLines() ? "Scroll long lines" : "Wrap long lines", (cx) => { setWrapLines(!wrapLines()); cx.notify(); }, { on: wrapLines(), view: this })))
           .child(navToggle(t, MOD, "t3-files-nav-toggle", this.navOpen, (cx) => { this.navOpen = !this.navOpen; setNavOpen(this.navOpen); cx.notify(); }, false, this)));
   }
 
@@ -626,7 +629,7 @@ export default class Files extends View {
     const results = st.results;
     return h_flex().id("t3-files-search").flex_1().min_w(0).h_full().gap(4).items_center()
       .on_key_down((e, cx) => {
-        if (e.key === "escape" && st.query) { st.query = ""; st.results = null; this.search.set_value(""); }
+        if (e.key === "escape" && st.query) { st.query = ""; st.results = null; st.at = -1; this.search.set_value(""); }
         else if (results?.length) { const to = step(e, st.at, results.length); if (to < 0) return; st.at = to; }
         else return;
         cx.stop_propagation();
@@ -634,6 +637,9 @@ export default class Files extends View {
       })
       .child(svg(`${MOD}/icons/search.svg`).size(16).flex_none().text_color(t.dim))
       .child(Input.new(this.search).flex_1().h(28).text_size(12).text_color(t.foreground))
+      .when(Boolean(st.query), (el) => el.child(ghostButton(t, MOD, "t3-files-clear-search", "x", "Clear search", (cx) => {
+        st.query = ""; st.results = null; st.at = -1; this.search.set_value(""); cx.notify();
+      }, { view: this })))
       .child(ghostButton(t, MOD, "t3-files-refresh", "rotate-cw", "Refresh files", (cx) => this.recheck(st, cx), { view: this }))
       .child(foldAllButton(t, MOD, "t3-files-fold-all", st.expanded.size === 0, (cx) => this.foldAll(st, cx), this));
   }

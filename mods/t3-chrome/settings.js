@@ -2,11 +2,12 @@
 // its sizes, type and theme colors as they are there, not T3's, so it reads as Herdr's. What it holds is t3.settings (docs/adr/0009).
 import { div, svg } from "gpui-kit";
 import { h_flex, v_flex, Select, Popup } from "gpui-base";
-import { theme, props, closeOverlay, run, shared, setShared, appHome, readTextFile, exec } from "herdr";
+import { theme, props, closeOverlay, run, shared, setShared, appHome, readTextFile } from "herdr";
 import * as fs from "fs/promises";
 import { SETTINGS, t3Settings, DEFAULT_PANEL_TABS } from "./layout-settings.js";
 import { stopsInit, stop, focusRoot } from "./focus.js";
 import { menuJump } from "./list.js";
+import { keyOf } from "./tip.js";
 
 const SECTIONS = [
   { id: "home", title: "Home", icon: "mods/t3-chrome/icons/house.svg" },
@@ -47,7 +48,7 @@ export function initSettings(view, cx) {
 // The layout's own page reads Default, as its title is Home's own name; Terminal comes next.
 async function findHomeMods(view, cx) {
   const dir = `${appHome()}/mods`;
-  const names = (await exec("ls", [dir]).catch(() => null))?.stdout.split("\n").filter(Boolean) ?? (await fs.readdir(dir).catch(() => []));
+  const names = (await fs.readdir(dir).catch(() => [])).map((n) => String(n).trim()).filter(Boolean);
   const found = (await Promise.all(names.map(async (name) => {
     try { return { name, ...JSON.parse(await readTextFile(`${dir}/${name}/mod.json`) ?? "{}") }; } catch { return null; }
   }))).filter((m) => m?.home);
@@ -81,12 +82,13 @@ export function settingsView(view) {
         .child(div().text_size(12.5).line_height("18px").text_color(t.dim).child(about)))
       .child(locked
         ? div().px(8).py(3).rounded(6).bg(t.hover).text_size(11.5).text_color(t.dim).child("Required")
-        : div().id(id).w(36).h(20).rounded(10).p(2).cursor_pointer()
+        : stop(view, t, id, div().id(id).w(36).h(20).rounded(10).p(2).cursor_pointer()
             .bg(on ? t.accent : t.hover)
             .flex().items_center()
             .when(on, (el) => el.justify_end())
+            .role("switch").accessibility_label(`${title}: ${on ? "On" : "Off"}`)
             .on_click((_e, cx) => { onToggle(); cx.notify(); })
-            .child(div().w(16).h(16).rounded(8).bg(on ? t.background : t.muted)));
+            .child(div().w(16).h(16).rounded(8).bg(on ? t.background : t.muted)), 10, { enter: () => onToggle() }));
 
   // The layout's menu, as the agents list's sort menu, on the kit's Select as the Snooze unit's
   const menu = (r) => {
@@ -137,17 +139,15 @@ export function settingsView(view) {
   const nav = v_flex().flex_none().w(190).h_full().p(10).gap(2).border_r(1).border_color(t.border)
     .child(div().px(10).pt(6).pb(12).text_size(16).font_semibold().text_color(t.foreground).child("Herdr T3"))
     .children(SECTIONS.map((s) => {
-      const active = currentSection === s.id;
-      return h_flex().id(`st-s-${s.id}`).gap(10).px(10).py(7).items_center().rounded(7).cursor_pointer()
+      const active = currentSection === s.id, id = `st-s-${s.id}`;
+      const select = () => { view.section = s.id; view.picking = null; };
+      return stop(view, t, id, h_flex().id(id).gap(10).px(10).py(7).items_center().rounded(6).cursor_pointer()
         .when(active, (el) => el.bg(t.raised).border_1().border_color(t.border))
-        .when(!active, (el) => el.hover((st) => st.bg(t.hover)))
-        .on_click((_e, cx) => {
-          view.section = s.id;
-          view.picking = null;
-          cx.notify();
-        })
+        .when(!active, (el) => el.hover((st) => st.bg(t.foreground + "12")))
+        .role("tab").aria_selected(active).accessibility_label(s.title)
+        .on_click((_e, cx) => { select(); cx.notify(); })
         .child(svg(s.icon).size(15).text_color(active ? t.accent : t.muted))
-        .child(div().flex_1().text_size(13.5).text_color(active ? t.foreground : t.dim).child(s.title));
+        .child(div().flex_1().text_size(13.5).text_color(active ? t.foreground : t.dim).child(s.title)), 6, { enter: select });
     }));
 
   const homeContent = div().flex_1().min_w(0).h_full().px(28).py(22).overflow_y_scrollbar()
@@ -166,7 +166,7 @@ export function settingsView(view) {
       }, item.locked);
     }))
     .child(div().pt(18).pb(4).text_size(12).font_semibold().text_color(t.dim).child("DEVELOPER FEATURES"))
-    .child(toggleRow("st-unified-chat", "Unified Agent Chat (Ctrl+I)", "Use the unified GUI chat composer (herdr-chat) for Antigravity, Codex, OMP, and Pi. Turn off to disable the GUI chat launcher.", Boolean(now.unifiedChat !== false), () => {
+    .child(toggleRow("st-unified-chat", `Unified Agent Chat${keyOf("new-chat.open") ? ` (${keyOf("new-chat.open")})` : ""}`, "Use the unified GUI chat composer (herdr-chat) for Antigravity, Codex, OMP, and Pi. Turn off to disable the GUI chat launcher.", Boolean(now.unifiedChat !== false), () => {
       pick("unifiedChat", !Boolean(now.unifiedChat !== false));
     }))
     .child(toggleRow("st-live-ports", "Live Dev Ports", "Detect listening localhost dev server ports (3000, 5173...) and show 1-click browser badges in the panel header.", Boolean(now.livePorts !== false), () => {

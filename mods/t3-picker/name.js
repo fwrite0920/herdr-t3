@@ -35,17 +35,19 @@ export function namer() {
     const address = x.address ?? x.terminal;
     const tab = tabs.get(x.tab);
     // A title that only names the folder (Codex's project, Pi with no session) says what the space already does.
-    const folder = (term.get(address)?.cwd ?? x.cwd ?? "").split(/[\\/]/).pop();
+    const folder = (term.get(address)?.cwd ?? x.cwd ?? "").replace(/[\\/]+$/, "").split(/[\\/]/).pop();
     const own = OWN[x.program?.key];
+    const trimmed = (x.title ?? "").trim().replace(WIN_ADMIN, "");
+    const pathLike = /^[~/]|^[A-Za-z]:[\\/]/.test(trimmed);
     // An agent's session and title outlive it: lazygit, started after Pi in the same shell, sets no title and
     // would read as Pi's session. Not an agent and in an agent's marks, the title is one left behind.
     const left = !x.program?.agent && Object.values(MARK).some((m) => m.test(clean(x.title)));
-    const raw = left ? "" : own ? own(clean(x.title), folder) : clean(x.title);
+    const raw = left || pathLike ? "" : own ? own(clean(x.title), folder) : clean(x.title);
     let live = raw.replace(WIN_ADMIN, "");
     const suffix = [folder, x.space_name ?? tab?.space].find((v) => v && live.endsWith(` | ${v}`) && live.length > v.length + 3);
     if (suffix) live = live.slice(0, -suffix.length - 3).trim();
     const telling = live && live !== x.program?.name && live.toLowerCase() !== x.program?.key
-      && !/^[~/]|^[A-Za-z]:[\\/]/.test(live) && !live.includes("@") && live !== address
+      && !/^[~/]|^[A-Za-z]:[\\/]/.test(live) && !/^\S+@\S+/.test(live) && live !== address
       && live !== folder && live !== (x.space_name ?? tab?.space);
     return (x.program?.key === "pi" && term.get(address)?.labels?.["pi.session"]) || (x.status != null && tab?.named && !sub(address) && (leads.get(x.tab) ?? 0) < 2 && tab.name)
       || (telling && live) || x.program?.name || address || "shell";

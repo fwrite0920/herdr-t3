@@ -2,7 +2,7 @@ import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, Popover, Input } from "gpui-base";
 import { spaces, machines, shared, run, props, openOverlay } from "herdr";
 import { projectMark } from "./project.js";
-import { glow, tip } from "./tip.js";
+import { glow, tip, keyOf } from "./tip.js";
 import { stop, pressed, justClosed } from "./focus.js";
 import { step, scrollList } from "./list.js";
 import { FIRST } from "./row-model.js";
@@ -40,6 +40,7 @@ export function inboxTop(view, t, model) {
     .on_hover(glow(view, id)).on_mouse_down("left", () => pressed(view)).on_click(fn), radiusOf("sm")), more);
   // The filter shows what it filters to: one avatar, two overlapping, or the plain filter icon.
   const scoped = sp.filter((s) => scope.includes(s.id)), found = view.matches();
+  if (view.scopeAt >= found.length) view.scopeAt = Math.max(0, found.length - 1);
   const choice = (s, i) => {
     const on = s.id ? scope.includes(s.id) : scope.length === 0;
     // Selection is a check badge on the icon, as in T3.
@@ -96,15 +97,17 @@ export function inboxTop(view, t, model) {
           draw: (i) => choice(found[i], i), wheeled: (keep) => { view.scopeAt = keep; } })))
         .when(found.length === 0, (el) => el.child(div().p(8).text_center().line_height("20px").text_color(t.dim).child("No matching spaces.")))));
   // T3's top group: 8 in and the search field 4 before its buttons, which touch. The right edge is the brand bar's above, so the two rows of icons line up.
+  const searchKey = keyOf(`mod.open:${props()?.picker ?? "t3-picker"}`) || keyOf("mod.open:t3-picker");
   const top = h_flex().id("inbox-top").h(32).px(8).gap(4).flex_none().items_center()
     // Sized as T3's search field (h-8, 16px icon, a medium 14px placeholder), but a button: it opens Go to. Not shared/button.js:
     // it's drawn as a field, as the select triggers are.
-    .child(stop(view, t, "inbox-search", h_flex().id("inbox-search").flex_1().h(32).px(8).gap(8).items_center().rounded(6).text_size(14).font_medium()
+    .child(stop(view, t, "inbox-search", h_flex().id("inbox-search").flex_1().min_w(0).h(32).px(8).gap(8).items_center().rounded(6).text_size(14).font_medium().cursor_pointer()
       .text_color(lit("inbox-search", t.dim)).hover((s) => s.bg(t.hover)).on_hover(glow(view, "inbox-search")).on_mouse_down("left", () => pressed(view))
       // Each opens over its button, before the pointer can report leaving it.
       .role("button").accessibility_label("Search").on_click((_e, cx) => { view.hot = null; const picker = props()?.picker ?? "picker"; if (!justClosed(view, `${picker}.closed`)) run("mod.open", { name: picker }); cx.notify(); })
       .child(svg("mods/t3-inbox/icons/search.svg").size(16).flex_none().text_color(lit("inbox-search", t.dim)))
-      .child(div().child("Search"))))
+      .child(div().flex_1().min_w(0).truncate().child("Search"))
+      .when(Boolean(searchKey), (el) => el.child(div().flex_none().text_size(11).font_normal().text_color(t.dim).child(searchKey)))))
     .child(h_flex().flex_none().items_center()
     .child(tip(view, t, "inbox-scope", "Filter by space", filter, { off: view.scopeOpen, hint: "Shift+click to pick several", below: true }))
     .child(tool("inbox-new-space", "New space", "folder-plus", (_e, cx) => {

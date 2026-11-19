@@ -27,7 +27,7 @@ export function errorBar(t, id, text, retry, view) {
   return h_flex().id(id).flex_none().px(12).py(6).gap(8).items_center().bg(t.ansi1 + "18").text_color(t.ansi1).text_size(11)
     .child(div().id(`${id}-text`).flex_1().min_w(0).child(text))
     .child(drawButton(t, `${id}-retry`, { variant: "plain", text: "Retry", surface: "card", hot: view?.hot === `${id}-retry` })
-      .when(Boolean(view), el => el.on_hover((on, cx) => { view.hot = on ? `${id}-retry` : null; cx.notify(); }))
+      .when(Boolean(view), el => el.on_hover((on, cx) => { if (on) view.hot = `${id}-retry`; else if (view.hot === `${id}-retry`) view.hot = null; cx.notify(); }))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); retry(cx); }));
 }

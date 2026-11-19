@@ -98,13 +98,13 @@ cd herdr-t3
 | --- | --- |
 | `cmd-shift-b` / `ctrl-shift-b` | 侧栏在 Inbox 和 Lists 之间切换 |
 | `cmd-shift-s` / `ctrl-shift-s` | Settle 当前查看的 agent 并回到 Home，已 Settle 的则取回 |
-| `cmd-]` / `ctrl-]`、`cmd-[` / `ctrl-[` | 按侧栏的顺序到下一个或上一个 agent |
-| `cmd-p` / `ctrl-p` | 跳到任一窗格 |
+| `cmd-]` / `ctrl-shift-]`、`cmd-[` / `ctrl-shift-[` | 按侧栏的顺序到下一个或上一个 agent |
+| `cmd-p` / `ctrl-shift-p` | 跳到任一窗格 |
 | `cmd-shift-h` / `ctrl-shift-h` | 回到 Home |
 | `cmd-shift-,` / `ctrl-shift-,` | 布局的设置 |
 | `cmd-alt-b` / `ctrl-alt-b` | 打开或关闭 space 面板，停在上次的页面 |
 | `cmd-shift-g` / `ctrl-shift-g` | 打开 Review；面板正显示 Review 时关闭面板（Review 扩展） |
-| `cmd-t` / `ctrl-t` | 在当前位置新建标签；在 Home 时先选 space |
+| `cmd-t` / `ctrl-shift-t` | 在当前位置新建标签；在 Home 时先选 space |
 
 完整列表见[快捷键](docs/user/guide.zh-CN.md#快捷键)。
 

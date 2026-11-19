@@ -48,14 +48,19 @@ export default class Picker extends View {
           key: `pane:${p.pane}`, p, s, label: name(p), program: programOf(p), team: under.length, under, here: s.active && c.active && p.focused,
           status: p.mod ? modStatus(p) : treeStatus(ownStatus(p.status, p.terminal, all), under),
           // A tab's own name only if someone gave it: else it's its position ("4") or what it was first, not what runs in it.
-          words: [s.name, s.machine ?? "", c.named ? c.name : "", name(p), programOf(p)?.name ?? "", p.program?.key ?? "", (p.cwd ?? "").split(/[\\/]/).pop()],
+          words: [s.name, s.machine ?? "", c.named ? c.name : "", name(p), programOf(p)?.name ?? "", p.program?.key ?? "", p.branch ?? "", (p.cwd ?? "").split(/[\\/]/).pop()],
         };
       })));
     // Not by `focused`: each tab has its own. The pane you're in is the recent list's first.
     const here = focused()?.pane, recent = (shared(KEY.recent) ?? []).filter((p) => p !== here);
     const place = (r) => r.p.pane === here ? Infinity : recent.includes(r.p.pane) ? recent.indexOf(r.p.pane) - recent.length : 0;
-    const named = (r) => !q || r.label.toLowerCase().includes(q) ? 0 : 1;
-    return rows.filter((r) => !q || r.words.join(" ").toLowerCase().includes(q))
+    const tokens = q.trim().split(/\s+/).filter(Boolean);
+    const named = (r) => !tokens.length || tokens.every((tok) => r.label.toLowerCase().includes(tok)) ? 0 : 1;
+    return rows.filter((r) => {
+      if (!tokens.length) return true;
+      const hay = r.words.join(" ").toLowerCase();
+      return tokens.every((tok) => hay.includes(tok));
+    })
       .map((r, i) => ({ r, i })).sort((a, b) => named(a.r) - named(b.r) || place(a.r) - place(b.r) || a.i - b.i).map(({ r }) => r);
   }
 
@@ -65,12 +70,12 @@ export default class Picker extends View {
     focusPane(item.p.pane);
   }
 
-  row(item, i, ps) {
+  row(item, i, ps, all) {
     const t = theme(), on = this.at === i, s = item.s, st = item.status;
     // The same marks as the pane headers, tabs and agents list.
     const mark = st === "working" ? svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)
       : st === "blocked" ? div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(11).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!")
-      : st === "done" && !notNews(terminals().find(k => k.address === item.p.terminal), item.p.status, item.under) ? div().size(6).flex_none().rounded_full().bg(t.done) : null;
+      : st === "done" && !notNews(all.find(k => k.address === item.p.terminal), item.p.status, item.under) ? div().size(6).flex_none().rounded_full().bg(t.done) : null;
     return h_flex().id(item.key).w_full().h(ROW).px(8).py(6).gap(8).rounded(4).items_center().flex_none()
       .role("button").accessibility_label(item.label)
       .when(on, (el) => el.bg(t.selected))
@@ -88,12 +93,12 @@ export default class Picker extends View {
           .when(Boolean(s.machine), (el) => el
             .child(svg("mods/t3-picker/icons/server.svg").size(12).flex_none().text_color(t.muted))
             .child(div().flex_none().text_color(t.muted).child(`${s.machine} ·`)))
-          .child(div().min_w(0).truncate().child(s.name + (item.team ? ` · +${item.team}` : "")))))
+          .child(div().min_w(0).truncate().child(s.name + (item.p.branch ? ` · ${item.p.branch}` : "") + (item.team ? ` · +${item.team}` : "")))))
       .when(Boolean(mark), (el) => el.child(mark));
   }
 
   render() {
-    const t = theme(), ps = panes(), items = this.items();
+    const t = theme(), ps = panes(), all = terminals(), items = this.items();
     // Opens on the first row: the pane you were in before, or another; never the one you're in, where Enter would go nowhere.
     if (this.at === null) this.at = 0;
     this.at = Math.min(this.at, Math.max(0, items.length - 1));
@@ -118,7 +123,7 @@ export default class Picker extends View {
       // No heading: there is one kind of row, and the room goes to the list.
       .child(div().flex_none().mt(8).mb(8).px(8)
         .when(items.length > 0, (el) => el.child(scrollList(this, "picker-rows", { count: items.length, row: ROW, at: this.at, height: Math.min(items.length * ROW, LIST_MAX),
-          draw: (i) => this.row(items[i], i, ps), wheeled: (keep) => { this.at = keep; } })))
+          draw: (i) => this.row(items[i], i, ps, all), wheeled: (keep) => { this.at = keep; } })))
         .when(items.length === 0, (el) => el.child(div().py(40).text_center().text_color(t.dim).child("No matching terminals."))))
       .child(h_flex().flex_none().px(16).py(10).gap(8).items_center().justify_between().rounded_b(15).border_t(1).border_color(t.foreground + "12").bg(t.foreground + "06").font_medium().text_color(t.muted)
         .child(h_flex().gap(12).items_center()

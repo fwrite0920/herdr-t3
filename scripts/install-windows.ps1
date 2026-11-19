@@ -98,8 +98,27 @@ $userKeys = if (Test-Path $keysPath) { Get-Content -Raw $keysPath | ConvertFrom-
 if (-not $userKeys.PSObject.Properties["global"]) {
   $userKeys | Add-Member -NotePropertyName "global" -NotePropertyValue ([pscustomobject]@{}) -Force
 }
-$userKeys.global | Add-Member -NotePropertyName "ctrl-i" -NotePropertyValue "new-chat.open" -Force
+# Remove superseded terminal-colliding keys only if they still hold our old defaults
+if ($userKeys.global.PSObject.Properties["ctrl-i"] -and $userKeys.global."ctrl-i" -eq "new-chat.open") {
+  $userKeys.global.PSObject.Properties.Remove("ctrl-i")
+}
+$userKeys.global | Add-Member -NotePropertyName "ctrl-shift-i" -NotePropertyValue "new-chat.open" -Force
 $userKeys.global | Add-Member -NotePropertyName "cmd-i" -NotePropertyValue "new-chat.open" -Force
+
+if ($userKeys.PSObject.Properties["layout:herdr-t3"]) {
+  $oldLayoutKeys = @{
+    "ctrl-p" = "mod.open:t3-picker"
+    "ctrl-]" = "t3-tabs.next"
+    "ctrl-[" = "t3-tabs.prev"
+    "ctrl-w" = "t3-tabs.close-tab"
+    "ctrl-t" = "t3-tabs.new"
+  }
+  foreach ($ok in $oldLayoutKeys.Keys) {
+    if ($userKeys."layout:herdr-t3".PSObject.Properties[$ok] -and $userKeys."layout:herdr-t3".$ok -eq $oldLayoutKeys[$ok]) {
+      $userKeys."layout:herdr-t3".PSObject.Properties.Remove($ok)
+    }
+  }
+}
 
 foreach ($prop in $repoKeys.PSObject.Properties) {
   $sec = $prop.Name

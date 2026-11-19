@@ -18,7 +18,7 @@ const PAGES = {
   favorites: ["Favorites", "star"],
   changes: ["Changes", "git-commit"],
   tools: ["Tools", "wrench"],
-  todos: ["Todos", "check"],
+  todos: ["Todos", "check-square"],
   review: ["Review", "pulls-review", true]
 };
 
@@ -33,20 +33,26 @@ const currentSettings = () => {
 // The sidebar shows either Lists (Spaces and Agents) or the Inbox (t3-inbox): a stack in the layout.
 const inboxShown = () => sidebarParts(layout()).stack?.active === "inbox";
 export default class WorkspaceChrome extends View {
-  async close() { stopsEnd(this); }
+  async close() {
+    this.portTimer?.cancel();
+    this.lightTimer?.cancel();
+    stopsEnd(this);
+  }
 
   init(_props, cx) {
     if (props()?.view === "settings") return initSettings(this, cx);
     stopsInit(this, cx);
     if (props()?.part === "panel") {
       this.ports = [];
+      this.tabScroll = 0;
+      this.wasOpen = false;
       this.scanPorts(cx);
-      cx.timer.every(6000, (cx) => this.scanPorts(cx));
+      this.portTimer = cx.timer.every(6000, (cx) => this.scanPorts(cx));
     }
     if (!props()?.footer && !props()?.part && window()?.platform === "macos") {
       this.alignLights(cx);
       // The brand copy stays alive with the sidebar hidden; no redraw is needed until a zoom actually changes the file.
-      cx.timer.every(250, cx => this.alignLights(cx));
+      this.lightTimer = cx.timer.every(250, cx => this.alignLights(cx));
     }
   }
 
@@ -75,7 +81,7 @@ export default class WorkspaceChrome extends View {
         const found = new Map();
         for (const line of out.split("\n")) {
           if (!line.includes("LISTEN")) continue;
-          const m = line.match(/(?:127\.0\.0\.1|0\.0\.0\.0|\[::\]|:::?):(\d+)\s/);
+          const m = line.match(/(?:127\.0\.0\.1|0\.0\.0\.0|\[::1?\]|:::?):(\d+)\s/);
           if (m) {
             const p = parseInt(m[1], 10);
             if (DEV_COMMON.has(p) || (p >= 3000 && p <= 3010) || (p >= 5170 && p <= 5180) || (p >= 8080 && p <= 8090)) {
@@ -139,10 +145,10 @@ export default class WorkspaceChrome extends View {
     });
   }
 
-  render() {
+  render(cx) {
     if (props()?.view === "settings") return settingsView(this);
     const t = theme();
-    if (props()?.part === "panel") return this.panelHead(t);
+    if (props()?.part === "panel") return this.panelHead(t, cx);
     if (props()?.footer) {
       // As T3's footer: a row of 32px icon buttons, and at its end, once Herdr has downloaded an update, its restart.
       const ready = updates().app.ready;
@@ -213,15 +219,21 @@ export default class WorkspaceChrome extends View {
         .on_click(() => { this.hot = null; run("layout.toggle", { id: "sidebar" }); }), radiusOf("sm")), { action: "layout.toggle:sidebar", below: true })));
   }
 
-  // The space panel's top: its pages as T3's panel tabs (24px, 12px words), then widen and close as 24px icon buttons.
-  // The rest of the row drags the window, as the tab bar does.
-  panelHead(t) {
-    const s = panelState(), space = spaces().find(p => p.active);
-    const settings = currentSettings();
-    const tabsConfig = settings.panelTabs ?? {};
+  // The space panel's top: its pages as T3's panel tabs (28px, 12px words), then widen and close as 24px icon buttons.
+  // Tabs sit inside a scrollable clipped strip so narrow panels never push Expand/Close (or wide-mode window buttons) off-screen.
+  panelHead(t, cx) {
+    const s = panelState(), space = spaces().find(p => p.active), w = window();
+    const cfg = currentSettings();
+    const tabsConfig = cfg.panelTabs ?? {};
     const visiblePages = s.pages.filter(id => id === "files" || id === "review" || tabsConfig[id]);
-    if (s.open && s.page && !visiblePages.includes(s.page)) {
-      showPage("files");
+    if (s.open && s.page && !visiblePages.includes(s.page) && cx?.timer) {
+      cx.timer.after(0, () => showPage(visiblePages[0] ?? "files"));
+    }
+    if (s.open && !this.wasOpen && cx?.timer) {
+      this.wasOpen = true;
+      cx.timer.after(0, (c) => this.scanPorts(c));
+    } else if (!s.open && this.wasOpen) {
+      this.wasOpen = false;
     }
     // Review's run for this space, marked as a tab's agent is: what was news in a pane's card before (docs/adr/0011).
     const word = space && shared("review.status")?.[space.id];
@@ -231,12 +243,12 @@ export default class WorkspaceChrome extends View {
     const own = (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation());
     const page = (id) => {
       const [label, icon, colored] = PAGES[id] ?? [id, "folder-tree"], on = s.page === id, key = `page-${id}`;
-      return stop(this, t, key, own(h_flex().id(key).h(28).pl(8).pr(10).gap(6).flex_none().items_center().rounded(6).text_size(12)
+      return stop(this, t, key, own(h_flex().id(key).h(28).pl(8).pr(10).gap(6).flex_none().items_center().rounded(6).text_size(12).cursor_pointer()
         .border_1().border_color(on ? t.foreground + "1a" : t.chrome)
         .bg(on ? t.raised : t.chrome).text_color(on || this.hot === key ? t.foreground : t.dim)
         .when(on, el => el.font_medium())
         .when(!on, el => el.hover(st => st.bg(t.hover).border_color(t.hover))).on_hover(glow(this, key))
-        .role("tab").accessibility_label(label)
+        .role("tab").aria_selected(on).accessibility_label(label)
         .on_click(() => showPage(id))
         // A colored mark waits at 70% until its tab is shown or hovered, as the brand bar's Herdr mark.
         .child(colored ? image(`mods/t3-chrome/icons/${icon}.svg`).size(14).flex_none().opacity(on || this.hot === key ? 1 : 0.7)
@@ -244,34 +256,64 @@ export default class WorkspaceChrome extends View {
         .child(label)
         .when(id === "review" && mark != null, el => el.child(mark))), 6);
     };
-    const button = (id, icon, label, action, key) => tip(this, t, id, label, stop(this, t, id, own(drawButton(t, id, {
-      icon: `mods/t3-chrome/icons/${icon}.svg`, label, hot: this.hot === id })
+    /** @param {"xs" | "sm"} [size] */
+    const button = (id, icon, label, action, key = undefined, size = "xs", glyph = undefined) => tip(this, t, id, label, stop(this, t, id, own(drawButton(t, id, {
+      size, icon: icon ? `mods/t3-chrome/icons/${icon}.svg` : undefined, label, hot: this.hot === id })
       .on_hover(glow(this, id))
-      .on_click((_e, cx) => { this.hot = null; action(); cx.notify(); })), radiusOf("xs")), { action: key, below: true });
-    return focusRoot(this, h_flex().id("panel-head").size_full().bg(t.chrome).gap(4).items_center()
-      .children(visiblePages.map(page))
-      .child(div().flex_1())
-      .when(Boolean(settings.livePorts !== false && this.ports?.length), (el) => el.child(
-        h_flex().gap(4).items_center().mr(4).children(this.ports.map((entry) => {
-          const port = typeof entry === "object" ? entry.port : entry;
-          const proc = typeof entry === "object" ? entry.name : "";
-          const key = `port-${port}`;
-          return tip(this, t, key, `${proc ? `${proc} · ` : ""}Open http://localhost:${port} in browser`,
-            stop(this, t, key, own(h_flex().id(key).h(22).px(6).gap(4).items_center().rounded(6).bg(t.raised).cursor_pointer()
-              .hover(st => st.bg(t.hover))
-              .on_click((_e, cx) => {
-                const url = `http://localhost:${port}`;
-                const plat = window()?.platform;
-                if (plat === "windows") exec("rundll32", ["url.dll,FileProtocolHandler", url]).catch(() => null);
-                else exec(plat === "macos" ? "open" : "xdg-open", [url]).catch(() => null);
-                cx.notify();
-              })
-              .child(div().size(6).rounded_full().bg(t.done))
-              .child(div().text_size(11).font_medium().text_color(t.foreground).child(`:${port}`))),
-            6), { action: `http://localhost:${port}`, below: true });
-        }))
+      .on_click((_e, cx) => { this.hot = null; action(); cx.notify(); })
+      .when(Boolean(glyph), el => el.child(glyph))), radiusOf(size)), { action: key, below: true });
+    const zoom = Number(settings()?.zoom) || 1;
+    const maxScroll = Math.max(0, (this.tabsStripW ?? 0) - (this.tabsBoxW ?? 0));
+    const scrollAt = Math.max(0, Math.min(this.tabScroll ?? 0, maxScroll));
+    this.tabScroll = scrollAt;
+    const fade = (id, start) => h_flex().id(id).absolute().top(0).bottom(0).w(12).when(start, el => el.left(0)).when(!start, el => el.right(0))
+      .children((start ? ["ff", "b0", "60"] : ["60", "b0", "ff"]).map(a => div().w(4).h_full().bg(/** @type {any} */ (t.chrome + a))));
+    const sidebarHidden = Boolean(s.wide && sidebarParts(layout()).rail?.hidden);
+    const shownPorts = (cfg.livePorts !== false && this.ports?.length) ? this.ports.slice(0, 3) : [];
+    const extraPorts = Math.max(0, (this.ports?.length ?? 0) - shownPorts.length);
+    return focusRoot(this, h_flex().id("panel-head").size_full().min_w(0).bg(t.chrome).gap(4).items_center()
+      .when(sidebarHidden, el => el.child(button("panel-sidebar-toggle", "panel-left", "Show sidebar", () => run("layout.toggle", { id: "sidebar" }), "layout.toggle:sidebar", "sm")))
+      .child(h_flex().id("panel-tabs-scroll").relative().flex_1().min_w(0).h_full().items_center().overflow_hidden()
+        .on_size_change((size, cx) => { const wPx = size.width / zoom; if (Math.abs((this.tabsBoxW ?? 0) - wPx) > 0.5) { this.tabsBoxW = wPx; cx.notify(); } })
+        .on_scroll_wheel((e, cx) => {
+          if (maxScroll <= 0) return;
+          const d = (Math.abs(e.delta.x) > Math.abs(e.delta.y) ? e.delta.x : e.delta.y) / zoom;
+          this.tabScroll = Math.max(0, Math.min((this.tabScroll ?? 0) - d, maxScroll));
+          cx.notify();
+        })
+        .child(h_flex().id("panel-tabs-strip").flex_none().h_full().gap(4).items_center().ml(-scrollAt)
+          .on_size_change((size, cx) => { const wPx = size.width / zoom; if (Math.abs((this.tabsStripW ?? 0) - wPx) > 0.5) { this.tabsStripW = wPx; cx.notify(); } })
+          .children(visiblePages.map(page)))
+        .when(scrollAt > 0.5, el => el.child(fade("panel-fade-start", true)))
+        .when(scrollAt < maxScroll - 0.5, el => el.child(fade("panel-fade-end", false))))
+      .when(shownPorts.length > 0, (el) => el.child(
+        h_flex().flex_none().gap(4).items_center().mr(4)
+          .children(shownPorts.map((entry) => {
+            const port = typeof entry === "object" ? entry.port : entry;
+            const proc = typeof entry === "object" ? entry.name : "";
+            const key = `port-${port}`, url = `http://localhost:${port}`;
+            return tip(this, t, key, `${proc ? `${proc} · ` : ""}Open in browser`,
+              stop(this, t, key, own(h_flex().id(key).h(22).px(6).gap(4).flex_none().items_center().rounded(6).bg(t.raised).cursor_pointer()
+                .hover(st => st.bg(t.hover)).on_hover(glow(this, key))
+                .role("button").accessibility_label(`Open ${url}`)
+                .on_click((_e, cx) => {
+                  const plat = window()?.platform;
+                  if (plat === "windows") exec("rundll32", ["url.dll,FileProtocolHandler", url]).catch(() => null);
+                  else exec(plat === "macos" ? "open" : "xdg-open", [url]).catch(() => null);
+                  cx.notify();
+                })
+                .child(div().size(6).rounded_full().bg(t.done))
+                .child(div().text_size(11).font_medium().text_color(t.foreground).child(`:${port}`))),
+              6), { hint: url, below: true });
+          }))
+          .when(extraPorts > 0, (pEl) => pEl.child(div().px(5).h(22).flex().items_center().rounded(6).bg(t.raised).text_size(11).text_color(t.muted).child(`+${extraPorts}`)))
       ))
       .child(button("panel-wide", s.wide ? "minimize-2" : "maximize-2", s.wide ? "Restore panel" : "Expand panel", toggleWide))
-      .child(button("panel-close", "x", "Close panel", hidePanel, "t3-tabs.panel")));
+      .child(button("panel-close", "x", "Close panel", hidePanel, "t3-tabs.panel"))
+      // In wide mode `work` (and `tabs-end`) is hidden, so surface native window buttons here on Windows/Linux.
+      .when(Boolean(s.wide && w?.buttons), el => el
+        .child(button("panel-minimize", w.platform === "windows" ? "win-min" : undefined, "Minimize", () => run("window.minimize"), undefined, "sm", w.platform === "windows" ? undefined : "−"))
+        .child(button("panel-maximize", w.platform === "windows" ? (w.maximized ? "win-restore" : "win-max") : undefined, w.maximized ? "Restore" : "Maximize", () => run("window.maximize"), undefined, "sm", w.platform === "windows" ? undefined : "□"))
+        .child(button("panel-close-window", w.platform === "windows" ? "win-close" : "x", "Close window", () => run("window.close"), undefined, "sm"))));
   }
 }

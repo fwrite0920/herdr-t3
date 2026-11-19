@@ -216,8 +216,8 @@ export class Composer {
       const start = head.length - mid[2].length - 1;
       if (!inPill(start)) return { kind: "slash", query: mid[2], start, skillsOnly: true };
     }
-    const at = /(^|\s)@([^\s@]*)$/.exec(v);
-    if (at) return { kind: "files", query: at[2] };
+    const at = /(^|\s)@([^\s@]*)$/.exec(head);
+    if (at) return { kind: "files", query: at[2], start: head.length - at[2].length - 1 };
     return null;
   }
 
@@ -228,10 +228,13 @@ export class Composer {
     follow(m);
   }
 
-  // Replace "@query" at the end with "@path ".
+  // Replace "@query" at the cursor with "@path ".
   insertFile(path) {
-    const v = this.value.replace(/(^|\s)@([^\s@]*)$/, (_m, pre) => `${pre}@${path} `);
-    this.set(v);
+    const head = this.value.slice(0, this.cursor);
+    const tail = this.value.slice(this.cursor);
+    const nextHead = head.replace(/(^|\s)@([^\s@]*)$/, (_m, pre) => `${pre}@${path} `);
+    this.set(nextHead + tail);
+    this.cursor = nextHead.length;
     this.menu = null;
   }
 

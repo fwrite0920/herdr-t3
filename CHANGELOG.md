@@ -2,6 +2,25 @@
 
 English · [中文](CHANGELOG.zh-CN.md)
 
+## 2026-11-19
+
+- Comprehensive UI, interaction, cross-platform keybinding & runtime stability overhaul across all 3 batches:
+  - **Safe Windows/Linux Keybindings & Platform Hints (`keys.json`, `shared/tip.js`, `t3-new-menu`, `t3-menu`, `t3-chrome`, `extras/herdr-chat`)**:
+    - Replaced terminal-breaking raw `ctrl-i`, `ctrl-p`, `ctrl-]`, `ctrl-[`, `ctrl-w`, `ctrl-t` with terminal-safe `ctrl-shift-i`, `ctrl-shift-p`, `ctrl-shift-]`, `ctrl-shift-[`, `ctrl-shift-w` (close tab) / `ctrl-shift-x` (close pane), `ctrl-shift-t`.
+    - Added panel-close shortcuts (`t3-tabs.panel-close`) to all Space Panel pages (`t3-sessions`, `t3-favorites`, `t3-changes`, `t3-tools`, `t3-todos`, `t3-files`, `review`) and overlay-close bindings to `mod:chat` and every popup/dialog.
+    - Updated `keyOf()` to prefer platform-matching shortcuts (showing `Ctrl+...` on Windows/Linux instead of `Super+...`), switched `t3-new-menu` quick-jump to `Ctrl+1…9` off macOS, resolved `herdr-chat`'s `cmd-shift-b` collision (`cmd-shift-down`), and gated macOS `pointerGone` edge extrapolation off Windows.
+  - **Top Bar, Space Panel Header, Pane Header & Menus (`t3-tabs`, `t3-chrome`, `t3-pane`, `t3-home`, `shared/button.js`, `shared/name.js`, `shared/panel.js`)**:
+    - Prevented accidental close on inactive tabs/pills (close `×` only arms when hovering/focusing the icon slot on inactive tabs; solo Inbox agent pills also support middle-click close); fixed Inbox breadcrumb width starvation, double-click rename drag trigger, and undo-button click bubbling.
+    - Made the Space Panel header tab strip horizontally scrollable with edge fades so Expand/Close never overflow off-screen; surfaced sidebar toggle and native window buttons in Wide Panel mode on Windows/Linux; fixed live dev port hover/tooltips, IPv6 matching, port count cap (`+N`), and timer cleanup.
+    - Kept `Unzoom pane` persistently visible while zoomed in `t3-pane`, fixed Windows `~` path shortening and clamped child-agent popup X position; kept Home free of persisted open Space Panels; matched `t3-home` bottom padding to folded tab bars; ensured all enabled shared buttons show pointer cursor.
+  - **Space Panel Pages, Sidebar & Picker (`t3-todos`, `t3-tools`, `t3-favorites`, `t3-sessions`, `t3-changes`, `t3-files`, `t3-inbox`, `t3-agents`, `t3-spaces`, `t3-picker`, `shared/*`)**:
+    - Fixed stale `Context` async bugs and added generation guards + visibility-gated timers across `t3-todos`, `t3-tools`, `t3-sessions`, and `t3-changes`; added atomic compare-and-swap writes (`writeTextFile`), EOL preservation, loading state, and persistent 40px toolbar in `t3-todos`.
+    - Eliminated uncancellable `watchFolder` leaks in `t3-changes` (visibility-gated poll + Refresh) and `t3-files` (clean stop + debounce + `.git`/`node_modules` filter), anchored `t3-files` tree to the space folder across `cd`, batched Windows `git check-ignore`, and added search-clear `×`.
+    - Fixed `MM` partially-staged files, no-`HEAD` unstage, Stage/Unstage all, and AI commit timeouts in `t3-changes`; moved `t3-sessions` `InputState` out of `render()`, removed fake telemetry defaults, fixed `BLOCKED` color and duplicate IDs, and honored user font settings; unified card hover & removed double panel backgrounds across pages.
+    - Prevented faded `Settle` from blocking `Snooze` clicks on hovered Working cards in `t3-inbox`, cleared stuck `detailsHold`, added inline `"Show all spaces"` action, applied `notNews()` to `t3-agents` priority sort and `t3-spaces` dots, and added multi-token + git branch search in `t3-picker`.
+  - **Chat & New Chat Polish (`extras/herdr-chat`)**:
+    - Fixed upward scroll jump in `timeline.js`, prevented background chat focus stealing, preserved draft text & image chips on send failure, fixed `fetchOlder` prepend count and Windows absolute paths in `main.js`, replaced per-chat `watchFolder` with a shared `keymap.js` stat poll, fixed mid-message `@files` completion in `composer.js`, fixed modal overflow/styling and released `InputState`s in `dialogs.js`, added `Esc`/Ctrl-zoom in `viewer.js`, and protected Home space + disabled unavailable CLIs in `new-chat`.
+
 ## 2026-11-18
 
 - Left-aligned Inbox tool & shell tabs and streamlined agent/pane headers (`t3-tabs`, `t3-pane`):

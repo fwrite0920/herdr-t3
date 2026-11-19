@@ -70,7 +70,9 @@ export function menuView(menu, t, o) {
     const i = start + k;
     const sel = i === menu.sel;
     let row = h_flex().id(`menu-${i}`).h(ROW_H).px(10).gap(10).items_center().rounded(6).cursor_pointer()
-      .hover((s) => s.bg(t.hover)).on_click((_e, cx) => { cx.stop_propagation(); o.onPick(i, cx); });
+      .when(!sel, (e) => e.hover((s) => s.bg(alpha(t.foreground, 0.07))))
+      .on_hover((over, cx) => { if (over && menu.sel !== i) { menu.sel = i; cx.notify(); } })
+      .on_click((_e, cx) => { cx.stop_propagation(); o.onPick(i, cx); });
     if (sel) row = row.bg(t.selected);
     if (menu.kind === "slash") {
       const key = o.keys?.(it.name);
@@ -158,12 +160,15 @@ export class Picker {
       .child(wrap)
       .child(v_flex().gap(1).children(list.map((it, k) => {
         const i = start + k;
+        const on = i === this.sel;
         let row = h_flex().id(`pick-${i}`).h(ROW_H).px(8).gap(10).items_center().rounded(6).cursor_pointer()
-          .hover((s) => s.bg(t.hover)).on_click((_e, cx) => { cx.stop_propagation(); this.choose(i, cx); })
+          .when(!on, (e) => e.hover((s) => s.bg(alpha(t.foreground, 0.07))))
+          .on_hover((over, cx) => { if (over && this.sel !== i) { this.sel = i; cx.notify(); } })
+          .on_click((_e, cx) => { cx.stop_propagation(); this.choose(i, cx); })
           .child(div().w(12).flex_none().child(it.current ? icon("check", 12).text_color(t.accent) : div()))
           .child(div().flex_none().text_size(12.5).text_color(t.foreground).child(it.label))
           .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(t.dim).child(it.detail ?? ""));
-        if (i === this.sel) row = row.bg(t.selected);
+        if (on) row = row.bg(t.selected);
         return row;
       })))
       .when(items.length === 0, (e) => e.child(div().px(8).py(6).text_size(12).text_color(t.dim).child("Nothing matches")))

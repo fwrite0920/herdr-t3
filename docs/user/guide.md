@@ -39,26 +39,26 @@ Each part in more detail than the [README](../../README.md).
 
 ## Keys
 
-The layout's own, in the `layout:herdr-t3` section of `keys.json` (an install merges them). The repo covers both macOS keys (`cmd-`) and Windows bindings (`ctrl-` / `alt-`), including close confirmation (`ctrl-w` / `ctrl-shift-w`), sidebar toggle (`ctrl-shift-b`), Settle (`ctrl-shift-s`), picker (`ctrl-p`), and space selection without counting Home (`alt-1…9`).
+The layout's own, in the `layout:herdr-t3` section of `keys.json` (an install merges them). The repo covers both macOS keys (`cmd-`) and terminal-safe Windows/Linux bindings (`ctrl-shift-` / `alt-`), including close confirmation (`ctrl-shift-w` / `ctrl-shift-x`), sidebar toggle (`ctrl-shift-b`), Settle (`ctrl-shift-s`), picker (`ctrl-shift-p`), new tab (`ctrl-shift-t`), agent stepping (`ctrl-shift-]` / `ctrl-shift-[`), and space selection without counting Home (`alt-1…9`).
 
 | Key | Command | Does |
 | --- | --- | --- |
-| `cmd-shift-b` | `t3-tabs.sidebar` | Switches the sidebar between Lists and Inbox |
-| `cmd-shift-s` | `t3-tabs.settle` | Settles the agent in view and goes to Home, or brings it back if it's settled. With Inbox selected, shown or hidden; in Lists it does nothing. A busy agent stays, a pinned one loses its pin |
-| `cmd-shift-h` | `t3-tabs.home` | Goes to Home |
-| `cmd-shift-,` | `t3-tabs.settings` | Opens the layout's settings |
-| `cmd-alt-b` | `t3-tabs.panel` | Shows the space panel on the page last shown, or hides it |
-| `cmd-shift-g` | `t3-tabs.review` | Opens the panel on Review, or closes it if it's already showing Review. Only with the Review extra |
-| `cmd-w`, `ctrl-alt-shift-x`, with the keyboard in the panel | `t3-files.close`, `review.close` | Closes the panel, not the tab behind it |
-| `cmd-t`, `ctrl-alt-c` | `t3-tabs.new` | A new tab here; at Home, New, which picks the space first |
-| `ctrl-1…9`, `ctrl-alt-shift-1…9` | `t3-tabs.space:<n>` | Your nth space, not counting Home |
+| `cmd-shift-b` / `ctrl-shift-b` | `t3-tabs.sidebar` | Switches the sidebar between Lists and Inbox |
+| `cmd-shift-s` / `ctrl-shift-s` | `t3-tabs.settle` | Settles the agent in view and goes to Home, or brings it back if it's settled. With Inbox selected, shown or hidden; in Lists it does nothing. A busy agent stays, a pinned one loses its pin |
+| `cmd-shift-h` / `ctrl-shift-h` | `t3-tabs.home` | Goes to Home |
+| `cmd-shift-,` / `ctrl-shift-,` | `t3-tabs.settings` | Opens the layout's settings |
+| `cmd-alt-b` / `ctrl-alt-b` | `t3-tabs.panel` | Shows the space panel on the page last shown, or hides it |
+| `cmd-shift-g` / `ctrl-shift-g` | `t3-tabs.review` | Opens the panel on Review, or closes it if it's already showing Review. Only with the Review extra |
+| `cmd-w`, `ctrl-shift-w`, `ctrl-alt-shift-x`, with the keyboard in the panel | `t3-files.close`, `review.close`, `t3-tabs.panel-close` | Closes the panel, not the tab behind it |
+| `cmd-t`, `ctrl-shift-t`, `ctrl-alt-c` | `t3-tabs.new` | A new tab here; at Home, New, which picks the space first |
+| `ctrl-1…9`, `alt-1…9`, `ctrl-alt-shift-1…9` | `t3-tabs.space:<n>` | Your nth space, not counting Home |
 | `cmd-alt-]` / `cmd-alt-[`, `ctrl-alt-shift-]` / `ctrl-alt-shift-[` | `t3-tabs.space-next` / `t3-tabs.space-prev` | The next or previous space, going around Home |
 | `cmd-1…9`, `ctrl-alt-1…9` | `t3-tabs.tab:<n>` | The nth tab the bar shows |
 | `cmd-shift-]` / `cmd-shift-[`, `ctrl-tab` / `ctrl-shift-tab`, `ctrl-alt-]` / `ctrl-alt-[` | `t3-tabs.tab-next` / `t3-tabs.tab-prev` | The next or previous tab the bar shows |
-| `cmd-p` | `mod.open:t3-picker` | Go to any pane by its name or program, or back (the same as Inbox's Search) |
-| `cmd-]` / `cmd-[` | `t3-tabs.next` / `t3-tabs.prev` | The next or previous top-level agent, in the selected sidebar's order, stopping at either end, shown or hidden. Inbox walks the rows it draws (a folded shelf only its row in view); Lists walks folded groups too |
-| `cmd-w`, `ctrl-alt-shift-x` | `t3-tabs.close-tab` | Closes the tab, asking first if a program is running in it |
-| `cmd-shift-w`, `ctrl-alt-x` | `t3-tabs.close-pane` | Closes the pane, asking first if a program is running in it |
+| `cmd-p`, `ctrl-shift-p` | `mod.open:t3-picker` | Go to any pane by its name, branch or program, or back (the same as Inbox's Search) |
+| `cmd-]` / `cmd-[`, `ctrl-shift-]` / `ctrl-shift-[` | `t3-tabs.next` / `t3-tabs.prev` | The next or previous top-level agent, in the selected sidebar's order, stopping at either end, shown or hidden. Inbox walks the rows it draws (a folded shelf only its row in view); Lists walks folded groups too |
+| `cmd-w`, `ctrl-shift-w`, `ctrl-alt-shift-x` | `t3-tabs.close-tab` | Closes the tab, asking first if a program is running in it |
+| `cmd-shift-w`, `ctrl-shift-x`, `ctrl-alt-x` | `t3-tabs.close-pane` | Closes the pane, asking first if a program is running in it |
 
 With a dialog or popup open (Go to, New, a menu, Settings, the command palette, the Actions editor and the like), these close-tab and close-pane keys close it instead, as in Herdr's own layout (the `mod:…` sections of `keys.json`).
 

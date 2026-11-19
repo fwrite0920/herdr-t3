@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, home, window, layout } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, theme, settings, window, layout } from "herdr";
 
 const MOD = "mods/t3-changes";
 
@@ -72,22 +72,11 @@ export default class Changes extends View {
     this.input.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
     this.input.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
     this.refresh(cx);
-    cx.timer.every(10000, (cx) => { if (isChangesActive()) this.refresh(cx); });
+    this.pollTimer = cx.timer.every(5000, (cx) => { if (isChangesActive()) this.refresh(cx); });
   }
 
-  watch(root, cx) {
-    if (this.on || this.watched === root) return;
-    this.watched = root;
-    cx.spawn(async (cx) => {
-      try {
-        while (this.watched === root) {
-          await watchFolder(root);
-          if (this.watched === root) this.refresh(cx);
-        }
-      } catch {
-        this.watched = null;
-      }
-    });
+  async close() {
+    this.pollTimer?.cancel();
   }
 
   refresh(cx) {
@@ -162,7 +151,6 @@ export default class Changes extends View {
         this.files = files;
         this.limited = entries.length > 1000;
         this.error = null;
-        this.watch(root, cx);
         if (this.open && !files.some((f) => f.path === this.open)) {
           this.open = null;
           this.setLines([]);
@@ -216,6 +204,7 @@ export default class Changes extends View {
     this.open = this.open === path ? null : path;
     this.setLines([]);
     this.note = null;
+    this.confirmDiscard = null;
     this.closed = !this.open;
     const context = this.context;
     if (this.open) {
@@ -231,10 +220,13 @@ export default class Changes extends View {
     cx.notify();
   }
 
-  stageFile(f, cx) {
+  stageFile(f, cx, unstageOnly = false) {
     if (!this.root || this.busy || this.loading || this.context !== key()) return;
     const root = this.root, on = this.on, context = this.context;
-    const args = (f.staged && !f.unstaged) ? ["reset", "HEAD", "--", f.path] : ["add", "--", f.path];
+    const unstage = unstageOnly || (f.staged && !f.unstaged);
+    const args = unstage
+      ? (this.hasHead ? ["reset", "HEAD", "--", f.path] : ["rm", "--cached", "--", f.path])
+      : ["add", "--", f.path];
     this.busy = true;
     this.note = null;
     this.confirmDiscard = null;
@@ -253,6 +245,31 @@ export default class Changes extends View {
     cx.notify();
   }
 
+  toggleStageAll(cx) {
+    if (!this.root || this.busy || this.loading || this.context !== key() || !this.files.length) return;
+    const root = this.root, on = this.on, context = this.context;
+    const allStaged = this.files.every((f) => f.staged && !f.unstaged);
+    const args = allStaged
+      ? (this.hasHead ? ["reset", "HEAD"] : ["rm", "-r", "--cached", "."])
+      : ["add", "-A"];
+    this.busy = true;
+    this.note = null;
+    this.confirmDiscard = null;
+    cx.spawn(async (cx) => {
+      try {
+        const r = await exec("git", args, { cwd: root, on });
+        if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim());
+      } catch (e) {
+        if (key() === context) this.note = `Stage all failed: ${e}`;
+      } finally {
+        this.busy = false;
+        this.refresh(cx);
+        cx.notify();
+      }
+    });
+    cx.notify();
+  }
+
   discardFile(f, cx) {
     if (!this.root || this.busy || this.loading || this.context !== key()) return;
     if (this.confirmDiscard !== f.path) {
@@ -262,13 +279,19 @@ export default class Changes extends View {
     }
     this.confirmDiscard = null;
     const root = this.root, on = this.on, context = this.context;
-    const args = f.fresh ? ["clean", "-fd", "--", f.path] : ["checkout", "HEAD", "--", f.path];
+    const steps = f.fresh
+      ? [["clean", "-fd", "--", f.path]]
+      : f.status === "A"
+        ? [(this.hasHead ? ["reset", "HEAD", "--", f.path] : ["rm", "--cached", "--", f.path]), ["clean", "-fd", "--", f.path]]
+        : [["checkout", "HEAD", "--", f.path]];
     this.busy = true;
     this.note = null;
     cx.spawn(async (cx) => {
       try {
-        const r = await exec("git", args, { cwd: root, on });
-        if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim());
+        for (const args of steps) {
+          const r = await exec("git", args, { cwd: root, on });
+          if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim());
+        }
       } catch (e) {
         if (key() === context) this.note = `Discard failed: ${e}`;
       } finally {
@@ -336,17 +359,17 @@ export default class Changes extends View {
         ].join("\n\n");
 
         let message = "";
-        const rPi = await exec("pi", ["-p", "--no-session", prompt], { cwd: root, on }).catch(() => null);
+        const rPi = await exec("pi", ["-p", "--no-session", prompt], { cwd: root, on, timeout: 30000 }).catch(() => null);
         if (rPi?.code === 0 && rPi.stdout?.trim()) {
           message = rPi.stdout.trim();
         } else {
-          const rClaude = await exec("claude", ["-p", prompt], { cwd: root, on }).catch(() => null);
+          const rClaude = await exec("claude", ["-p", prompt], { cwd: root, on, timeout: 30000 }).catch(() => null);
           if (rClaude?.code === 0 && rClaude.stdout?.trim()) {
             message = rClaude.stdout.trim();
           } else {
             const first = this.files[0];
             const count = this.files.length;
-            message = `update ${first ? first.path : "files"}${count > 1 ? ` 等 ${count} 个文件` : ""}`;
+            message = `update ${first ? first.path : "files"}${count > 1 ? ` and ${count - 1} more` : ""}`;
           }
         }
         if (key() !== context) return;
@@ -373,7 +396,7 @@ export default class Changes extends View {
   diffRow({ kind, number, text }, t) {
     if (kind === "@") {
       const m = /^(@@[^@]+@@)\s*(.*)$/.exec(text);
-      return h_flex().w_full().px(10).h(22).gap(8).items_center().flex_none().bg(t.raised).border_t(1).border_b(1).border_color(t.border)
+      return h_flex().w_full().px(10).h(20).gap(8).items_center().flex_none().bg(t.raised).border_t(1).border_b(1).border_color(t.border)
         .child(div().flex_none().font_bold().text_color(t.accent).child(m ? m[1] : text))
         .when(Boolean(m?.[2]), (el) => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(m[2])));
     }
@@ -387,42 +410,51 @@ export default class Changes extends View {
       .child(div().flex_1().min_w(0).truncate().child(text));
   }
 
-  fileRow(f, t) {
+  fileRow(f, t, group = "all") {
     const parts = f.path.split("/"), name = parts.pop();
     const isConfirm = this.confirmDiscard === f.path;
+    const isStagedRow = group === "staged" || (group === "all" && f.staged && !f.unstaged);
     const statusColor = f.status === "A" ? t.ansi2 : f.status === "D" ? t.ansi1 : f.status === "U" ? t.ansi1 : t.blocked;
-    return h_flex().id(`change-${f.path}`).h(28).flex_none().px(6).gap(6).items_center().rounded(6).cursor_pointer()
-      .when(this.open === f.path, (e) => e.bg(t.selected))
-      .hover((s) => s.bg(t.hover))
+    const cardHover = t.foreground + "12", cardOn = t.foreground + "1f";
+    return h_flex().id(`change-${group}-${f.path}`).h(28).flex_none().px(6).gap(6).items_center().rounded(6).cursor_pointer()
+      .when(this.open === f.path, (e) => e.bg(cardOn))
+      .when(this.open !== f.path, (e) => e.hover((s) => s.bg(cardHover)))
       .on_click((_e, cx) => this.pick(f.path, cx))
       .child(div().w(14).flex_none().text_size(11).font_bold().text_color(statusColor).child(f.status))
-      .child(h_flex().flex_1().min_w(0).items_center()
-        .when(parts.length > 0, (el) => el.child(div().text_color(t.dim).truncate().child(parts.join("/") + "/")))
-        .child(div().flex_none().max_w(220).truncate().font_medium().child(name)))
-      .when(f.staged, (el) => el.child(div().px(4).py(0.5).rounded(3).bg(t.ansi2 + "22").text_size(9.5).font_bold().text_color(t.ansi2).child("S")))
+      .child(h_flex().flex_1().min_w(0).gap(2).items_center()
+        .child(div().flex_none().max_w(160).truncate().font_medium().child(name))
+        .when(parts.length > 0, (el) => el.child(div().flex_1().min_w(0).text_size(11).text_color(t.dim).truncate().child(parts.join("/")))))
+      .when(f.staged && group === "all", (el) => el.child(div().px(4).py(0.5).rounded(4).bg(t.ansi2 + "22").text_size(9.5).font_bold().text_color(t.ansi2).child("S")))
       .when(f.add > 0, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.ansi2).child(`+${f.add}`)))
       .when(f.del > 0, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.ansi1).child(`−${f.del}`)))
-      .child(div().id(`stage-${f.path}`).px(5).py(1).rounded(4).bg(t.raised).text_size(10.5).font_bold()
-        .text_color((f.staged && !f.unstaged) ? t.ansi2 : t.muted)
-        .hover((s) => s.text_color(t.foreground).bg(t.border))
-        .on_click((_e, cx) => { cx.stop_propagation(); this.stageFile(f, cx); })
-        .child((f.staged && !f.unstaged) ? "−" : "+"))
-      .child(div().id(`discard-${f.path}`).px(5).py(1).rounded(4).bg(isConfirm ? t.ansi1 + "33" : t.raised).text_size(10.5).font_medium()
+      .child(div().id(`stage-${group}-${f.path}`).px(5).py(1).rounded(4).bg(t.raised).text_size(10.5).font_bold()
+        .text_color(isStagedRow ? t.ansi2 : t.muted)
+        .hover((s) => s.text_color(t.foreground).bg(cardHover))
+        .on_click((_e, cx) => { cx.stop_propagation(); this.stageFile(f, cx, isStagedRow); })
+        .child(isStagedRow ? "−" : "+"))
+      .child(div().id(`discard-${group}-${f.path}`).px(5).py(1).rounded(4).bg(isConfirm ? t.ansi1 + "33" : t.raised).text_size(10.5).font_medium()
         .text_color(isConfirm ? t.ansi1 : t.dim)
         .hover((s) => s.text_color(t.ansi1).bg(t.ansi1 + "22"))
         .on_click((_e, cx) => { cx.stop_propagation(); this.discardFile(f, cx); })
-        .child(isConfirm ? "确认?" : "↺"));
+        .child(isConfirm ? "Confirm?" : "↺"));
   }
 
   render(cx) {
-    if (key() !== this.context) this.refresh(cx);
-    const t = theme(), add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
+    if (key() !== this.context && !this.refreshQueued) {
+      this.refreshQueued = true;
+      cx.timer.after(0, (c) => { this.refreshQueued = false; this.refresh(c); });
+    }
+    const t = theme(), cardHover = t.foreground + "12";
+    const add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
     const stagedFiles = this.files.filter((f) => f.staged);
-    const unstagedFiles = this.files.filter((f) => !f.staged || f.unstaged);
+    const unstagedFiles = this.files.filter((f) => f.unstaged);
+    const splitSections = stagedFiles.length > 0 && unstagedFiles.length > 0;
+    const allStaged = this.files.length > 0 && unstagedFiles.length === 0;
     const openFile = this.files.find((f) => f.path === this.open);
     const hunkCount = this.rows.filter((r) => r.kind === "@").length;
     const enabled = Boolean(this.message.trim() && this.root && !this.busy && !this.loading);
-    return v_flex().id("t3-changes").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(13).track_focus(this.handle)
+    const listRowCount = splitSections ? stagedFiles.length + unstagedFiles.length : this.files.length;
+    return v_flex().id("t3-changes").size_full().min_h(0).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .on_key_down((e, cx) => {
         if (e.key === "escape" && this.typing) {
           this.typing = false;
@@ -431,25 +463,35 @@ export default class Changes extends View {
           cx.notify();
         }
       })
-      .child(h_flex().id("t3-changes-toolbar").h(40).flex_none().px(12).gap(8).items_center().border_b(1).border_color(t.border)
+      .child(h_flex().id("t3-changes-toolbar").h(40).flex_none().px(10).gap(6).items_center().border_b(1).border_color(t.border)
         .child(div().font_semibold().text_size(13).child("Changes"))
-        .child(div().px(6).py(1).rounded(4).bg(t.raised).text_size(10.5).text_color(t.muted).cursor_pointer()
+        .child(div().px(6).py(1).rounded(4).bg(t.raised).text_size(11).text_color(t.muted).cursor_pointer()
           .hover((s) => s.text_color(t.foreground))
           .on_click((_e, cx) => { this.listOpen = !this.listOpen; cx.notify(); })
           .child(`${this.listOpen ? "▾" : "▸"} ${this.files.length} files`))
         .when(stagedFiles.length > 0, (el) => el.child(
-          div().px(5).py(1).rounded(4).bg(t.ansi2 + "20").text_size(10.5).font_medium().text_color(t.ansi2).child(`${stagedFiles.length} staged`)))
+          div().px(5).py(1).rounded(4).bg(t.ansi2 + "20").text_size(11).font_medium().text_color(t.ansi2).child(`${stagedFiles.length} staged`)))
         .child(div().flex_1())
-        .child(div().text_size(11).text_color(t.ansi2).child(`+${add}`))
-        .child(div().text_size(11).text_color(t.ansi1).child(`−${del}`)))
+        .when(add > 0, (el) => el.child(div().text_size(11).text_color(t.ansi2).child(`+${add}`)))
+        .when(del > 0, (el) => el.child(div().text_size(11).text_color(t.ansi1).child(`−${del}`)))
+        .when(this.files.length > 0, (el) => el.child(
+          div().id("changes-stage-all").h(24).px(6).flex().items_center().rounded(6).cursor_pointer().text_size(11).text_color(t.muted)
+            .hover((s) => s.bg(cardHover).text_color(t.foreground))
+            .on_click((_e, cx) => this.toggleStageAll(cx))
+            .child(allStaged ? "Unstage all" : "Stage all")))
+        .child(div().id("changes-refresh").size(24).flex().items_center().justify_center().rounded(6).cursor_pointer()
+          .hover((s) => s.bg(cardHover))
+          .on_click((_e, cx) => this.refresh(cx))
+          .child(svg(`${MOD}/icons/refresh-cw.svg`).size(13).text_color(t.muted))))
       .when(this.listOpen, (el) => el.child(
-        v_flex().id("changes-list").flex_none().h(Math.min(200, Math.max(40, this.files.length * 28 + (stagedFiles.length && unstagedFiles.length ? 26 : 10)))).overflow_y_scrollbar().p(6).gap(2).border_b(1).border_color(t.border)
-          .when(stagedFiles.length > 0 && unstagedFiles.length > 0, (g) => g.child(
+        v_flex().id("changes-list").flex_none().h(Math.min(220, Math.max(40, listRowCount * 28 + (splitSections ? 42 : 12)))).overflow_y_scrollbar().p(6).gap(2).border_b(1).border_color(t.border)
+          .when(splitSections, (g) => g.child(
             div().px(6).py(2).text_size(10).font_bold().text_color(t.ansi2).child(`STAGED (${stagedFiles.length})`)))
-          .children(stagedFiles.map((f) => this.fileRow(f, t)))
-          .when(stagedFiles.length > 0 && unstagedFiles.length > 0, (g) => g.child(
+          .when(splitSections, (g) => g.children(stagedFiles.map((f) => this.fileRow(f, t, "staged"))))
+          .when(splitSections, (g) => g.child(
             div().px(6).pt(4).pb(2).text_size(10).font_bold().text_color(t.muted).child(`CHANGES (${unstagedFiles.length})`)))
-          .children((stagedFiles.length > 0 ? unstagedFiles.filter((f) => !f.staged) : this.files).map((f) => this.fileRow(f, t)))
+          .when(splitSections, (g) => g.children(unstagedFiles.map((f) => this.fileRow(f, t, "unstaged"))))
+          .when(!splitSections, (g) => g.children(this.files.map((f) => this.fileRow(f, t, "all"))))
           .when(!this.files.length, (e) => e.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : this.root ? "No uncommitted changes" : "No folder"))))))
       .when(this.limited, (el) => el.child(div().px(12).py(4).text_size(11).text_color(t.dim).child("Showing the first 1,000 changed files")))
       .when(Boolean(openFile), (el) => el.child(
@@ -468,8 +510,8 @@ export default class Changes extends View {
         .when(!this.open && this.files.length > 0, (e) => e.child(div().absolute().top(6).px(12).text_color(t.dim).child("Select a file to view its changes"))))
       .when(Boolean(this.note), (e) => e.child(div().px(10).pb(4).text_size(11).text_color(t.ansi1).child(this.note)))
       .child(h_flex().flex_none().p(8).gap(8).border_t(1).border_color(t.border)
-        .child(div().id("commit-message").flex_1().min_w(0).h(32).px(10).flex().items_center().rounded(6).border_1().border_color(this.typing ? t.accent : t.border).cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(12).text_color(t.foreground)))
-        .child(div().id("commit-ai").h(32).px(10).flex().items_center().rounded(6).bg(t.raised).text_color(this.gen || !this.root || this.loading || this.context !== key() ? t.dim : t.accent).text_size(12).font_medium().cursor_pointer().on_click((_e, cx) => this.generate(cx)).child(this.gen ? "…" : "AI"))
-        .child(div().id("commit").h(32).px(14).flex().items_center().rounded(6).bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim).text_size(12).font_medium().when(enabled, (e) => e.cursor_pointer()).on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : stagedFiles.length > 0 ? `Commit (${stagedFiles.length})` : "Commit")));
+        .child(div().id("commit-message").flex_1().min_w(0).h(32).px(10).flex().items_center().rounded(8).border_1().border_color(this.typing ? t.accent : t.input).cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(12).text_color(t.foreground)))
+        .child(div().id("commit-ai").h(32).px(10).flex().items_center().rounded(8).bg(t.raised).border_1().border_color(t.input).text_color(this.gen || !this.root || this.loading || this.context !== key() ? t.dim : t.accent).text_size(12).font_medium().cursor_pointer().hover((s) => s.opacity(0.9)).on_click((_e, cx) => this.generate(cx)).child(this.gen ? "…" : "AI"))
+        .child(div().id("commit").h(32).px(14).flex().items_center().rounded(8).bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim).text_size(12).font_medium().when(enabled, (e) => e.cursor_pointer().hover((s) => s.opacity(0.9))).when(!enabled, (e) => e.opacity(0.64)).on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : stagedFiles.length > 0 ? `Commit (${stagedFiles.length})` : "Commit")));
   }
 }

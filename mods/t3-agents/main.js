@@ -200,7 +200,11 @@ export default class Agents extends View {
       const s = treeStatus(own(a), kidsOf.get(a.address));
       return s === "done" && notNews(all.find(k => k.address === a.address), own(a), kidsOf.get(a.address)) ? "idle" : s;
     };
-    const urgency = new Map(list.map((a) => [a.address, RANK[treeStatus(ownStatus(this.word(a), a.address, all), kidsOf.get(a.address))] ?? 0]));
+    const urgency = new Map(list.map((a) => {
+      const s = treeStatus(ownStatus(this.word(a), a.address, all), kidsOf.get(a.address));
+      const eff = s === "done" && notNews(all.find(k => k.address === a.address), own(a), kidsOf.get(a.address)) ? "idle" : s;
+      return [a.address, RANK[eff] ?? 0];
+    }));
     const rankOf = (a) => urgency.get(a.address);
     if (byPriority) list = [...list].sort((x, y) => rankOf(y) - rankOf(x) || this.since(y) - this.since(x) || y.seq - x.seq);
     this.prune(all);

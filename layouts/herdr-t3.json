@@ -186,8 +186,8 @@
           "children": [
             { "id": "files", "type": "block", "content": { "mod": "t3-files" } },
             { "id": "sessions", "type": "block", "content": { "mod": "t3-sessions" } },
-            { "id": "favorites", "type": "block", "content": { "mod": "t3-favorites" } },
             { "id": "changes", "type": "block", "content": { "mod": "t3-changes" } },
+            { "id": "favorites", "type": "block", "content": { "mod": "t3-favorites" } },
             { "id": "tools", "type": "block", "content": { "mod": "t3-tools" } },
             { "id": "todos", "type": "block", "content": { "mod": "t3-todos" } }
           ]

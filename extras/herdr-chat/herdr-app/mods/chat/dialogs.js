@@ -23,6 +23,7 @@ export class DialogCard {
     if ((dialog?.id ?? null) === this.id) return false;
     this.field?.release?.();
     this.field = null;
+    if (this.others) for (const f of this.others.values()) f?.release?.();
     this.id = dialog?.id ?? null;
     this.sel = 0;
     this.picked = new Map(); // questions: question id → Set of option labels
@@ -105,14 +106,15 @@ export class DialogCard {
       .text_color(primary ? t.solid_foreground : t.foreground).text_size(12.5).font_medium()
       .hover((s) => s.opacity(0.88)).on_click(fn).child(label);
     let body;
-    if (d.method === "permission") return this.permissionView(d, pending, t, answer, c, btn);
+    if (d.method === "permission") return this.permissionView(d, pending, t, answer, c);
     if (d.method === "questions") return this.questionsView(d, pending, t, answer, c, btn);
     if (d.method === "select") {
-      body = v_flex().gap(4).children((d.options ?? []).map((o, i) => h_flex().id(`dlg-opt-${i}`).min_h(30).px(10).py(5).gap(8).items_center()
-        .rounded(7).border_1().border_color(i === this.sel ? t.accent : t.border).bg(t.background).cursor_pointer()
-        .hover((s) => s.bg(t.hover)).on_click((_e, cx) => answer("value", o, cx))
-        .child(div().flex_none().w(16).text_size(11).text_color(t.dim).child(i < 9 ? String(i + 1) : ""))
-        .child(div().flex_1().text_size(12.5).text_color(t.foreground).child(o))))
+      body = v_flex().gap(4)
+        .child(v_flex().max_h(260).overflow_y_scroll().gap(4).children((d.options ?? []).map((o, i) => h_flex().id(`dlg-opt-${i}`).min_h(30).px(10).py(5).gap(8).items_center()
+          .rounded(6).border_1().border_color(i === this.sel ? t.accent : t.border).bg(t.background).cursor_pointer()
+          .hover((s) => s.bg(alpha(t.foreground, 0.07))).on_click((_e, cx) => answer("value", o, cx))
+          .child(div().flex_none().w(16).text_size(11).text_color(t.dim).child(i < 9 ? String(i + 1) : ""))
+          .child(div().flex_1().text_size(12.5).text_color(t.foreground).child(o)))))
         .child(div().text_size(11).text_color(t.dim).child("↑↓ choose · Enter pick (with the composer empty)"));
     } else if (d.method === "confirm") {
       body = h_flex().gap(8).child(btn("dlg-yes", "Yes", this.sel === 0, (_e, cx) => answer("confirm", true, cx)))
@@ -170,11 +172,12 @@ export class DialogCard {
       .text_color(t.dim).max_h(120).overflow_hidden().child(tl.args) : null;
     const button = (ch, i) => {
       const allow = ch.kind === "allow", deny = ch.kind === "deny";
-      const bg = allow ? t.solid : deny ? alpha(t.ansi1, 0.14) : t.raised;
+      // Match T3 destructive-outline (t3-tokens.md): raised fill + input border + ansi1 text, never pink tint fill.
+      const bg = allow ? t.solid : t.raised;
       const fg = allow ? t.solid_foreground : deny ? t.ansi1 : t.foreground;
-      return h_flex().id(`dlg-choice-${ch.id}`).h(30).px(12).gap(8).items_center().rounded(10).cursor_pointer()
-        .border_1().border_color(allow ? t.solid : deny ? alpha(t.ansi1, 0.45) : t.input).bg(bg).text_color(fg)
-        .text_size(12.5).font_medium().hover((s) => s.opacity(0.88)).tooltip(ch.description ?? ch.label)
+      return h_flex().id(`dlg-choice-${ch.id}`).h(30).px(12).gap(8).items_center().rounded(8).cursor_pointer()
+        .border_1().border_color(allow ? t.solid : t.input).bg(bg).text_color(fg)
+        .text_size(12.5).font_medium().hover((s) => s.opacity(0.9)).tooltip(ch.description ?? ch.label)
         .on_click((_e, cx) => answer("choice", this.choiceAnswer(ch), cx))
         .child(div().text_size(10.5).opacity(0.65).child(String(i + 1))).child(ch.label);
     };
@@ -219,9 +222,9 @@ export class DialogCard {
               .flex().items_center().justify_center().child(on ? icon("check", 10).text_color(t.accent_foreground ?? t.background) : div())
             : div().flex_none().w(14).h(14).rounded_full().border_1().border_color(on ? t.accent : t.input)
               .flex().items_center().justify_center().child(on ? div().w(6).h(6).rounded_full().bg(t.accent) : div());
-          return h_flex().id(`dlg-q-${q.id}-${i}`).min_h(32).px(10).py(5).gap(10).items_center().rounded(10)
+          return h_flex().id(`dlg-q-${q.id}-${i}`).min_h(32).px(10).py(5).gap(10).items_center().rounded(8)
             .border_1().border_color(on ? alpha(t.accent, 0.7) : t.border).bg(on ? alpha(t.accent, 0.08) : t.background).cursor_pointer()
-            .hover((s) => s.bg(t.hover)).on_click((_e, cx) => { this.pick(d, qi, i); cx.notify(); })
+            .hover((s) => s.bg(alpha(t.foreground, 0.07))).on_click((_e, cx) => { this.pick(d, qi, i); cx.notify(); })
             .child(mark)
             .child(v_flex().flex_1().min_w(0)
               .child(div().text_size(12.5).text_color(t.foreground).child(o.label))
@@ -232,7 +235,7 @@ export class DialogCard {
           .bg(t.background).text_size(12.5)));
     });
     return this.frame(d, pending, t, answer, "help", "cancel")
-      .child(v_flex().gap(SPACE.block).children(blocks))
+      .child(v_flex().max_h(320).overflow_y_scroll().gap(SPACE.block).children(blocks))
       .child(h_flex().gap(10).items_center()
         .child(h_flex().id("dlg-submit").h(30).px(14).items_center().rounded(10).cursor_pointer()
           .bg(ready ? t.solid : t.raised).text_color(ready ? t.solid_foreground : t.dim).text_size(12.5).font_medium()

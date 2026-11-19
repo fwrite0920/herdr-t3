@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { spaces, panes, focused, terminals, agents, run, exec, shared, setShared, home, notify, theme, layout, window } from "herdr";
+import { spaces, panes, focused, terminals, agents, run, exec, shared, setShared, home, appHome, settings, notify, theme, layout, window } from "herdr";
 
 const TAGS = "t3.sessions.tags";
 const MOD = "mods/t3-sessions";
@@ -141,9 +141,10 @@ function resolveActiveTarget() {
     || tabPanes[0]
     || null;
 
-  if (activePane?.mod === "mods/chat" && activePane?.item) {
+  const paneItem = /** @type {any} */ (activePane)?.item;
+  if (activePane?.mod === "mods/chat" && paneItem) {
     return {
-      termAddr: "chat:" + activePane.item,
+      termAddr: "chat:" + paneItem,
       appHint: "chat",
       cwd: norm(activePane.cwd || sp?.folder || ""),
       curAgent: null,
@@ -155,32 +156,33 @@ function resolveActiveTarget() {
     };
   }
 
+  const activeTabTerms = /** @type {any} */ (activeTab)?.terminals;
   let termAddr = activePane?.terminal
-    || (activeTab?.terminals?.some((x) => x.terminal === f?.terminal) ? f.terminal : null)
-    || activeTab?.terminals?.[0]?.terminal
+    || (activeTabTerms?.some((x) => x.terminal === f?.terminal) ? f.terminal : null)
+    || activeTabTerms?.[0]?.terminal
+    || tabPanes.find((p) => p.terminal)?.terminal
     || null;
-  let tabTerm = activeTab?.terminals?.find((x) => x.terminal === termAddr) || activeTab?.terminals?.[0] || null;
+  let tabTerm = activeTabTerms?.find((x) => x.terminal === termAddr) || activeTabTerms?.[0] || null;
   let curAgent = termAddr ? allAgents.find((a) => a.address === termAddr) : null;
   let curTerm = termAddr ? allTerms.find((k) => k.address === termAddr) : null;
   let appHint = curAgent?.program?.key || activePane?.program?.key || curTerm?.program?.key || tabTerm?.app || "";
 
   // If the current tab is a plain shell (no agent running in it), inspect an agent terminal in the same space if one exists
   if (!isKnownAgentKey(appHint) && !curAgent && sp?.tabs) {
-    for (const tb of sp.tabs) {
-      for (const tt of (tb.terminals || [])) {
-        const candAgent = allAgents.find((a) => a.address === tt.terminal);
-        const candTerm = allTerms.find((k) => k.address === tt.terminal);
-        const candApp = candAgent?.program?.key || candTerm?.program?.key || tt.app || "";
-        if (isKnownAgentKey(candApp) || candAgent) {
-          termAddr = tt.terminal;
-          tabTerm = tt;
-          curAgent = candAgent || null;
-          curTerm = candTerm || null;
-          appHint = candApp || "agent";
-          break;
-        }
+    const spaceTabIds = new Set(sp.tabs.map((tb) => tb.id));
+    for (const p of allPanes) {
+      if (!spaceTabIds.has(p.tab) || !p.terminal) continue;
+      const candAgent = allAgents.find((a) => a.address === p.terminal);
+      const candTerm = allTerms.find((k) => k.address === p.terminal);
+      const candApp = candAgent?.program?.key || p.program?.key || candTerm?.program?.key || p.app || "";
+      if (isKnownAgentKey(candApp) || candAgent) {
+        termAddr = p.terminal;
+        tabTerm = null;
+        curAgent = candAgent || null;
+        curTerm = candTerm || null;
+        appHint = candApp || "agent";
+        break;
       }
-      if (isKnownAgentKey(appHint) || curAgent) break;
     }
   }
 
@@ -188,9 +190,9 @@ function resolveActiveTarget() {
     appHint = "shell";
   }
 
-  const cwd = norm(curTerm?.cwd || activePane?.cwd || curAgent?.cwd || sp?.folder || "");
+  const cwd = norm(curTerm?.cwd || activePane?.cwd || sp?.folder || "");
   return {
-    termAddr: termAddr || "t12",
+    termAddr: termAddr || "",
     appHint,
     cwd,
     curAgent,
@@ -249,32 +251,32 @@ export default class Sessions extends View {
     this.lastTermAddr = null;
 
     this.telemetry = {
-      agent: "antigravity",
-      agentName: "Google Antigravity",
-      agentColor: "#818cf8",
-      model: "gemini-3.8-flash",
+      agent: "",
+      agentName: "Terminal",
+      agentColor: "",
+      model: "—",
       sessionTitle: "Terminal Session",
-      sessionId: "term",
-      effort: "high",
+      sessionId: "—",
+      effort: "",
       inTok: 0,
       outTok: 0,
       cacheTok: 0,
       totalCtx: 0,
       maxCtx: "1M",
       hitRate: 0,
-      cost: "$0.000",
-      ttft: "1.0s",
-      tokPerSec: "135 tok/s",
-      avgTtft: "1.0s",
-      avgTokPerSec: "130 tok/s",
+      cost: "—",
+      ttft: "—",
+      tokPerSec: "—",
+      avgTtft: "—",
+      avgTokPerSec: "—",
       recentTools: [],
       toolsOk: 0,
       usedToolsCount: 0,
       usedToolNames: [],
-      builtinTools: 13,
-      extTools: 39,
-      totalTools: 52,
-      builtinNames: ["run_command", "read_file", "edit_file", "write_file", "schedule", "manage_task", "ask_question", "swarm", "invoke_subagent", "define_subagent", "manage_subagents", "search_web", "run_workflow"],
+      builtinTools: 0,
+      extTools: 0,
+      totalTools: 0,
+      builtinNames: [],
       extNames: [],
       stepCount: 0,
       storage: "saved",
@@ -299,33 +301,16 @@ export default class Sessions extends View {
       this.filter = this.input.value();
       cx.notify();
     });
+    // Create tagInput once in init (never inside render()) and bind Enter to save.
+    this.tagInput = InputState.new({ placeholder: "标签用空格隔开，回车保存" });
+    this.tagInput.on("submit", (_e, cx) => this.commitTag(cx));
 
-    this.pollTelemetry(cx);
-    this.refreshHistory(cx);
-
-    // 1-second interval to tick the elapsed timer live (only when active and in inspector view)
-    cx.timer.every(1000, (cx) => {
-      if (isSessionsActive() && this.viewMode === "inspector") {
-        cx.notify();
-      }
-    });
-
-    // 1.5-second telemetry polling (only when active and in inspector view)
-    cx.timer.every(1500, (cx) => {
-      if (isSessionsActive() && this.viewMode === "inspector") {
-        this.pollTelemetry(cx);
-      }
-    });
-
-    // 8-second real-time history refresh (only when active and in history view)
-    cx.timer.every(8000, (cx) => {
-      if (isSessionsActive() && this.viewMode === "history") {
-        this.refreshHistory(cx);
-      }
-    });
+    if (this.viewMode === "history") this.refreshHistory(cx);
+    else this.pollTelemetry(cx);
 
     this.watch = null;
-    cx.timer.every(1000, (cx) => {
+    // Combined 1-second timer: detects target switches and ticks elapsed clock only while an agent is working.
+    this.tickTimer = cx.timer.every(1000, (cx) => {
       if (!isSessionsActive()) return;
       const target = resolveActiveTarget();
       const cur = `${target.termAddr}:${target.appHint}:${target.cwd}`;
@@ -334,8 +319,30 @@ export default class Sessions extends View {
         if (this.viewMode === "inspector") this.pollTelemetry(cx);
         else this.refreshHistory(cx);
         cx.notify();
+        return;
+      }
+      if (this.viewMode === "inspector" && this.lastWorking) cx.notify();
+    });
+
+    // 1.5-second telemetry polling (only when active and in inspector view)
+    this.telemetryTimer = cx.timer.every(1500, (cx) => {
+      if (isSessionsActive() && this.viewMode === "inspector") {
+        this.pollTelemetry(cx);
       }
     });
+
+    // 8-second real-time history refresh (only when active and in history view)
+    this.historyTimer = cx.timer.every(8000, (cx) => {
+      if (isSessionsActive() && this.viewMode === "history") {
+        this.refreshHistory(cx);
+      }
+    });
+  }
+
+  async close() {
+    this.tickTimer?.cancel();
+    this.telemetryTimer?.cancel();
+    this.historyTimer?.cancel();
   }
 
   pollTelemetry(cx) {
@@ -344,12 +351,14 @@ export default class Sessions extends View {
     cx.spawn(async (cx) => {
       try {
         const h = norm(home());
+        const modDir = norm(typeof appHome === "function" ? appHome() : `${h}/.config/herdr-app`) + "/mods/t3-sessions";
         const target = resolveActiveTarget();
         const termAddr = target.termAddr;
         const cwd = target.cwd;
         const appHint = target.appHint || "";
+        if (!termAddr) return;
 
-        const res = await exec("node", [h + "/.config/herdr-app/mods/t3-sessions/scan-telemetry.cjs", h, cwd || "", termAddr, appHint]).catch(() => null);
+        const res = await exec("node", [`${modDir}/scan-telemetry.cjs`, h, cwd || "", termAddr, appHint]).catch(() => null);
         if (res && res.stdout) {
           try {
             const t = JSON.parse(res.stdout);
@@ -376,13 +385,14 @@ export default class Sessions extends View {
     cx.spawn(async (cx) => {
       try {
         const h = norm(home());
-        const res = await exec("node", [h + "/.config/herdr-app/mods/t3-sessions/scan-history.cjs", h]).catch(() => null);
+        const modDir = norm(typeof appHome === "function" ? appHome() : `${h}/.config/herdr-app`) + "/mods/t3-sessions";
+        const res = await exec("node", [`${modDir}/scan-history.cjs`, h]).catch(() => null);
         if (res && res.stdout) {
           const combined = JSON.parse(res.stdout);
           this.sessions = combined.filter((s) => s.title || s.cwd || s.id).sort((a, b) => b.mtime - a.mtime).slice(0, 300);
           this.error = null;
-        } else {
-          this.sessions = [];
+        } else if (!this.sessions.length) {
+          this.error = "Unable to scan session history";
         }
       } catch (e) {
         this.error = String(e);
@@ -461,17 +471,9 @@ export default class Sessions extends View {
 
   startTag(session, cx) {
     this.tagging = this.keyOf(session);
+    this.tagInput.set_value(this.tagsOf(session).join(" "));
+    this.tagInput.focus();
     cx.notify();
-  }
-
-  tagInputFor(key) {
-    const s = this.sessions.find((x) => this.keyOf(x) === key);
-    const initial = s ? this.tagsOf(s).join(" ") : "";
-    if (!this.tagInput) {
-      this.tagInput = InputState.new({ placeholder: "标签用空格隔开，回车保存" });
-    }
-    this.tagInput.set_value(initial);
-    return this.tagInput;
   }
 
   commitTag(cx) {
@@ -486,8 +488,8 @@ export default class Sessions extends View {
     cx.notify();
   }
 
-  tagChip(session, tag, j, i, t) {
-    return h_flex().id(`tag-${i}-${j}`).h(18).px(5).gap(3).flex_none().items_center().rounded(4).bg(t.raised).text_size(10.5).text_color(t.muted)
+  tagChip(session, tag, j, rowKey, t) {
+    return h_flex().id(`tag-${rowKey}-${j}`).h(18).px(5).gap(3).flex_none().items_center().rounded(4).bg(t.raised).text_size(10.5).text_color(t.muted)
       .on_click((_e, cx) => { cx.stop_propagation(); this.tagOnly = tag; cx.notify(); })
       .child(div().child(`#${tag}`))
       .child(div().text_size(9).text_color(t.dim).hover((s) => s.text_color(t.ansi1))
@@ -526,20 +528,21 @@ export default class Sessions extends View {
       .child(div().flex_1().h(1).bg(t.border));
   }
 
-  row(session, i, t, short, root) {
+  row(session, rowKey, t, short, root) {
     const tags = this.tagsOf(session);
     const baseAgent = AGENTS[session.agent] || { label: session.agent, icon: "mods/t3-sessions/icons/sparkles.svg" };
     const agent = { ...baseAgent, color: agentColorOf(session.agent, t) };
     const tagging = this.tagging === this.keyOf(session);
     const away = session.cwd && root && !pathMatches(root, session.cwd);
     const isWsl = String(session.id).startsWith("wsl/") || String(session.cwd).startsWith("/home");
+    const cardHover = t.foreground + "12";
 
-    return div().id(`session-${i}`).flex().flex_col().flex_none().w_full().min_w(0).gap(5).p(8).rounded(7)
+    return div().id(`session-${rowKey}`).flex().flex_col().flex_none().w_full().min_w(0).gap(5).p(8).rounded(6)
       .bg(t.raised)
       .border_1()
       .border_color(tagging ? t.accent : t.border)
       .when(!tagging, (el) => el.cursor_pointer()
-        .hover((s) => s.bg(t.hover).border_color(t.border))
+        .hover((s) => s.bg(cardHover).border_color(t.border))
         .on_click(() => this.resume(session)))
       // Row 1: Agent Pill + Title + Quick Action "恢复"
       .child(h_flex().w_full().min_w(0).gap(6).items_center()
@@ -552,9 +555,9 @@ export default class Sessions extends View {
           .child(session.title || "(无标题会话)"))
         // Quick Resume Button
         .when(!tagging, (el) => el.child(
-          h_flex().id(`btn-resume-${i}`).h(18).px(6).gap(3).flex_none().items_center().rounded(4)
+          h_flex().id(`btn-resume-${rowKey}`).h(18).px(6).gap(3).flex_none().items_center().rounded(4)
             .bg(t.background).border_1().border_color(t.border)
-            .hover((s) => s.bg(t.hover).border_color(t.accent))
+            .hover((s) => s.bg(cardHover).border_color(t.accent))
             .on_click((_e, cx) => {
               cx.stop_propagation();
               this.resume(session);
@@ -573,11 +576,11 @@ export default class Sessions extends View {
           .when(!away, (el) => el.text_color(t.muted))
           .child(short(session.cwd) || "全局 / 未记录目录"))
         .when(isWsl, (el) => el.child(
-          div().px(3).py(0.5).rounded(3).bg(t.background).border_1().border_color(t.border).text_size(9).font_medium().text_color(t.dim).child("WSL")
+          div().px(4).py(0.5).rounded(4).bg(t.background).border_1().border_color(t.border).text_size(9).font_medium().text_color(t.dim).child("WSL")
         ))
         .when(!tagging, (el) => el.child(
-          h_flex().id(`tag-add-${i}`).h(16).px(4).gap(2).flex_none().items_center().rounded(3)
-            .hover((s) => s.bg(t.hover).text_color(t.accent))
+          h_flex().id(`tag-add-${rowKey}`).h(18).px(4).gap(2).flex_none().items_center().rounded(4)
+            .hover((s) => s.bg(cardHover).text_color(t.accent))
             .on_click((_e, cx) => { cx.stop_propagation(); this.startTag(session, cx); })
             .child(svg("mods/t3-sessions/icons/tag.svg").size(9).text_color(t.dim).flex_none())
             .child(div().text_size(9.5).child("+标签"))
@@ -585,24 +588,24 @@ export default class Sessions extends View {
       // Row 3: Tag editor (when tagging is active)
       .when(tagging, (el) => el.child(
         h_flex().w_full().min_w(0).gap(4).items_center().pt(2)
-          .child(Input.new(this.tagInputFor(this.keyOf(session))).flex_1().min_w(0).h(24).text_size(11).text_color(t.foreground))
+          .child(Input.new(this.tagInput).flex_1().min_w(0).h(24).text_size(11).text_color(t.foreground))
           .child(div().id("tag-save").h(24).px(8).flex_none().flex().items_center().rounded(4).bg(t.background).border_1().border_color(t.border).cursor_pointer().text_size(11).text_color(t.accent)
-            .hover((s) => s.bg(t.hover)).on_click((_e, cx) => { cx.stop_propagation(); this.commitTag(cx); }).child("保存"))
+            .hover((s) => s.bg(cardHover)).on_click((_e, cx) => { cx.stop_propagation(); this.commitTag(cx); }).child("保存"))
           .child(div().id("tag-cancel").h(24).px(6).flex_none().flex().items_center().rounded(4).cursor_pointer().text_size(11).text_color(t.dim)
             .hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => { cx.stop_propagation(); this.tagging = null; cx.notify(); }).child("取消"))
       ))
       // Row 4: Tag chips (when tags exist and not tagging)
       .when(!tagging && tags.length > 0, (el) => el.child(
         h_flex().w_full().min_w(0).gap(4).items_center().overflow_hidden().pt(1)
-          .children(tags.slice(0, 6).map((tag, j) => this.tagChip(session, tag, j, i, t)))
+          .children(tags.slice(0, 6).map((tag, j) => this.tagChip(session, tag, j, rowKey, t)))
           .when(tags.length > 6, (el) => el.child(div().flex_none().text_size(10).text_color(t.dim).child(`+${tags.length - 6}`)))
       ));
   }
 
   sectionHead(title, color, iconPath, t) {
-    return h_flex().w_full().items_center().gap(6).mb(2)
+    return h_flex().flex_1().min_w(0).items_center().gap(6).mb(2)
       .when(Boolean(iconPath), (el) => el.child(svg(iconPath).size(12).text_color(color).flex_none()))
-      .child(div().font_bold().text_size(11).text_color(color).child(title))
+      .child(div().flex_none().font_bold().text_size(11).text_color(color).child(title))
       .child(div().flex_1().h(1).bg(t.border));
   }
 
@@ -633,6 +636,9 @@ export default class Sessions extends View {
     const normSt = String(rawState).toLowerCase();
     const state = normSt === "working" ? "WORKING" : (normSt === "blocked" || normSt === "error") ? "BLOCKED" : "IDLE";
     const isWorking = state === "WORKING";
+    const isBlocked = state === "BLOCKED";
+    this.lastWorking = isWorking;
+    const mono = settings()?.font_family ?? "JetBrains Mono";
     const turn = Math.max(kAny?.turn ?? 0, aAny?.turn ?? 0, tel.turn ?? 0) || 1;
 
     // Session Title
@@ -678,7 +684,10 @@ export default class Sessions extends View {
     const cacheTok = tel.cacheTok || 0;
     const outTok = tel.outTok || 0;
     const totalTok = tel.totalCtx || (inTok + cacheTok);
-    const maxCtxNum = tel.maxCtx?.includes("k") ? parseInt(tel.maxCtx) * 1000 : 1000000;
+    const maxCtxStr = String(tel.maxCtx || "1M").trim();
+    const maxCtxNum = /m$/i.test(maxCtxStr) ? (parseFloat(maxCtxStr) || 1) * 1000000
+      : /k$/i.test(maxCtxStr) ? (parseFloat(maxCtxStr) || 200) * 1000
+      : (parseFloat(maxCtxStr) || 1000000);
     const pct = totalTok > 0 ? Math.min(100, Math.max(0.1, (totalTok / maxCtxNum) * 100)) : 0;
 
     // Token Breakdown from Telemetry (no artificial caps)
@@ -703,6 +712,7 @@ export default class Sessions extends View {
 
     const pal = paletteOf(t);
     const agColor = agentColorOf(tel.agent || curAgent?.agent, t);
+    const stateColor = isBlocked ? pal.red : isWorking ? pal.gold : pal.green;
 
     return v_flex().id("sessions-inspector").flex_1().min_h(0).p(10).gap(10).overflow_y_scrollbar()
       // 1. HERO CARD: Agent & Session Identity with Vector Icons
@@ -712,21 +722,21 @@ export default class Sessions extends View {
             .child(h_flex().items_center().gap(5).px(7).py(2).rounded(4).bg(t.background).border(1).border_color(t.border)
               .child(svg("mods/t3-sessions/icons/sparkles.svg").size(11).text_color(agColor).flex_none())
               .child(div().text_size(11).font_bold().text_color(agColor).child(tel.agentName || "Agent")))
-            .child(div().text_size(10.5).font_medium().text_color(t.dim).child(tel.model || "gemini-3.8-flash")))
+            .child(div().text_size(11).font_medium().text_color(t.dim).child(tel.model || "—")))
           .child(h_flex().gap(6).items_center()
-            .child(div().size(7).rounded_full().bg(isWorking ? pal.gold : pal.green))
-            .child(div().text_size(11).font_bold().text_color(isWorking ? pal.gold : pal.green).child(state))
+            .child(div().size(7).rounded_full().bg(stateColor))
+            .child(div().text_size(11).font_bold().text_color(stateColor).child(state))
             .child(h_flex().gap(3).items_center()
               .child(svg("mods/t3-sessions/icons/clock.svg").size(11).text_color(t.muted).flex_none())
-              .child(div().text_size(11).font_family("JetBrains Mono").text_color(t.muted).child(elapsedStr)))))
+              .child(div().text_size(11).font_family(mono).text_color(t.muted).child(elapsedStr)))))
         .child(div().w_full().text_size(13).font_bold().text_color(t.foreground).truncate().child(taskName))
-        .child(h_flex().w_full().justify_between().items_center().text_size(10.5).font_medium()
+        .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
           .child(h_flex().gap(6).items_center()
-            .child(div().px(5).py(1.5).rounded(3).bg(t.background).text_color(t.muted).child(`Turn ${turn}`))
-            .child(div().text_color(t.dim).child(`effort ${tel.effort || "high"}`)))
+            .child(div().px(5).py(1).rounded(4).bg(t.background).text_color(t.muted).child(`Turn ${turn}`))
+            .when(Boolean(tel.effort), (eEl) => eEl.child(div().text_color(t.dim).child(`effort ${tel.effort}`))))
           .child(h_flex().gap(6).items_center()
-            .child(div().font_family("JetBrains Mono").text_color(t.dim).child(`# ${tel.sessionId || "term"}`))
-            .child(div().font_bold().text_color(isWorking ? pal.gold : pal.green).child(isWorking ? "in-memory" : "saved")))))
+            .child(div().font_family(mono).text_color(t.dim).child(`# ${tel.sessionId || "—"}`))
+            .child(div().font_bold().text_color(stateColor).child(isWorking ? "in-memory" : "saved")))))
 
       // 2. WORKSPACE & GIT ENVIRONMENT (Always expanded)
       .child(v_flex().w_full().p(8).gap(6).rounded(6).bg(t.raised).border(1).border_color(t.border)
@@ -748,22 +758,22 @@ export default class Sessions extends View {
           .child(h_flex().gap(4).items_center()
             .child(svg("mods/t3-sessions/icons/database.svg").size(11).text_color(t.muted).flex_none())
             .child(div().text_color(t.muted).child("CWD")))
-          .child(div().max_w(170).truncate().text_color(t.dim).child(activeCwd || root || "—")))
+          .child(div().flex_1().min_w(0).text_right().truncate().text_color(t.dim).child(activeCwd || root || "—")))
         .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
           .child(div().text_color(t.muted).child("Session ID"))
-          .child(div().font_family("JetBrains Mono").font_bold().text_color(t.foreground).child(tel.sessionId || "term")))
+          .child(div().font_family(mono).font_bold().text_color(t.foreground).child(tel.sessionId || "—")))
         .child(h_flex().w_full().justify_between().items_center().text_size(11).font_medium()
           .child(div().text_color(t.muted).child("History"))
-          .child(div().text_color(t.foreground).child(`${turn} turns · ${tel.stepCount || 10} steps`)))
+          .child(div().text_color(t.foreground).child(`${turn} turns · ${tel.stepCount || 0} steps`)))
         .when(Boolean(tel.provider || tel.approvalPolicy || tel.sandboxPolicy), (el) => el.child(
           h_flex().w_full().justify_between().items_center().gap(8).text_size(11).font_medium()
             .child(div().flex_none().text_color(t.muted).child("Runtime"))
-            .child(div().min_w(0).truncate().font_family("JetBrains Mono").text_size(10.5).text_color(pal.cyan)
+            .child(div().min_w(0).truncate().font_family(mono).text_size(10.5).text_color(pal.cyan)
               .child([tel.provider, tel.approvalPolicy, tel.sandboxPolicy].filter(Boolean).join(" · ")))))
         .when(Array.isArray(tel.rulesLoaded) && tel.rulesLoaded.length > 0, (el) => el.child(
           h_flex().w_full().justify_between().items_center().gap(8).text_size(11).font_medium()
             .child(div().flex_none().text_color(t.muted).child("Rules"))
-            .child(div().min_w(0).truncate().font_family("JetBrains Mono").text_size(10.5).text_color(pal.purple)
+            .child(div().min_w(0).truncate().font_family(mono).text_size(10.5).text_color(pal.purple)
               .child(tel.rulesLoaded.join(" · "))))))
 
       // 3. 2x2 QUICK STATS HUD (Context & Session metrics)
@@ -898,14 +908,12 @@ export default class Sessions extends View {
             .children(displayedTools.map((tool) => {
               const isUsed = usedSet.has(tool.name);
               const chipColor = isUsed ? pal.green : (tool.type === "builtin" ? pal.cyan : pal.purple);
-              return h_flex().id(`tool-chip-${tool.name}`).items_center().gap(4).px(6).py(3).rounded(4)
+                return h_flex().id(`tool-chip-${tool.name}`).items_center().gap(4).px(6).py(3).rounded(4)
                 .bg(isUsed ? t.selected : t.background)
                 .border(1)
                 .border_color(isUsed ? pal.green : t.border)
-                .cursor_pointer()
-                .hover((s) => s.border_color(isUsed ? pal.green : (tool.type === "builtin" ? pal.cyan : pal.purple)).bg(t.hover))
                 .child(svg(isUsed ? "mods/t3-sessions/icons/check.svg" : (tool.type === "builtin" ? "mods/t3-sessions/icons/terminal.svg" : "mods/t3-sessions/icons/sparkles.svg")).size(10).text_color(chipColor).flex_none())
-                .child(div().text_size(10.5).font_family("JetBrains Mono")
+                .child(div().text_size(10.5).font_family(mono)
                   .when(isUsed, (d) => d.font_bold().text_color(pal.green))
                   .when(!isUsed, (d) => d.text_color(tool.type === "builtin" ? pal.cyan : t.foreground))
                   .child(tool.name))
@@ -926,23 +934,23 @@ export default class Sessions extends View {
             .when((tel.toolsErr || 0) > 0, (el) => el.child(
               div().px(5).py(1).rounded(3).bg(pal.red + "26").font_bold().text_color(pal.red).child(`${tel.toolsErr} err`)))
             .when(Boolean(tel.avgToolMs), (el) => el.child(
-              div().px(5).py(1).rounded(3).bg(t.background).font_family("JetBrains Mono").text_color(t.dim).child(`avg ${tel.avgToolMs}`)))
+              div().px(5).py(1).rounded(4).bg(t.background).font_family(mono).text_color(t.dim).child(`avg ${tel.avgToolMs}`)))
             .child(div().text_size(11).font_medium().text_color(t.muted)
               .child(this.activityOpen ? "▾ 收起" : "▸ 展开"))))
         .when(this.activityOpen, (el) => el.child(v_flex().w_full().gap(6).pt(2)
           .children((tel.recentTools || []).map((tool, idx) => {
             const isOk = tool.status === "ok";
             const stColor = isOk ? pal.green : pal.gold;
-            return v_flex().id(`tool-${idx}`).w_full().gap(2).py(5).px(7).rounded(5).bg(t.background).border(1).border_color(t.border)
+            return v_flex().id(`tool-${idx}`).w_full().gap(2).py(5).px(7).rounded(6).bg(t.background).border(1).border_color(t.border)
               .child(h_flex().w_full().justify_between().items_center().gap(6)
                 .child(h_flex().gap(6).items_center().min_w(0).flex_1()
                   .child(div().size(6).flex_none().rounded_full().bg(stColor))
                   .child(div().text_size(11).font_bold().text_color(t.foreground).truncate().child(tool.name)))
-                .child(h_flex().gap(6).items_center().flex_none().font_family("JetBrains Mono").text_size(10)
+                .child(h_flex().gap(6).items_center().flex_none().font_family(mono).text_size(10)
                   .when(Boolean(tool.time), (el2) => el2.child(div().text_color(t.dim).child(tool.time)))
-                  .child(div().px(4).py(0.5).rounded(3).bg(t.raised).text_color(stColor).child(tool.ms || "—"))))
+                  .child(div().px(4).py(0.5).rounded(4).bg(t.raised).text_color(stColor).child(tool.ms || "—"))))
               .when(Boolean(tool.detail), (el2) => el2.child(
-                div().pl(12).text_size(10).font_family("JetBrains Mono").text_color(t.dim).truncate().child(tool.detail)));
+                div().pl(12).text_size(10).font_family(mono).text_color(t.dim).truncate().child(tool.detail)));
           }))
           .when((tel.recentTools?.length || 0) === 0, (el2) => el2.child(
             div().py(4).text_size(11).text_color(t.dim).child("等待工具调用 / 暂无活动记录")))
@@ -1079,7 +1087,7 @@ export default class Sessions extends View {
           .children(groups.map((group) =>
             v_flex().w_full().gap(4)
               .child(this.historySectionHeader(group.label, group.items.length, t))
-              .children(group.items.map((s, i) => this.row(s, i, t, short, root)))
+              .children(group.items.map((s, i) => this.row(s, `${group.id}-${i}`, t, short, root)))
           ))
       ))
 
@@ -1120,7 +1128,7 @@ export default class Sessions extends View {
       return np && h && np.startsWith(h) ? "~" + np.slice(h.length) : p ?? "";
     };
 
-    return v_flex().id("t3-sessions").size_full().min_h(0).bg(t.background).text_color(t.foreground).text_size(13)
+    return v_flex().id("t3-sessions").size_full().min_h(0).text_color(t.foreground).text_size(13)
       // Top Mode Switch Toolbar
       .child(h_flex().id("t3-sessions-toolbar").h(40).flex_none().px(10).gap(8).items_center().border_b(1).border_color(t.border)
         .child(h_flex().gap(3).p(2).rounded(6).bg(t.raised)
@@ -1140,13 +1148,7 @@ export default class Sessions extends View {
         .when(this.viewMode === "inspector", (el) => el.child(
           h_flex().gap(4).items_center().text_size(10.5).font_medium().text_color(paletteOf(t).green)
             .child(div().size(6).rounded_full().bg(paletteOf(t).green))
-            .child("LIVE")))
-        .when(this.viewMode === "history", (el) => el
-          .child(div().id("sess-root").max_w(160).truncate().text_size(11).cursor_pointer()
-            .text_color(this.showAll ? t.accent : t.dim)
-            .hover((s) => s.text_color(t.accent))
-            .on_click((_e, cx) => { this.showAll = !this.showAll; cx.notify(); })
-            .child(this.showAll ? "🌐 全局模式" : (short(root) ? "📂 " + short(root) : "当前项目")))))
+            .child("LIVE"))))
 
       .child(this.viewMode === "inspector" ? this.renderInspector(t, short, root) : this.renderHistory(t, short, root));
   }

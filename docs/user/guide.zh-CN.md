@@ -39,26 +39,26 @@
 
 ## 快捷键
 
-布局自带的，写在 `keys.json` 的 `layout:herdr-t3` 里（安装时会合并进去）。仓库同时提供了 macOS 键（`cmd-`）与 Windows 常用键（`ctrl-` / `alt-`），包括关闭确认（`ctrl-w` / `ctrl-shift-w`）、切换侧栏（`ctrl-shift-b`）、Settle（`ctrl-shift-s`）、跳转（`ctrl-p`）和序号不算 Home 的 space 切换（`alt-1…9`）。
+布局自带的，写在 `keys.json` 的 `layout:herdr-t3` 里（安装时会合并进去）。仓库同时提供了 macOS 键（`cmd-`）与不与终端原生控制键冲突的 Windows/Linux 键（`ctrl-shift-` / `alt-`），包括关闭确认（`ctrl-shift-w` / `ctrl-shift-x`）、切换侧栏（`ctrl-shift-b`）、Settle（`ctrl-shift-s`）、跳转（`ctrl-shift-p`）、新建标签（`ctrl-shift-t`）、切换 Agent（`ctrl-shift-]` / `ctrl-shift-[`）和序号不算 Home 的 space 切换（`alt-1…9`）。
 
 | 快捷键 | 命令 | 作用 |
 | --- | --- | --- |
-| `cmd-shift-b` | `t3-tabs.sidebar` | 侧栏在 Lists 和 Inbox 之间切换 |
-| `cmd-shift-s` | `t3-tabs.settle` | Settle 当前查看的 agent 并回到 Home，已 Settle 的则取回。选中 Inbox 时能用，显示或隐藏都一样；Lists 里不起作用。忙着的不动，置顶的会取消置顶 |
-| `cmd-shift-h` | `t3-tabs.home` | 回到 Home |
-| `cmd-shift-,` | `t3-tabs.settings` | 打开布局的设置 |
-| `cmd-alt-b` | `t3-tabs.panel` | 打开 space 面板并停在上次的页面，或关闭它 |
-| `cmd-shift-g` | `t3-tabs.review` | 打开面板并切到 Review；已在显示 Review 就关闭面板。需装 Review 扩展 |
-| 键盘在面板里时 `cmd-w`、`ctrl-alt-shift-x` | `t3-files.close`、`review.close` | 关闭面板，而不是后面的标签 |
-| `cmd-t`、`ctrl-alt-c` | `t3-tabs.new` | 在当前位置新建标签；在 Home 时打开新建菜单，先选 space |
-| `ctrl-1…9`、`ctrl-alt-shift-1…9` | `t3-tabs.space:<n>` | 第 n 个 space，不算 Home |
+| `cmd-shift-b` / `ctrl-shift-b` | `t3-tabs.sidebar` | 侧栏在 Lists 和 Inbox 之间切换 |
+| `cmd-shift-s` / `ctrl-shift-s` | `t3-tabs.settle` | Settle 当前查看的 agent 并回到 Home，已 Settle 的则取回。选中 Inbox 时能用，显示或隐藏都一样；Lists 里不起作用。忙着的不动，置顶的会取消置顶 |
+| `cmd-shift-h` / `ctrl-shift-h` | `t3-tabs.home` | 回到 Home |
+| `cmd-shift-,` / `ctrl-shift-,` | `t3-tabs.settings` | 打开布局的设置 |
+| `cmd-alt-b` / `ctrl-alt-b` | `t3-tabs.panel` | 打开 space 面板并停在上次的页面，或关闭它 |
+| `cmd-shift-g` / `ctrl-shift-g` | `t3-tabs.review` | 打开面板并切到 Review；已在显示 Review 就关闭面板。需装 Review 扩展 |
+| 键盘在面板里时 `cmd-w`、`ctrl-shift-w`、`ctrl-alt-shift-x` | `t3-files.close`、`review.close`、`t3-tabs.panel-close` | 关闭面板，而不是后面的标签 |
+| `cmd-t`、`ctrl-shift-t`、`ctrl-alt-c` | `t3-tabs.new` | 在当前位置新建标签；在 Home 时打开新建菜单，先选 space |
+| `ctrl-1…9`、`alt-1…9`、`ctrl-alt-shift-1…9` | `t3-tabs.space:<n>` | 第 n 个 space，不算 Home |
 | `cmd-alt-]` / `cmd-alt-[`、`ctrl-alt-shift-]` / `ctrl-alt-shift-[` | `t3-tabs.space-next` / `t3-tabs.space-prev` | 下一个或上一个 space，跳过 Home |
 | `cmd-1…9`、`ctrl-alt-1…9` | `t3-tabs.tab:<n>` | 标签栏显示的第 n 个标签 |
 | `cmd-shift-]` / `cmd-shift-[`、`ctrl-tab` / `ctrl-shift-tab`、`ctrl-alt-]` / `ctrl-alt-[` | `t3-tabs.tab-next` / `t3-tabs.tab-prev` | 标签栏显示的下一个或上一个标签 |
-| `cmd-p` | `mod.open:t3-picker` | 按名字或程序跳到任一窗格，或回到上一处（和 Inbox 顶栏的 Search 相同） |
-| `cmd-]` / `cmd-[` | `t3-tabs.next` / `t3-tabs.prev` | 下一个或上一个顶层 agent，按选中侧栏的顺序走，到两端停住，显示或隐藏都一样。Inbox 走它画出来的行（折叠的 shelf 只算当前查看的那一行）；Lists 也走折叠的组 |
-| `cmd-w`、`ctrl-alt-shift-x` | `t3-tabs.close-tab` | 关闭标签，里面有程序在运行时先确认 |
-| `cmd-shift-w`、`ctrl-alt-x` | `t3-tabs.close-pane` | 关闭窗格，里面有程序在运行时先确认 |
+| `cmd-p`、`ctrl-shift-p` | `mod.open:t3-picker` | 按名字、分支或程序跳到任一窗格，或回到上一处（和 Inbox 顶栏的 Search 相同） |
+| `cmd-]` / `cmd-[`、`ctrl-shift-]` / `ctrl-shift-[` | `t3-tabs.next` / `t3-tabs.prev` | 下一个或上一个顶层 agent，按选中侧栏的顺序走，到两端停住，显示或隐藏都一样。Inbox 走它画出来的行（折叠的 shelf 只算当前查看的那一行）；Lists 也走折叠的组 |
+| `cmd-w`、`ctrl-shift-w`、`ctrl-alt-shift-x` | `t3-tabs.close-tab` | 关闭标签，里面有程序在运行时先确认 |
+| `cmd-shift-w`、`ctrl-shift-x`、`ctrl-alt-x` | `t3-tabs.close-pane` | 关闭窗格，里面有程序在运行时先确认 |
 
 有对话框或弹窗开着时（Go to、New、菜单、Settings、命令面板、Actions 编辑器等），这几个关闭标签和窗格的键改为关掉它，和 Herdr 自带布局一样（`keys.json` 里的 `mod:…` 分区）。
 

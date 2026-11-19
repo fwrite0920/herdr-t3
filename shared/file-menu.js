@@ -40,17 +40,26 @@ export function runCommon(id, { abs, rel, agent, platform }, cx) {
   if (id === "copy-path") cx.write_to_clipboard(abs);
   else if (id === "copy-relative") cx.write_to_clipboard(rel);
   else if (id === "cd-terminal") {
-    const f = focused();
-    const term = f?.terminal || panes().find((p) => p.tab === f?.tab && p.terminal)?.terminal;
+    const f = focused(), ps = panes(), sp = spaces().find((s) => s.active);
+    const activeTab = sp?.tabs?.find((c) => c.active) ?? sp?.tabs?.[0];
+    const tabPanes = activeTab ? ps.filter((p) => p.tab === activeTab.id && p.terminal) : [];
+    const term = f?.terminal
+      || ps.find((p) => p.tab === f?.tab && p.terminal)?.terminal
+      || (tabPanes.find((p) => p.focused) ?? tabPanes[0])?.terminal
+      || ps.find((p) => (sp?.tabs ?? []).some((c) => c.id === p.tab) && p.terminal)?.terminal;
     if (term) {
       const q = abs.replace(/\\/g, "/");
       exec("hc", ["send", term, `cd "${q}"`]).catch(() => null);
+    } else {
+      notify({ title: "No terminal in active space", level: "warning" });
     }
   }
   else if (id === "favorite") {
+    const norm = (p) => (p ? p.replace(/\\/g, "/").replace(/\/+$/, "") : "");
+    const keyOf = (p) => (platform === "windows" ? norm(p).toLowerCase() : norm(p));
     const name = abs.split(/[\\/]/).filter(Boolean).pop() ?? abs;
     const all = shared("t3.favorites") ?? shared("hs.favorites") ?? [];
-    if (!all.some((x) => x.folder === abs)) {
+    if (!all.some((x) => keyOf(x.folder) === keyOf(abs) && (x.machine ?? null) === null)) {
       const updated = [...all, { name, folder: abs, machine: null }];
       setShared("t3.favorites", updated);
       setShared("hs.favorites", updated);

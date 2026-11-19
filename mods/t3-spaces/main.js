@@ -7,7 +7,7 @@ import { View, div, svg } from "gpui-kit";
 import { foldArrow, planMotion, flying, leavingRows } from "./motion.js";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, machines, panes, agents, terminals, focused, run, openOverlay, exec, hc, theme, shared, setShared, watchFolder, window, props, layout, nextCommand } from "herdr";
-import { ownStatus, subAgents, treeStatus } from "./tree.js";
+import { notNews, ownStatus, subAgents, treeStatus } from "./tree.js";
 import { projectMark, tint } from "./project.js";
 import { repoFacts } from "./repos.js";
 import { dragGone, glow, hoverKept, tip, tipMark, POINTER_WATCH, pointerMoved } from "./tip.js";
@@ -386,7 +386,10 @@ export default class Spaces extends View {
     const list = agents(), all = terminals(), under = subAgents(list, all);
     const spaceStatuses = list
       .filter((a) => a.space === w.id)
-      .map((a) => treeStatus(ownStatus(a.status, a.address, all), under(a.address)));
+      .map((a) => {
+        const own = ownStatus(a.status, a.address, all), kids = under(a.address), s = treeStatus(own, kids);
+        return s === "done" && notNews(all.find((k) => k.address === a.address), own, kids) ? "idle" : s;
+      });
     const spaceStatus = spaceStatuses.includes("blocked") ? "blocked"
       : spaceStatuses.includes("working") ? "working"
       : spaceStatuses.includes("done") ? "done"
@@ -417,7 +420,7 @@ export default class Spaces extends View {
           .when(Boolean(tree), el => el.pl(20).child(h_flex().size(16).flex_none().items_center().justify_center()
             .child(svg("mods/t3-spaces/icons/git-branch.svg").size(16).text_color(t.dim))))
           .when(!tree, el => el.child(projectMark(w, 16, t, ps)))
-          .child(div().min_w(0).max_w(150).truncate().font_medium().text_color(t.foreground + "e6").child(w.name))
+          .child(div().min_w(0).truncate().font_medium().text_color(t.foreground + "e6").child(w.name))
           .child(g ? this.gitTail(g, tree, w.name, t, w.id, ghost) : div().flex_1())
           .when(Boolean(statusDot), (el) => el.child(statusDot))
           .when(kids > 0, el => el.child(this.foldButton(t, foldId, g.repo, hiding, ghost))),

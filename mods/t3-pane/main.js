@@ -63,7 +63,13 @@ function left(ms, now) {
 function folder(cwd) {
   if (!cwd) return "";
   const h = home();
-  return cwd === h ? "~" : cwd.startsWith(h + "/") ? "~" + cwd.slice(h.length) : cwd;
+  if (!h) return cwd;
+  const norm = (p) => p.replace(/\\/g, "/").replace(/\/+$/, "");
+  const nc = norm(cwd), nh = norm(h);
+  const eq = nc.toLowerCase() === nh.toLowerCase();
+  if (eq) return "~";
+  if (nc.toLowerCase().startsWith(nh.toLowerCase() + "/")) return "~" + nc.slice(nh.length);
+  return cwd;
 }
 
 
@@ -189,7 +195,7 @@ export default class Pane extends View {
         this.hot = null; // The list covers it, before the pointer can report leaving it.
         // Hung from the button, right edges together, as the agents list's sort menu; no press (the keyboard), the app's default.
         openOverlay({ mod: "t3-pane", kind: "popup", width: KIDS_WIDTH,
-          ...(b ? { at: { x: b.x + b.width - KIDS_WIDTH * z, y: b.y + b.height + 4 * z } } : {}), props: { kids: terminal } });
+          ...(b ? { at: { x: Math.max(8 * z, b.x + b.width - KIDS_WIDTH * z), y: b.y + b.height + 4 * z } } : {}), props: { kids: terminal } });
         cx.notify();
       })
       .child(svg("mods/t3-pane/icons/chevron-down.svg").size(14).flex_none()), radiusOf("xs")));
@@ -278,14 +284,17 @@ export default class Pane extends View {
       .on_mouse_down("right", (_e, cx) => openMenu(this, "pane", { pane, terminal: p.terminal }, cx))
       .when(!crumbed, el => el.child(div().id(`ph-icon-${pane}`).size(16).mr(-4).flex_none().flex().items_center().justify_center().when(quiet, (el) => el.opacity(0.5)).when(Boolean(pic), (el) => el.child(pic))))
       .when(Boolean(name), (el) => el.child(div().id(`ph-name-${pane}`).min_w(0).truncate().font_medium().text_color(p.focused ? t.foreground : t.muted).when(quiet, (e) => e.opacity(0.5)).child(name)))
-      .child(div().relative().flex_1().min_w(0).h_full().when(!crumbed, el => el.ml(6)).flex().items_center()
+      .child(div().relative().flex_1().min_w(0).h_full().overflow_hidden().when(!crumbed, el => el.ml(6)).flex().items_center()
         .child(div().id(`ph-folder-${pane}`).flex_1().min_w(0).truncate().pr(12).text_color(crumbed ? (p.focused ? t.foreground : t.muted) : t.muted).when(quiet, (el) => el.opacity(0.5)).child(folder(p.cwd)))
         // Over the folder's end, so hovering moves nothing else, as in the agents list and the inbox.
         .when(this.hovered || within(this, [head, ...tools]), el => el.child(h_flex().absolute().top(0).bottom(0).right(0).pl(12).flex_none().gap(4).items_center().bg(t.background)
-          .child(this.button(t, `ph-r-${pane}`, "mods/t3-pane/icons/square-split-horizontal.svg", "Split right", () => run("pane.split", { direction: "right", pane }), "pane.split:right"))
-          .child(this.button(t, `ph-d-${pane}`, "mods/t3-pane/icons/square-split-vertical.svg", "Split down", () => run("pane.split", { direction: "down", pane }), "pane.split:down"))
-          .child(this.button(t, `ph-z-${pane}`, `mods/t3-pane/icons/${p.zoomed ? "minimize-2" : "maximize-2"}.svg`, p.zoomed ? "Unzoom pane" : "Zoom pane", () => run("pane.zoom", { pane }), "pane.zoom"))
+          .child(this.button(t, `ph-r-${pane}`, "mods/t3-pane/icons/square-split-horizontal.svg", "Split right", () => { this.hot = null; this.box = null; run("pane.split", { direction: "right", pane }); }, "pane.split:right"))
+          .child(this.button(t, `ph-d-${pane}`, "mods/t3-pane/icons/square-split-vertical.svg", "Split down", () => { this.hot = null; this.box = null; run("pane.split", { direction: "down", pane }); }, "pane.split:down"))
+          .child(this.button(t, `ph-z-${pane}`, `mods/t3-pane/icons/${p.zoomed ? "minimize-2" : "maximize-2"}.svg`, p.zoomed ? "Unzoom pane" : "Zoom pane", () => { this.hot = null; this.box = null; run("pane.zoom", { pane }); }, "pane.zoom"))
           .child(this.button(t, `ph-x-${pane}`, "mods/t3-pane/icons/x.svg", "Close pane", () => { this.hot = null; run(`t3-tabs.close-pane:${pane}`); }, "pane.close")))))
+      // Keep Unzoom visible persistently when zoomed and unhovered so hidden split panes aren't forgotten.
+      .when(Boolean(p.zoomed) && !(this.hovered || within(this, [head, ...tools])), el => el.child(
+        this.button(t, `ph-z-${pane}`, "mods/t3-pane/icons/minimize-2.svg", "Unzoom pane", () => { this.hot = null; this.box = null; run("pane.zoom", { pane }); }, "pane.zoom")))
       .when(Boolean(p.terminal && kids.length), (el) => el.child(this.kidsButton(t, pane, p.terminal)))
       .when(st === "working", el => el.child(slot(tipMark(this, t, `ph-mark-${pane}`, "Working", svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))))
       // The same marks as the agents list and tabs.

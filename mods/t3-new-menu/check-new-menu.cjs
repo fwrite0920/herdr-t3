@@ -65,7 +65,7 @@ assert.deepEqual(take(), [["tab.new", { space: "a", folder: "/home/me/a" }]]);
 // A row's number reads as the platform names the key that picks it.
 assert.ok(text(find(list(m), "space:a")).includes("⌘3"));
 platform = "linux";
-assert.ok(text(find(list(open()), "space:a")).includes("Super+3"), "not a Mac's ⌘ elsewhere");
+assert.ok(text(find(list(open()), "space:a")).includes("Ctrl+3"), "not a Mac's ⌘ elsewhere");
 platform = "macos";
 
 // New work doesn't start in Home, shown or not.

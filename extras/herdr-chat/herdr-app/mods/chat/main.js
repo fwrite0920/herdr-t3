@@ -149,8 +149,8 @@ export default class HerdrChat extends View {
     // Data, not animation: where the host pane is, a TUI that finished, a
     // dialog's countdown. Cheap when nothing changed (no notify).
     cx.timer.every(400, (cx) => this.tick(cx));
-    this.composer.focus();
-    cx.timer.after(400, () => this.composer.focus());
+    this.focusInput();
+    cx.timer.after(400, () => this.focusInput());
     // The right-click menu's Open as a chat tab (chat-menu): straight on to the tab.
     if (this.peekMode && p.then === "tab") this.openAsTab(cx);
   }
@@ -759,15 +759,15 @@ export default class HerdrChat extends View {
     // A text dialog takes the keyboard; a permission or questions card leaves
     // it in the composer (number keys, Enter and Esc answer while it's empty).
     const typed = s.dialog?.method === "input" || s.dialog?.method === "editor";
-    if (this.dialog.sync(s.dialog) && this.dialog.field && typed) this.dialog.field.focus();
-    if (!s.dialog && this.dialogFocusBack) this.composer.focus();
+    if (this.dialog.sync(s.dialog) && this.dialog.field && typed) this.focusInput();
+    if (!s.dialog && this.dialogFocusBack) this.focusInput();
     this.composer.dialogKeys = s.dialog?.method === "select" || s.dialog?.method === "confirm";
     this.composer.askKeys = s.dialog?.method === "permission" || s.dialog?.method === "questions";
     this.dialogFocusBack = Boolean(this.dialog.field) && typed;
     if (s.editorText != null && s.editorText !== this.editorAcked) {
       this.editorAcked = s.editorText;
       this.composer.set(s.editorText);
-      this.composer.focus();
+      this.focusInput();
       this.req("ack_editor_text", {}, cx);
     } else if (s.editorText == null) this.editorAcked = null;
     if (this.composer.menu?.kind === "slash") this.updateMenu(cx);
@@ -833,10 +833,23 @@ export default class HerdrChat extends View {
         return;
       }
     }
+    // Preserve draft & image chips until send succeeds so disconnected/reconnecting sends never wipe user input.
+    const savedValue = this.composer.value;
+    const savedChips = [...this.composer.chips];
     this.composer.clear();
     this.timeline.toBottom();
-    this.fire("send", { text, ...(images.length ? { images } : {}), mode }, cx, (d) => {
-      this.lastSend = { text, disposition: d?.disposition ?? null, at: Date.now() };
+    cx.spawn(async (cx) => {
+      try {
+        const d = await this.req("send", { text, ...(images.length ? { images } : {}), mode }, cx);
+        this.lastSend = { text, disposition: d?.disposition ?? null, at: Date.now() };
+      } catch (e) {
+        if (!this.composer.value && !this.composer.chips.length) {
+          this.composer.set(savedValue);
+          this.composer.chips = savedChips;
+        }
+        this.flash(`send: ${message(e)}`, cx);
+      }
+      cx.notify();
     });
   }
 
@@ -1429,7 +1442,7 @@ export default class HerdrChat extends View {
   // A file a tool touched, in an editor (files.js).
   openFile(path, line, cx) {
     const me = this.myPane();
-    const abs = path.startsWith("/") ? path : `${this.cwd ?? this.store.state.cwd}/${path}`;
+    const abs = path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path) ? path : `${this.cwd ?? this.store.state.cwd}/${path}`;
     this.lastOpen = { path: abs, line, at: Date.now(), how: null };
     cx.spawn(async (cx) => {
       try {
@@ -2131,7 +2144,7 @@ export default class HerdrChat extends View {
         .when(!this.timeline.sticky, (e) => e.child(div().absolute().top(-14).left(0).right(0).flex().justify_center()
           .child(h_flex().id("latest").h(26).px(11).gap(6).items_center()
             .rounded(13).bg(t.popover).border_1().border_color(t.input).text_size(12).text_color(t.foreground).cursor_pointer().shadow_md()
-            .hover((x) => x.bg(t.hover)).on_click((_e, cx) => this.control("latest", cx))
+            .hover((x) => x.bg(alpha(t.foreground, 0.07))).on_click((_e, cx) => this.control("latest", cx))
             .child(icon("arrow-down", 12)).child("Latest"))))));
   }
 
@@ -2153,8 +2166,10 @@ export default class HerdrChat extends View {
       try {
         const d = await this.req("history", { before, limit: 100 }, cx);
         const older = d?.items ?? [];
-        this.timeline.prepended(older);
+        const rowsBefore = new Set(buildRows(this.store.items, { working: this.store.state.phase === "working", hasDialog: Boolean(this.store.state.dialog) }).map((r) => r.id));
         this.store.prepend(older, d?.hasOlder);
+        const rowsAfter = buildRows(this.store.items, { working: this.store.state.phase === "working", hasDialog: Boolean(this.store.state.dialog) });
+        this.timeline.prepended(rowsAfter.filter((r) => !rowsBefore.has(r.id)));
       } catch (e) {
         this.flash(`history: ${message(e)}`, cx);
       } finally {

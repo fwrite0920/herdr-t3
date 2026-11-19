@@ -11,6 +11,7 @@ export function step(e, at, n) {
 // A menu with no search field, as T3's Base UI menus: ↑/↓, Home, End, and typing a row's first letters (750ms apart at most);
 // the same letter again steps through the rows it starts. The row to move to, or -1 for any other key.
 export function menuJump(view, e, labels, at) {
+  if (!labels.length) return -1;
   const moved = step(e, at, labels.length);
   if (moved >= 0) return moved;
   if (e.key === "home") return 0;
@@ -59,7 +60,7 @@ export function scrollList(view, id, { count, row, at = -1, height, draw, wheele
       const from = view.scrollTop[id], next = Math.max(0, Math.min(from - e.delta.y / (Number(settings()?.zoom) || 1), max));
       if (next === from) return;
       view.scrollTop = { ...view.scrollTop, [id]: next };
-      wheeled(at < 0 ? -1 : Math.min(Math.max(at, Math.ceil(next / row)), Math.floor((next + seen) / row) - 1), cx);
+      wheeled?.(at < 0 ? -1 : Math.min(Math.max(at, Math.ceil(next / row)), Math.floor((next + seen) / row) - 1), cx);
       cx.notify();
     })
     .children(rows);

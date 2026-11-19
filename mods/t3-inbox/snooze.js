@@ -249,9 +249,10 @@ export function snoozeButton(view, t, a, { now, offer: napOffer, delay }, pick) 
       cx.notify();
     })
     .trigger(h_flex().id(napId).h(20).px(6).flex_none().items_center().justify_center().rounded(6)
-      .opacity(napOffer ? 1 : 0).transition("opacity", MOTION).on_hover(glow(view, napId))
-      .on_mouse_down("left", (e) => { view.napRight = e.bounds ? (e.bounds.x + e.bounds.width) / zoom : null; })
-      .role("button").accessibility_label("Snooze agent")
+      .opacity(napOffer ? 1 : 0).transition("opacity", MOTION)
+      .when(napOffer, (el) => el.cursor_pointer().on_hover(glow(view, napId))
+        .on_mouse_down("left", (e) => { view.napRight = e.bounds ? (e.bounds.x + e.bounds.width) / zoom : null; })
+        .role("button").accessibility_label("Snooze agent"))
       .child(svg("mods/t3-inbox/icons/clock.svg").size(12).flex_none().text_color(menu ? t.foreground : lit(napId, t.muted)))
       .when(napOffer, (el) => stop(view, t, napId, el, 6)))
     .when(menu, (el) => {

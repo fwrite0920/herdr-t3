@@ -6,7 +6,7 @@
     "cmd-shift-s": "t3-tabs.settle",
     "cmd-p": "mod.open:t3-picker",
     "cmd-i": "new-chat.open",
-    "ctrl-i": "new-chat.open",
+    "ctrl-shift-i": "new-chat.open",
     "cmd-]": "t3-tabs.next",
     "cmd-[": "t3-tabs.prev",
     "cmd-w": "t3-tabs.close-tab",
@@ -65,14 +65,13 @@
     "cmd-shift-,": "t3-tabs.settings",
     "ctrl-shift-b": "t3-tabs.sidebar",
     "ctrl-shift-s": "t3-tabs.settle",
-    "ctrl-p": "mod.open:t3-picker",
-    "ctrl-]": "t3-tabs.next",
-    "ctrl-[": "t3-tabs.prev",
-    "ctrl-w": "t3-tabs.close-tab",
-    "ctrl-shift-w": "t3-tabs.close-pane",
+    "ctrl-shift-p": "mod.open:t3-picker",
+    "ctrl-shift-]": "t3-tabs.next",
+    "ctrl-shift-[": "t3-tabs.prev",
+    "ctrl-shift-w": "t3-tabs.close-tab",
     "ctrl-shift-x": "t3-tabs.close-pane",
     "ctrl-shift-h": "t3-tabs.home",
-    "ctrl-t": "t3-tabs.new",
+    "ctrl-shift-t": "t3-tabs.new",
     "ctrl-alt-b": "t3-tabs.panel",
     "ctrl-shift-g": "t3-tabs.review",
     "ctrl-shift-,": "t3-tabs.settings",
@@ -93,7 +92,6 @@
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   },
@@ -102,7 +100,6 @@
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   },
@@ -111,7 +108,6 @@
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   },
@@ -120,7 +116,6 @@
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   },
@@ -129,7 +124,6 @@
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   },
@@ -138,7 +132,6 @@
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   },
@@ -147,7 +140,6 @@
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   },
@@ -156,7 +148,6 @@
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   },
@@ -165,7 +156,6 @@
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   },
@@ -174,7 +164,6 @@
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   },
@@ -183,7 +172,6 @@
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   },
@@ -192,7 +180,6 @@
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   },
@@ -201,7 +188,6 @@
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   },
@@ -210,7 +196,6 @@
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   },
@@ -219,7 +204,6 @@
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   },
@@ -228,28 +212,78 @@
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   },
   "mod:t3-files": {
     "cmd-w": "t3-files.close",
     "ctrl-alt-shift-x": "t3-files.close",
-    "ctrl-w": "t3-files.close",
-    "ctrl-shift-w": "t3-files.close"
+    "cmd-shift-w": "t3-files.close",
+    "ctrl-alt-x": "t3-files.close",
+    "ctrl-shift-w": "t3-files.close",
+    "ctrl-shift-x": "t3-files.close"
+  },
+  "mod:t3-sessions": {
+    "cmd-w": "t3-tabs.panel-close",
+    "ctrl-alt-shift-x": "t3-tabs.panel-close",
+    "cmd-shift-w": "t3-tabs.panel-close",
+    "ctrl-alt-x": "t3-tabs.panel-close",
+    "ctrl-shift-w": "t3-tabs.panel-close",
+    "ctrl-shift-x": "t3-tabs.panel-close"
+  },
+  "mod:t3-favorites": {
+    "cmd-w": "t3-tabs.panel-close",
+    "ctrl-alt-shift-x": "t3-tabs.panel-close",
+    "cmd-shift-w": "t3-tabs.panel-close",
+    "ctrl-alt-x": "t3-tabs.panel-close",
+    "ctrl-shift-w": "t3-tabs.panel-close",
+    "ctrl-shift-x": "t3-tabs.panel-close"
+  },
+  "mod:t3-changes": {
+    "cmd-w": "t3-tabs.panel-close",
+    "ctrl-alt-shift-x": "t3-tabs.panel-close",
+    "cmd-shift-w": "t3-tabs.panel-close",
+    "ctrl-alt-x": "t3-tabs.panel-close",
+    "ctrl-shift-w": "t3-tabs.panel-close",
+    "ctrl-shift-x": "t3-tabs.panel-close"
+  },
+  "mod:t3-tools": {
+    "cmd-w": "t3-tabs.panel-close",
+    "ctrl-alt-shift-x": "t3-tabs.panel-close",
+    "cmd-shift-w": "t3-tabs.panel-close",
+    "ctrl-alt-x": "t3-tabs.panel-close",
+    "ctrl-shift-w": "t3-tabs.panel-close",
+    "ctrl-shift-x": "t3-tabs.panel-close"
+  },
+  "mod:t3-todos": {
+    "cmd-w": "t3-tabs.panel-close",
+    "ctrl-alt-shift-x": "t3-tabs.panel-close",
+    "cmd-shift-w": "t3-tabs.panel-close",
+    "ctrl-alt-x": "t3-tabs.panel-close",
+    "ctrl-shift-w": "t3-tabs.panel-close",
+    "ctrl-shift-x": "t3-tabs.panel-close"
   },
   "mod:review": {
     "cmd-w": "review.close",
     "ctrl-alt-shift-x": "review.close",
-    "ctrl-w": "review.close",
-    "ctrl-shift-w": "review.close"
+    "cmd-shift-w": "review.close",
+    "ctrl-alt-x": "review.close",
+    "ctrl-shift-w": "review.close",
+    "ctrl-shift-x": "review.close"
   },
   "mod:new-chat": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",
     "ctrl-alt-x": "overlay.close",
-    "ctrl-w": "overlay.close",
+    "ctrl-shift-w": "overlay.close",
+    "ctrl-shift-x": "overlay.close"
+  },
+  "mod:chat": {
+    "cmd-w": "overlay.close",
+    "ctrl-alt-shift-x": "overlay.close",
+    "cmd-shift-w": "overlay.close",
+    "ctrl-alt-x": "overlay.close",
     "ctrl-shift-w": "overlay.close",
     "ctrl-shift-x": "overlay.close"
   }

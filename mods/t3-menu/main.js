@@ -11,7 +11,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { run, props, closeOverlay, openOverlay, theme, keys, terminals, agents, spaces, panes, exec, setShared, shared, layout, settings } from "herdr";
+import { run, props, closeOverlay, openOverlay, theme, keys, terminals, agents, spaces, panes, exec, setShared, shared, layout, settings, window } from "herdr";
 import { menuJump } from "./list.js";
 import { subPlace, hoverRow, subOpened, subLeft } from "./submenu.js";
 import { placeOf } from "./project.js";
@@ -187,13 +187,32 @@ function menuIcon(command, label, args) {
   return `mods/workspace-chrome/${name}.svg`;
 }
 
-// The key bound to a command, for the hint on the right.
+// The key bound to a command, for the hint on the right (platform-aware and human-formatted).
+function formatStroke(strokes) {
+  if (!strokes?.trim()) return "";
+  const mac = (typeof window === "function" ? window()?.platform : undefined) === "macos";
+  const names = mac ? { ctrl: "⌃", alt: "⌥", shift: "⇧", cmd: "⌘", fn: "fn" } : { ctrl: "Ctrl", alt: "Alt", shift: "Shift", cmd: "Super", fn: "Fn" };
+  const alias = { secondary: mac ? "cmd" : "ctrl", super: "cmd", win: "cmd" };
+  return strokes.trim().split(/\s+/).map((stroke) => {
+    const parts = stroke.split("-");
+    let key = parts.pop();
+    if (key === "") { key = "-"; parts.pop(); }
+    const held = new Set(parts.map((m) => alias[m.toLowerCase()] ?? m.toLowerCase()));
+    if (/^[A-Z]$/.test(key)) held.add("shift");
+    const label = key.length === 1 ? key.toUpperCase() : key[0].toUpperCase() + key.slice(1).toLowerCase();
+    return [...Object.keys(names).filter((m) => held.has(m)).map((m) => names[m]), label].join(mac ? "" : "+");
+  }).join(" ");
+}
+
 function shortcut(name, args) {
   // `pane.split:right` binds pane.split with { direction: "right" }.
   const value = args && Object.values(args)[0];
   // A layout's own keys too: Settle's is the herdr-t3 layout's.
-  const k = keys().find((b) => (b.section === "global" || b.section?.startsWith("layout:")) && (b.action === name || b.action === `${name}:${value}`));
-  return k ? k.keys : "";
+  const matches = keys().filter((b) => (b.section === "global" || b.section?.startsWith("layout:")) && (b.action === name || b.action === `${name}:${value}`));
+  if (!matches.length) return "";
+  const mac = (typeof window === "function" ? window()?.platform : undefined) === "macos";
+  const k = matches.find((b) => mac ? /\bcmd-/i.test(b.keys ?? "") : !/\bcmd-/i.test(b.keys ?? "")) ?? matches[0];
+  return k ? formatStroke(k.keys) : "";
 }
 
 export default class Menu extends View {
@@ -320,6 +339,7 @@ export default class Menu extends View {
             .justify_between()
             // Only what deletes something is red, in words, as T3's destructive item: a Close asks first while a program runs.
             .text_color(it[1] === "worktree" && it[2].action === "remove" ? t.ansi1 : t.foreground)
+            .role("button").accessibility_label(it[0])
             // As T3's MenuSubTrigger, lit while its submenu is open.
             .when(i === this.at || i === this.sub?.row, (el) => el.bg(t.selected))
             .on_hover((on, cx) => { const to = on ? i : this.at === i ? -1 : this.at; if (to !== this.at) { this.at = to; cx.notify(); } })
@@ -333,7 +353,7 @@ export default class Menu extends View {
             .child(div().flex_1().min_w(0).truncate().child(it[0]))
             // T3's MenuSubTrigger ends in its chevron, 80% opaque, 2px into the padding.
             .child(it[1] === "snooze" ? svg("mods/workspace-chrome/chevron-right.svg").size(16).mr(-2).flex_none().text_color(t.muted).opacity(0.8)
-              : div().flex_none().text_size(12).font_medium().text_color(t.dim).child(it[3] ?? (it[1] === "copy" ? it[2].text : shortcut(it[1], it[2]))))),
+              : div().flex_none().max_w(90).truncate().text_size(12).font_medium().text_color(t.dim).child(it[3] ?? (it[1] === "copy" ? it[2].text : shortcut(it[1], it[2]))))),
         ),
       );
   }

@@ -77,7 +77,7 @@ export function withNav(t, id, body, { content, head, list, open }) {
 export function ghostButton(t, mod, id, icon, label, press, { on = false, disabled = false, view } = {}) {
   return drawButton(t, id, { icon: `${mod}/icons/${icon}.svg`, label, surface: "card", on, disabled, hot: view?.hot === id })
     .when(!disabled, (el) => el
-      .when(Boolean(view), el => el.on_hover((on, cx) => { view.hot = on ? id : null; cx.notify(); }))
+      .when(Boolean(view), el => el.on_hover((on, cx) => { if (on) view.hot = id; else if (view.hot === id) view.hot = null; cx.notify(); }))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); press(cx); }));
 }

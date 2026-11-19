@@ -1,7 +1,7 @@
 // New: pick the space and open a terminal tab there, or start a new space, on a machine picked as T3 picks an environment.
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input } from "gpui-base";
-import { theme, spaces, machines, panes, run, closeOverlay, props, home, shared, setShared } from "herdr";
+import { theme, spaces, machines, panes, run, closeOverlay, props, home, shared, setShared, window } from "herdr";
 import { projectMark, placeOf, newTab } from "./project.js";
 import { step, scrollList } from "./list.js";
 import { keyOf, keyLabel } from "./tip.js";
@@ -101,11 +101,12 @@ export default class NewMenu extends View {
             .child(svg("mods/t3-new-menu/icons/server.svg").size(12).flex_none().text_color(t.muted))
             .child(div().flex_none().text_color(t.muted).child(`${s.machine} ·`)))
           .child(div().min_w(0).truncate().child(sub))))
-      .when(Boolean(s) && i < 9, el => el.child(div().flex_none().text_size(12).font_medium().text_color(t.muted).child(keyLabel(`cmd-${i + 1}`))));
+      .when(Boolean(s) && i < 9, el => el.child(div().flex_none().text_size(12).font_medium().text_color(t.muted).child(keyLabel(`secondary-${i + 1}`))));
   }
 
   render() {
     const t = theme(), ps = panes(), items = this.items();
+    this.at = Math.max(0, Math.min(this.at, Math.max(0, items.length - 1)));
     const key = (label) => div().flex().flex_none().min_w(20).h(20).px(4).items_center().justify_center().rounded(4).bg(t.foreground + "14").text_size(12).text_color(t.foreground).child(label);
     const hint = (label, what) => h_flex().gap(4).items_center().children(label.split(" ").map(key)).child(what);
     // ⌘N doesn't ask: it only names what this button does when there's nothing to ask.
@@ -118,7 +119,7 @@ export default class NewMenu extends View {
         if (e.key === "escape") return closeOverlay(props().overlay);
         const to = step(e, this.at, items.length);
         if (to >= 0) this.at = to;
-        else if (!this.picking && /^[1-9]$/.test(e.key) && e.modifiers.platform) { cx.stop_propagation(); return this.choose(items[Number(e.key) - 1]); }
+        else if (!this.picking && /^[1-9]$/.test(e.key) && (window()?.platform === "macos" ? e.modifiers.platform : e.modifiers.control)) { cx.stop_propagation(); return this.choose(items[Number(e.key) - 1]); }
         else return;
         cx.stop_propagation();
         cx.notify();

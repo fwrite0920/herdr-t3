@@ -68,6 +68,8 @@ export function navigation(beforeAsk = (_cx) => {}, core = { spaces, panes, agen
     const made = await seen(cx, () => spaces().find(s => !before.has(s.id) && s.name === HOME_NAME));
     if (!made) return;
     setShared(KEY.home, made.id);
+    homing = Date.now();
+    api.arrive?.(made.id);
     // A new space comes with a shell: Home as a terminal, that's it. Else, as a space can't lose its last tab, the mod goes in first.
     if (!homeMod()) return;
     const shell = made.tabs[0]?.id;
@@ -475,7 +477,7 @@ export function navigation(beforeAsk = (_cx) => {}, core = { spaces, panes, agen
       else if (command === "open-empty") await openEmpty();
       else if (command === "new") {
         const space = spaces().find(s => s.active);
-        if (atHome()) run("mod.open", { name: "t3-new-menu" });
+        if (!space || atHome()) run("mod.open", { name: "t3-new-menu" });
         else { fresh.add(space.id); newTab(space); }
       }
       else if (command.startsWith("space:")) selectSpace(Number(command.slice("space:".length)));

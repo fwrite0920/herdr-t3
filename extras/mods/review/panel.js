@@ -41,10 +41,22 @@ export function toggleWide() {
 
 const same = (a, b) => Boolean(a) && a.open === b.open && a.page === b.page && a.wide === b.wide;
 
-// The panel as `space` left it, in this layout's pages; closed if it never had one.
+// Enabled pages in the panel: core Files & Review plus whatever tabs the user turned on in t3.settings.panelTabs.
+function enabledPages(pages) {
+  const cfg = KEY.settings ? shared(KEY.settings)?.panelTabs : null;
+  if (!cfg) return pages;
+  const shown = pages.filter(id => id === "files" || id === "review" || Boolean(cfg[id]));
+  return shown.length ? shown : pages;
+}
+
+// The panel as `space` left it, in this layout's enabled pages; closed on Home or if it never had one.
 function keptFor(space, s) {
+  const homeId = KEY.home ? shared(KEY.home) : null;
+  const allowed = enabledPages(s.pages);
+  const fallback = allowed.includes(s.page) ? s.page : (allowed[0] ?? s.page);
+  if (homeId && space === homeId) return { open: false, page: fallback, wide: false };
   const kept = (/** @type {Record<string, any>} */ (shared(KEY.panels) ?? {}))[space];
-  return { open: Boolean(kept?.open), page: s.pages.includes(kept?.page) ? kept.page : s.page, wide: Boolean(kept?.open && kept?.wide) };
+  return { open: Boolean(kept?.open), page: allowed.includes(kept?.page) ? kept.page : fallback, wide: Boolean(kept?.open && kept?.wide) };
 }
 
 function lay(want) {
@@ -93,6 +105,9 @@ export function syncPanel(view) {
     if (!same(view.panelPending.want, now) && Date.now() < view.panelPending.until) return;
     view.panelPending = null;
   }
+  // Never persist an open/wide panel for Home (ADR 0005): Home should always land clean.
+  const homeId = KEY.home ? shared(KEY.home) : null;
+  if (homeId && space.id === homeId) return;
   // shortcut: a closed space's entry stays; prune by spaces() if the record ever grows noticeably.
   const all = /** @type {Record<string, any>} */ (shared(KEY.panels) ?? {});
   if (!same(all[space.id], now)) setShared(KEY.panels, { ...all, [space.id]: now });
