@@ -26,6 +26,8 @@ English · [中文](CHANGELOG.zh-CN.md)
     - Toned down `t3-sessions` from 6 competing ANSI colors to neutral foreground/muted chrome, reserving color strictly for semantic states (warning/danger thresholds, errors, subtle `accent` highlights) and replacing the neon 4-color breakdown bar with a 5px calm tonal bar.
     - Updated `shared/file-tree.js` Git status badges to follow theme ANSI/semantic colors instead of hardcoded neon Tailwind hexes and raised ignored-file opacity (`0.5` → `0.65`); switched `t3-inbox` filter checkmarks to luminance-aware contrast on `t.accent`.
 
+    - Added matching warm matte-paper `extras/themes/omarchy-light.json` (low-glare warm stone surfaces + deep sage accent, WCAG AA verified) and wired `layouts/herdr-t3.json` `theme.light` to `"omarchy-light"`.
+
 ## 2026-11-18
 
 - Left-aligned Inbox tool & shell tabs and streamlined agent/pane headers (`t3-tabs`, `t3-pane`):

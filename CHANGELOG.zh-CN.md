@@ -26,6 +26,8 @@
     - 重构 `t3-sessions` 配色层次：区块标题、2×2 常规数字、环境信息与未调用工具全部回归中性灰白阶，彩色仅保留给语义预警（上下文阈值、错误、`accent` 轻点缀），并将 8px 四色霓虹占比条改为 5px 柔和色阶条。
     - `shared/file-tree.js` 的 Git 状态标记改读主题 ANSI/语义色替代写死的荧光色，并将忽略文件透明度由 `0.5` 提至 `0.65`；`t3-inbox` 筛选复选框对勾按 `t.accent` 亮度自动选用深/浅高对比色。
 
+    - 新增配套浅色护眼主题 `extras/themes/omarchy-light.json`（暖米石哑光纸底 + 深苔绿强调色，全色阶通过 WCAG AA 对比度校验），并将 `layouts/herdr-t3.json` 的 `theme.light` 指向 `"omarchy-light"`。
+
 ## 2026-11-18
 
 - Inbox 模式顶部标签与窗格标题精简优化（`t3-tabs`、`t3-pane`）：
