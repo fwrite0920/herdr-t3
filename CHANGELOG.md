@@ -4,6 +4,7 @@ English · [中文](CHANGELOG.zh-CN.md)
 
 ## 2026-11-23
 
+- Fixed unreadable terminal blue-background highlights (such as PowerShell 7 directory listings using `\e[44;1m`) in `extras/themes/omarchy.json`: deepened `ansi[4]` (`#8ba4b0` → `#366388`) so light text over ANSI blue background jumps from 1.45:1 to 4.30:1 contrast while keeping bright blue (`ansi[12]`) light; gently lifted `foreground`/`ansi[7]`/`done` (`#c1c1c1` → `#d4d4d4`), `cursor` (`#d1d1d1` → `#e0e0e0`), `ansi[15]` (`#d1d1d1` → `#e5e5e5`), and `ansi[8]` (`#666666` → `#767676`) for clearer terminal readability.
 - Improved **Files** (`mods/t3-files`, `shared/nav-column.js`) with a **top-and-bottom split** and faster daily workflow:
   - Switched Files from narrow side-by-side columns to a full-width vertical split (`withTopNav`): search & file tree on top (draggable divider persisted in `localStorage` as `nav.height`, 110–560px) and full-width file preview below; expands the tree to full height when no file is open, and collapses the tree for full-height reading on toggle.
   - Added a compact **recent open files tab strip** (appears automatically when 2+ files are opened, supports 1-click switch, middle-click and `×` close with fallback to the previous file).
