@@ -3,7 +3,7 @@
 // One copy serves every space, here or on another machine: what each one shows is kept by its id.
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Editor, EditorState, TextView } from "gpui-base";
-import { spaces, panes, focused, nextCommand, exec, readTextFile, theme, settings, shared, setShared, appHome, window, watchFolder, notify } from "herdr";
+import { spaces, panes, focused, nextCommand, exec, readTextFile, theme, settings, shared, setShared, home, appHome, window, watchFolder, notify } from "herdr";
 import * as fs from "fs/promises";
 import uFuzzy from "./vendor/ufuzzy.js";
 import { panelState, hidePanel } from "./panel.js";
@@ -15,7 +15,7 @@ import { fileMenuItems, fileMenuView, agentFor, runCommon, mention } from "./fil
 import { migratePagePrefs, wrapLines, setWrapLines } from "./store.js";
 import { loadingState, emptyState, errorBar } from "./panel-states.js";
 import { LIST, IGNORED, PROBE, REMOTE_SEARCH, RANKED, join, parentOf, nameOf, ancestors, parseListing, parseStatus, parseIgnored, markIgnored, folderEntries, terms, narrows,
-  filterPaths, rank, kindOf, languageOf, readProblem, failedRead, ticket, placeOf } from "./model.js";
+  filterPaths, rank, kindOf, languageOf, readProblem, failedRead, ticket, resolveRoot } from "./model.js";
 
 const MOD = "mods/t3-files";
 const RESULTS = 200, REMOTE_IMAGE = 512 * 1024, TEXT_MAX = 1024 * 1024;
@@ -145,9 +145,9 @@ export default class Files extends View {
   // they read; older ones only how they were being read, and read again when back.
   stateFor(sp) {
     const ps = typeof panes === "function" ? panes() : [];
-    // Anchor Files to the space's folder (not transient terminal `cd` cwd) so reading a file isn't wiped when changing directories.
-    const rawRoot = sp?.folder || placeOf(sp, ps) || "";
-    const root = rawRoot ? rawRoot.replace(/\\/g, "/") : "";
+    const f = typeof focused === "function" ? focused() : null;
+    const userHome = typeof home === "function" ? home() : "";
+    const root = resolveRoot(sp, ps, f, userHome);
     let st = this.states.get(sp.id);
     if (!st || st.root !== root || st.on !== (sp.machine ?? null)) { if (st) this.drop(st); st = blank(sp, root); }
     else if ([...this.states.keys()].at(-1) === sp.id) return st;
@@ -516,7 +516,7 @@ export default class Files extends View {
           }
           if (stdout === null) {
             if (window()?.platform === "windows") {
-              const r = await exec("powershell", ["-NoProfile", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); (Get-ChildItem -LiteralPath . -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '[\\\\/]\\.git([\\\\/]|$)' } | Select-Object -First 200000 | ForEach-Object { $_.FullName.Substring((Get-Location).Path.Length + 1).Replace('\\', '/') })"], { cwd: st.root }).catch(() => null);
+              const r = await exec("powershell", ["-NoProfile", "-Command", "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $n = (Get-Location).Path.TrimEnd('\\').Length + 1; (Get-ChildItem -LiteralPath . -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch '[\\\\/]\\.git([\\\\/]|$)' } | Select-Object -First 200000 | ForEach-Object { $_.FullName.Substring($n).Replace('\\', '/') })"], { cwd: st.root }).catch(() => null);
               if (r?.code === 0) stdout = r.stdout;
             } else {
               const r = await exec("sh", ["-c", "find . -name .git -prune -o -type f -print | sed 's|^\\./||' | head -n 200000"], { cwd: st.root }).catch(() => null);

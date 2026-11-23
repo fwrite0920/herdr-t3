@@ -11,7 +11,7 @@ const load = (file) => fs.readFileSync(path.join(__dirname, file), "utf8")
   .replace(/^import [^;]*;\r?\n/gm, "").replace(/^export (async function|function|const) /gm, "$1 ").replace(/^export \{[\s\S]*?\};?\s*$/m, "");
 const context = vm.createContext({});
 vm.runInContext([load("vendor/ufuzzy.js"), load("file-icons-data.js"), load("file-icons.js"), load("file-tree.js"), load("model.js"),
-  "globalThis.m = { join, placeOf, uFuzzy, fileIcon, folderIcon, FILE_NAMES, FILE_EXTENSIONS, FOLDER_NAMES, LIST, IGNORED, PROBE, REMOTE_SEARCH, RANKED, ancestors, parseListing, parseStatus, parseIgnored, markIgnored, folderEntries, treeRows, terms, narrows, filterPaths, rank, kindOf, languageOf, readProblem, failedRead, ticket };"].join("\n"), context);
+  "globalThis.m = { join, placeOf, resolveRoot, uFuzzy, fileIcon, folderIcon, FILE_NAMES, FILE_EXTENSIONS, FOLDER_NAMES, LIST, IGNORED, PROBE, REMOTE_SEARCH, RANKED, ancestors, parseListing, parseStatus, parseIgnored, markIgnored, folderEntries, treeRows, terms, narrows, filterPaths, rank, kindOf, languageOf, readProblem, failedRead, ticket };"].join("\n"), context);
 const m = context.m;
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
@@ -79,8 +79,8 @@ function makePage({ page = "files", spaces = [space("s1", "/r", true)] } = {}) {
     Input: { new: element }, Editor: { new: element }, TextView: { markdown: element },
     InputState: { new: () => { let v = ""; return { on() {}, value: () => v, set_value(x) { v = x; } }; } },
     EditorState: { new: (o) => { const e = { wrap: o.soft_wrap, text: o.value, released: false, release() { this.released = true; return true; } }; w.made.push(e); return e; } },
-    spaces: () => w.spaces, panes: () => [], agents: () => [], layout: () => layout,
-    theme: () => ({}), settings: () => ({ zoom: 1, font_family: "mono" }), window: () => ({ active: w.windowActive, platform: "macos" }), appHome: () => "/tmp/none",
+    spaces: () => w.spaces, panes: () => [], focused: () => null, agents: () => [], layout: () => layout,
+    theme: () => ({}), settings: () => ({ zoom: 1, font_family: "mono" }), window: () => ({ active: w.windowActive, platform: "macos" }), home: () => "/Users/test", appHome: () => "/tmp/none",
     shared: (k) => shared[k], setShared: (k, v) => { wrote.push(k); shared[k] = v; },
     run() {}, notify() {}, exec,
     readTextFile: async (p) => { w.read.push(p); return w.hold && p.startsWith(w.hold) ? new Promise((r) => w.held.push(() => r("held\n"))) : "const a = 1;\n"; },
@@ -354,6 +354,27 @@ async function resources() {
   assert.deepEqual(plain(m.parseListing("f\0b.txt\0d\0src\0f\0a b.md\0")), [{ name: "src", dir: true }, { name: "a b.md", dir: false }, { name: "b.txt", dir: false }]);
   assert.deepEqual(plain(m.ancestors("a/b/c.js")), ["a", "a/b"]);
   assert.deepEqual([m.join("", "a"), m.join("a", ""), m.join("/r/", "a"), m.join("/", "a")], ["a", "a", "/r/a", "/a"]);
+
+  // Root resolution (1B): anchor to sp.folder inside a project tree, follow pane cwd when sp.folder is home or pane left it.
+  {
+    const mkSp = (folder, machine = null) => ({ id: "s1", folder, machine, tabs: [{ id: "t1", active: true }] });
+    const mkPs = (cwd) => [{ pane: "p1", tab: "t1", cwd }];
+    const mkFocus = (cwd) => ({ space: "s1", tab: "t1", pane: "p1", cwd });
+    // Default home space -> cd to another drive or subfolder follows pane cwd.
+    assert.equal(m.resolveRoot(mkSp("C:\\Users\\w.feng"), mkPs("D:\\"), mkFocus("D:\\"), "C:\\Users\\w.feng"), "D:/");
+    assert.equal(m.resolveRoot(mkSp("C:\\Users\\w.feng"), mkPs("C:\\Users\\w.feng\\Desktop"), mkFocus("C:\\Users\\w.feng\\Desktop"), "C:\\Users\\w.feng"), "C:/Users/w.feng/Desktop");
+    // Specific project space -> cd into subdirectory stays anchored to sp.folder (case-insensitive on Windows).
+    assert.equal(m.resolveRoot(mkSp("D:\\Code\\Work\\Vi-Link"), mkPs("d:\\code\\work\\vi-link\\src\\ui"), mkFocus("d:\\code\\work\\vi-link\\src\\ui"), "C:\\Users\\w.feng"), "D:/Code/Work/Vi-Link");
+    // Specific project space -> cd to sibling prefix-colliding folder or different drive follows pane cwd.
+    assert.equal(m.resolveRoot(mkSp("D:\\Code\\app"), mkPs("D:\\Code\\app-v2"), mkFocus("D:\\Code\\app-v2"), "C:\\Users\\w.feng"), "D:/Code/app-v2");
+    assert.equal(m.resolveRoot(mkSp("D:\\Code\\Work\\Vi-Link"), mkPs("D:\\Code\\Personal\\herdr-t3"), mkFocus("D:\\Code\\Personal\\herdr-t3"), "C:\\Users\\w.feng"), "D:/Code/Personal/herdr-t3");
+    // Empty sp.folder -> follows pane cwd; no pane cwd -> keeps sp.folder.
+    assert.equal(m.resolveRoot(mkSp(""), mkPs("D:\\"), mkFocus("D:\\"), "C:\\Users\\w.feng"), "D:/");
+    assert.equal(m.resolveRoot(mkSp("D:\\Code\\Work\\Vi-Link"), [], null, "C:\\Users\\w.feng"), "D:/Code/Work/Vi-Link");
+    // Remote space does not compare against local Windows homeDir.
+    assert.equal(m.resolveRoot(mkSp("/home/u/proj", "ubuntu"), mkPs("/home/u/proj/sub"), mkFocus("/home/u/proj/sub"), "C:\\Users\\w.feng"), "/home/u/proj");
+    assert.equal(m.resolveRoot(mkSp("/home/u/proj", "ubuntu"), mkPs("/tmp/other"), mkFocus("/tmp/other"), "C:\\Users\\w.feng"), "/tmp/other");
+  }
 
   // Porcelain v2: ordinary, renamed (its origin follows), conflicted, untracked; a path with spaces; outside the folder left out.
   const status = [

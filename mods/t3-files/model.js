@@ -10,6 +10,60 @@ export function placeOf(s, ps) {
   return ps?.find((p) => tabs.has(p.tab) && p.cwd)?.cwd || s?.folder || "";
 }
 
+const normPath = (p) => {
+  if (!p) return "";
+  const s = String(p).replace(/\\/g, "/");
+  if (/^[a-zA-Z]:\/+$/.test(s)) return s.slice(0, 2) + "/";
+  if (/^[a-zA-Z]:$/.test(s)) return s + "/";
+  if (/^\/+$/.test(s)) return "/";
+  return s.replace(/\/+$/, "");
+};
+
+const isWinPath = (p) => /^[a-zA-Z]:\//.test(p) || p.startsWith("//");
+
+const isSamePath = (a, b) => {
+  if (!a || !b) return false;
+  return isWinPath(a) || isWinPath(b) ? a.toLowerCase() === b.toLowerCase() : a === b;
+};
+
+const isWithin = (child, parent) => {
+  if (!child || !parent) return false;
+  if (isSamePath(child, parent)) return true;
+  const prefix = parent.endsWith("/") ? parent : `${parent}/`;
+  return isWinPath(parent) || isWinPath(child)
+    ? child.toLowerCase().startsWith(prefix.toLowerCase())
+    : child.startsWith(prefix);
+};
+
+/**
+ * Pick the Files panel's root for space `sp`:
+ * - Keep `sp.folder` when it is a specific project folder (not the user's home dir) and the pane is still inside it,
+ *   so transient `cd` into subdirectories does not wipe the open file or tree.
+ * - Otherwise (empty `sp.folder`, `sp.folder` is home, or the pane moved outside `sp.folder`, e.g. another drive/repo),
+ *   follow the focused/active pane's live `cwd`.
+ */
+export function resolveRoot(sp, ps, focus = null, homeDir = "") {
+  const tabs = new Set((sp?.tabs ?? []).map((c) => c.id));
+  const focusPane = focus?.pane && tabs.has(focus.tab) ? ps?.find((p) => p.pane === focus.pane && p.cwd) : null;
+  const activeTab = (sp?.tabs ?? []).find((t) => t.active)?.id;
+  const activeTabPane = activeTab ? ps?.find((p) => p.tab === activeTab && p.cwd) : null;
+  const paneCwd = normPath(
+    focusPane?.cwd ||
+    (focus?.space === sp?.id && focus?.cwd) ||
+    activeTabPane?.cwd ||
+    ps?.find((p) => tabs.has(p.tab) && p.cwd)?.cwd ||
+    ""
+  );
+  const spaceFolder = normPath(sp?.folder || "");
+  const userHome = normPath(homeDir || "");
+
+  if (!spaceFolder) return paneCwd;
+  if (!paneCwd) return spaceFolder;
+  if (userHome && !sp?.machine && isSamePath(spaceFolder, userHome)) return paneCwd;
+  if (isWithin(paneCwd, spaceFolder)) return spaceFolder;
+  return paneCwd;
+}
+
 /** `a/b`: either may be "" (the space's folder, or a path from it). */
 export const join = (a, b) => !a ? b : !b ? a : `${a.replace(/[/\\]+$/, "")}/${b.replace(/^[/\\]+/, "")}`;
 export const parentOf = (p) => {
