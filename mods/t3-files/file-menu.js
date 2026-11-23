@@ -22,7 +22,6 @@ export function fileMenuItems({ page, dir = false, remote = false, platform, age
     { id: "copy-relative", label: "Copy relative path", icon: "copy" },
     page === "files" && dir && { id: "cd-terminal", label: "cd in terminal", icon: "terminal" },
     page === "files" && dir && { id: "favorite", label: "Add to favorites", icon: "star" },
-    agent && { id: "mention", label: "Mention in agent", icon: "at-sign" },
     !remote && (mac || win) && { id: "reveal", label: mac ? "Reveal in Finder" : "Reveal in File Explorer", icon: "folder-open" },
     !remote && !dir && { id: "open", label: "Open in default app", icon: "external-link" },
     page === "review" && { id: reviewed ? "unreview" : "review", label: reviewed ? "Mark unreviewed" : "Mark reviewed", icon: "square-check" },

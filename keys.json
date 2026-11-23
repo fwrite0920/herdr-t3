@@ -5,8 +5,8 @@
     "cmd-alt-b": "t3-tabs.panel",
     "cmd-shift-s": "t3-tabs.settle",
     "cmd-p": "mod.open:t3-picker",
-    "cmd-i": "new-chat.open",
-    "ctrl-shift-i": "new-chat.open",
+    "cmd-alt-p": "mod.open:better-search",
+    "ctrl-alt-p": "mod.open:better-search",
     "cmd-]": "t3-tabs.next",
     "cmd-[": "t3-tabs.prev",
     "cmd-w": "t3-tabs.close-tab",
@@ -255,14 +255,6 @@
     "ctrl-shift-w": "t3-tabs.panel-close",
     "ctrl-shift-x": "t3-tabs.panel-close"
   },
-  "mod:t3-todos": {
-    "cmd-w": "t3-tabs.panel-close",
-    "ctrl-alt-shift-x": "t3-tabs.panel-close",
-    "cmd-shift-w": "t3-tabs.panel-close",
-    "ctrl-alt-x": "t3-tabs.panel-close",
-    "ctrl-shift-w": "t3-tabs.panel-close",
-    "ctrl-shift-x": "t3-tabs.panel-close"
-  },
   "mod:review": {
     "cmd-w": "review.close",
     "ctrl-alt-shift-x": "review.close",
@@ -271,15 +263,7 @@
     "ctrl-shift-w": "review.close",
     "ctrl-shift-x": "review.close"
   },
-  "mod:new-chat": {
-    "cmd-w": "overlay.close",
-    "ctrl-alt-shift-x": "overlay.close",
-    "cmd-shift-w": "overlay.close",
-    "ctrl-alt-x": "overlay.close",
-    "ctrl-shift-w": "overlay.close",
-    "ctrl-shift-x": "overlay.close"
-  },
-  "mod:chat": {
+  "mod:better-search": {
     "cmd-w": "overlay.close",
     "ctrl-alt-shift-x": "overlay.close",
     "cmd-shift-w": "overlay.close",

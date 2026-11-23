@@ -1,0 +1,9 @@
+Better Search
+Adapted from munza/herdr-mods (https://github.com/munza/herdr-mods)
+Licensed under the Apache License, Version 2.0.
+
+Adaptations for Herdr T3:
+- Opens `/` file matches directly in Herdr T3's `t3-files` Space Panel page when present.
+- Filters out Herdr T3's hidden Home space (`t3-home.space`) from search results.
+- Adds cross-platform Windows support (fs-based helper detection, `.exe` lookup, CRLF splitting, platform modifier hints, Ctrl+Click).
+- Shows `# PRs` / `$ issues` chips only when their helper binaries are installed.

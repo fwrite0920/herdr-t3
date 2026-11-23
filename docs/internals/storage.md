@@ -52,7 +52,7 @@ Apply 和 Studio 导入保存时，在独占的 `.preview/save-<unique-id>/` 写
 
 小写单词，用点连接，写成 `<东西>.<状态>`：`settled.open`、`repos.folded`；只有一个词就够时用一个词：`scope`、`changes`。每个 mod 副本各有一份，不加 mod 前缀。
 
-Files 和 Review 各自保存 `lines.wrap`（布尔字符串）、`nav.width`（逻辑 px）和 `nav.open`。两页复用读写函数，但只访问自己副本的 `localStorage`。`migratePagePrefs()` 在各页初始化时，从旧 `t3.wrap`、`t3.navWidth` 复制尚未设置的初值；更早的 `review.prefs.wrap` 作为换行初值的后备。旧共用偏好暂留作尚未启动页面的迁移来源，不再写入，也不参与已迁移页面的日常读取。跨页请求 `review.reveal`、`t3-files.reveal` 已退休，迁移只清理它们。
+Files 和 Review 各自保存 `lines.wrap`（布尔字符串）、`nav.open`，其中 Review 保存 `nav.width`（逻辑 px）、Files 保存 `nav.height`（上下分栏顶部树高度，逻辑 px；保留 `nav.width` 迁移键）。两页复用读写函数，但只访问自己副本的 `localStorage`。`migratePagePrefs()` 在各页初始化时，从旧 `t3.wrap`、`t3.navWidth` 复制尚未设置的初值；更早的 `review.prefs.wrap` 作为换行初值的后备。旧共用偏好暂留作尚未启动页面的迁移来源，不再写入，也不参与已迁移页面的日常读取。跨页请求 `review.reveal`、`t3-files.reveal` 已退休，迁移只清理它们。
 
 Changes（`t3-changes`）在自己的 `localStorage` 中保存 `list.mode`（`"list"` 默认，或 `"tree"`）；树状视图中手动折叠的目录仅保留在本次运行的内存中，切到其他仓库上下文时清空。
 

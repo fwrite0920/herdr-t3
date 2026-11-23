@@ -10,8 +10,7 @@ export const DEFAULT_PANEL_TABS = {
   sessions: true,
   changes: true,
   favorites: false,
-  tools: false,
-  todos: false
+  tools: false
 };
 
 // afterAway: where putting away the agent in view lands, "home" or "next" (card). homeMod: the mod Home is, by its folder's name; null, a terminal.
@@ -19,7 +18,6 @@ const DEFAULTS = {
   afterAway: "home",
   homeMod: "t3-home",
   livePorts: true,
-  unifiedChat: true,
   panelTabs: DEFAULT_PANEL_TABS
 };
 

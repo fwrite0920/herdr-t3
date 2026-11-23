@@ -11,12 +11,12 @@ vm.runInContext(src, context);
 const ids = (o) => [...context.menu.fileMenuItems(o).map((it) => it.id)];
 const agent = { address: "t1" };
 
-assert.deepEqual(ids({ page: "files", platform: "macos", agent }), ["copy-path", "copy-relative", "mention", "reveal", "open"]);
-assert.deepEqual(ids({ page: "files", platform: "macos", agent, changed: true }), ["copy-path", "copy-relative", "mention", "reveal", "open"], "a changed file stays within Files");
+assert.deepEqual(ids({ page: "files", platform: "macos", agent }), ["copy-path", "copy-relative", "reveal", "open"]);
+assert.deepEqual(ids({ page: "files", platform: "macos", agent, changed: true }), ["copy-path", "copy-relative", "reveal", "open"], "a changed file stays within Files");
 assert.deepEqual(ids({ page: "files", platform: "macos", dir: true, changed: true }), ["copy-path", "copy-relative", "cd-terminal", "favorite", "reveal"], "a folder: terminal and favorite actions, nothing that opens it");
 assert.deepEqual(ids({ page: "files", platform: "macos", remote: true }), ["copy-path", "copy-relative"], "another machine's: nothing that runs here");
 assert.deepEqual(ids({ page: "files", platform: "linux" }), ["copy-path", "copy-relative", "open"]);
-assert.deepEqual(ids({ page: "review", platform: "macos", agent, files: true }), ["copy-path", "copy-relative", "mention", "reveal", "open", "review"]);
+assert.deepEqual(ids({ page: "review", platform: "macos", agent, files: true }), ["copy-path", "copy-relative", "reveal", "open", "review"]);
 assert.deepEqual(ids({ page: "review", platform: "macos", reviewed: true }), ["copy-path", "copy-relative", "reveal", "open", "unreview"], "reviewed files can be marked unreviewed");
 assert.deepEqual(ids({ page: "review", platform: "macos", dir: true, files: true }), ["copy-path", "copy-relative", "reveal", "review"], "a folder marks its files");
 for (const page of ["files", "review"]) assert.ok(!ids({ page, platform: "macos", files: true, changed: true }).some(id => id.startsWith("open-")), "neither page offers a cross-page action");

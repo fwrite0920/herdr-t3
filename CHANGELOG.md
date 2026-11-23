@@ -2,6 +2,17 @@
 
 English · [中文](CHANGELOG.zh-CN.md)
 
+## 2026-11-23
+
+- Improved **Files** (`mods/t3-files`, `shared/nav-column.js`) with a **top-and-bottom split** and faster daily workflow:
+  - Switched Files from narrow side-by-side columns to a full-width vertical split (`withTopNav`): search & file tree on top (draggable divider persisted in `localStorage` as `nav.height`, 110–560px) and full-width file preview below; expands the tree to full height when no file is open, and collapses the tree for full-height reading on toggle.
+  - Added a compact **recent open files tab strip** (appears automatically when 2+ files are opened, supports 1-click switch, middle-click and `×` close with fallback to the previous file).
+  - Added toolbar 1-click actions (Copy relative path, line count badge, Close file), live search match counts, and removed unused `Mention in agent` from the file right-click menu.
+- Added **Better Search** (`mods/better-search`, adapted from `munza/herdr-mods`, bound to `cmd-alt-p` / `ctrl-alt-p`):
+  - Universal popup across tabs, agents (`@`), commands (`>`), space files (`/`), spaces (`~`), and agent output (`?`), with quick peek and direct message/file handoff to an agent.
+  - Adapted for Herdr T3 and Windows: opens `/` file picks directly in the Space Panel's `t3-files` page (waking the panel if closed), hides T3's Home space from results, handles Windows CRLF paths and `.exe` helper lookup, shows platform-native modifier hints (`Ctrl+↵` / `Shift+↵` off macOS), and hides `# PRs` / `$ issues` chips unless their helpers are installed.
+- Removed unused **Todos** (`mods/t3-todos`) and **Unified Agent Chat** (`extras/herdr-chat` / `new-chat` / `chat`) along with their layout blocks, settings toggles, keybindings, and installer hooks.
+
 ## 2026-11-19
 
 - Comprehensive UI, interaction, cross-platform keybinding & runtime stability overhaul across all 3 batches:

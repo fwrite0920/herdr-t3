@@ -8,6 +8,7 @@ import { settings } from "herdr";
 import { button as drawButton } from "./button.js";
 
 export const NAV = 256, NAV_MIN = 160, NAV_MAX = 560, CONTENT_MIN = 256;
+export const NAV_H = 240, NAV_H_MIN = 110, NAV_H_MAX = 560, CONTENT_H_MIN = 160;
 
 /** How wide the column may be in a page `body` wide: [least, most]. */
 export const navRange = (body) => [NAV_MIN, Math.max(NAV_MIN, Math.min(NAV_MAX, body - CONTENT_MIN))];
@@ -15,6 +16,14 @@ export const navRange = (body) => [NAV_MIN, Math.max(NAV_MIN, Math.min(NAV_MAX, 
 export function navWidth(body, kept = localStorage.getItem("nav.width")) {
   const [least, most] = navRange(body);
   return Math.min(most, Math.max(least, Number(kept) || NAV));
+}
+
+/** How tall the top pane may be in a page `body` tall: [least, most]. */
+export const navHeightRange = (body) => [NAV_H_MIN, Math.max(NAV_H_MIN, Math.min(NAV_H_MAX, body - CONTENT_H_MIN))];
+/** The top pane's height in a page `body` tall: that page's own, kept within navHeightRange. */
+export function navHeight(body, kept = localStorage.getItem("nav.height")) {
+  const [least, most] = navHeightRange(body);
+  return Math.min(most, Math.max(least, Number(kept) || NAV_H));
 }
 
 // Open until closed on this page.
@@ -30,9 +39,49 @@ export function holdWidth(hold, width, after) {
   after(300, (cx) => { if (run === hold.run && hold.at !== hold.want) { hold.at = hold.want; cx.notify(); } });
 }
 
-// The column's edge being dragged, on this page (each mod has its own copy): the pointer's x and the width it started from,
-// and the width it's at now.
+// The column's or top pane's edge being dragged, on this page (each mod has its own copy).
 let drag = null;
+let dragY = null;
+
+/**
+ * Top-and-bottom split: while `open`, the navigation pane (`head` in a 36px bar, `list` below) sits above `content`,
+ * separated by a draggable horizontal divider persisted in `nav.height`. When `fullNav` is true (e.g. no file open),
+ * the navigation pane expands to fill the whole area instead of leaving an empty preview pane below.
+ */
+/** @param {any} t @param {string} id @param {number} body @param {{ content: any, head: any, list: any, open: boolean, fullNav?: boolean }} parts */
+export function withTopNav(t, id, body, { content, head, list, open, fullNav = false }) {
+  if (!open) return div().id(`${id}-solo`).size_full().min_h(0).min_w(0).child(content);
+  if (fullNav) {
+    return v_flex().id(`${id}-nav-full`).size_full().min_h(0).min_w(0)
+      .child(h_flex().id(`${id}-nav-head`).h(36).flex_none().px(8).gap(4).items_center().border_b(1).border_color(t.border).child(head))
+      .child(div().flex_1().min_h(0).pt(4).child(list));
+  }
+  const [least, most] = navHeightRange(body), z = Number(settings()?.zoom) || 1, mine = dragY?.id === id;
+  const height = mine ? Math.min(most, Math.max(least, dragY.height)) : navHeight(body);
+  const end = (cx) => {
+    if (dragY?.id !== id) return;
+    const to = Math.round(height);
+    dragY = null;
+    if (to !== Math.round(navHeight(body))) localStorage.setItem("nav.height", String(to));
+    cx.notify();
+  };
+  return v_flex().id(`${id}-vsplit`).size_full().min_h(0).min_w(0)
+    .when(mine, (el) => el.cursor_row_resize())
+    .on_mouse_move((e, cx) => {
+      if (dragY?.id !== id) return;
+      const to = dragY.from + (e.position.y - dragY.y) / z;
+      if (to !== dragY.height) { dragY.height = to; cx.notify(); }
+    })
+    .on_mouse_up("left", (_e, cx) => end(cx))
+    .on_hover((on, cx) => { if (!on) end(cx); })
+    .child(v_flex().id(`${id}-nav`).relative().h(height).flex_none().w_full().border_b(1).border_color(t.border)
+      .child(h_flex().id(`${id}-nav-head`).h(36).flex_none().px(8).gap(4).items_center().border_b(1).border_color(t.border).child(head))
+      .child(div().flex_1().min_h(0).pt(4).child(list))
+      // 6px hit strip straddling the bottom divider for smooth vertical resizing.
+      .child(div().id(`${id}-nav-edge`).absolute().left(0).right(0).bottom(-3).h(6).cursor_row_resize()
+        .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); dragY = { id, y: e.position.y, from: height, height }; cx.notify(); })))
+    .child(div().flex_1().min_h(0).min_w(0).w_full().child(content));
+}
 
 /**
  * The page's `content`, and right of it, while `open`, the column: `head` in its 40 head, `list` under it. `id` names it;

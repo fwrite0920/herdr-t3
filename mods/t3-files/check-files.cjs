@@ -118,12 +118,15 @@ async function page() {
   await settle();
   root = view.render(cx);
   assert.ok(find(root, "row-a.js") && find(root, "row-b.js"), "the folder's files in the tree");
+  assert.ok(find(root, "t3-files-nav-full"), "with no file open, the tree fills the full height");
 
   // A file Review also has opens here alone: no Open in Review in the toolbar or the menu, nothing asked of Review.
   send("open:a.js");
   await settle();
   root = view.render(cx);
+  assert.ok(find(root, "t3-files-vsplit"), "opening a file switches to top-bottom split");
   assert.ok(find(root, "t3-files-code"), "the file shows");
+  assert.equal(find(root, "t3-files-tabs"), null, "one open file needs no tab strip");
   assert.equal(find(root, "t3-files-review"), null, "no Open in Review button");
   assert.ok(!labels(root).includes("Open in Review"));
   find(root, "row-a.js").handlers["on_mouse_down:right"]();
@@ -168,6 +171,22 @@ async function page() {
   root = view.render(cx);
   assert.ok(find(root, "found-0"), "search finds it");
   assert.deepEqual(wrote.filter((k) => /reveal/.test(k)), [], "no cross-page request");
+
+  // Opening a second file shows the recent-files tab strip; closing falls back to the previous file, then full-height tree.
+  send("open:b.js");
+  await settle();
+  root = view.render(cx);
+  assert.ok(find(root, "t3-files-tabs"), "2+ open files show quick-switch tabs");
+  find(root, "t3-files-close-file").handlers.on_click({ stop_propagation() {} }, cx);
+  await settle();
+  root = view.render(cx);
+  assert.equal(view.current().file, "a.js", "closing b.js returns to a.js");
+  assert.equal(find(root, "t3-files-tabs"), null, "back to 1 open file hides tab strip");
+  find(root, "t3-files-close-file").handlers.on_click({ stop_propagation() {} }, cx);
+  await settle();
+  root = view.render(cx);
+  assert.equal(view.current().file, null, "closing the last file clears preview");
+  assert.ok(find(root, "t3-files-nav-full"), "no open file returns to full-height tree");
 }
 
 // It works only for what shows: the Files page, open, in the window in front, for the active space; nothing is watched, so

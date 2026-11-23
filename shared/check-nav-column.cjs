@@ -8,7 +8,7 @@ const store = new Map();
 const src = "const drawButton = (() => {\n" + fs.readFileSync(path.join(__dirname, "button.js"), "utf8")
   .replace(/^import [^;]*;\r?\n/gm, "").replace(/^export /gm, "") + "\nreturn button;\n})();\n" + fs.readFileSync(path.join(__dirname, "nav-column.js"), "utf8")
   .replace(/^import [^;]*;\r?\n/gm, "").replace(/^export (function|const) /gm, "$1 ")
-  + "\nglobalThis.nav = { navRange, navWidth, navOpen, setNavOpen, withNav, holdWidth, ghostButton };";
+  + "\nglobalThis.nav = { navRange, navWidth, navHeightRange, navHeight, navOpen, setNavOpen, withNav, withTopNav, holdWidth, ghostButton };";
 // Elements that keep their handlers and widths: a fake page to drag the column's edge in.
 const made = [];
 const element = () => {
@@ -17,6 +17,7 @@ const element = () => {
   return new Proxy(el, { get: (target, key) => key in target ? target[key] : (...args) => {
     if (key === "id") target.ids.push(args[0]);
     if (key === "w") target.w = args[0];
+    if (key === "h") target.h = args[0];
     if (["text_color", "opacity", "bg"].includes(key)) target.style[key] = args[0];
     if (key === "on_mouse_move" || key === "on_hover" || key === "on_click") target.on[key] = args[0];
     if (key === "on_mouse_down" || key === "on_mouse_up") target.on[key] = args[1];
@@ -33,7 +34,7 @@ const context = vm.createContext({ KEY: { navWidth: "t3.navWidth" }, shared: (k)
   div: make, h_flex: make, v_flex: make, svg: make,
   localStorage: { getItem: (k) => store.get(`local:${k}`) ?? null, setItem: (k, v) => { sets.push([k, String(v)]); store.set(`local:${k}`, String(v)); } } });
 vm.runInContext(src, context);
-const { navRange, navWidth, navOpen, setNavOpen, withNav, holdWidth, ghostButton } = context.nav;
+const { navRange, navWidth, navHeightRange, navHeight, navOpen, setNavOpen, withNav, withTopNav, holdWidth, ghostButton } = context.nav;
 
 {
   const t = { foreground: "#ffffff", dim: "#888888" }, view = {};
@@ -122,4 +123,23 @@ assert.equal(navWidth(681), 310, "the pages retain different widths");
   assert.equal(cx.notified, 2, "settling at the same width does not request another frame");
 }
 
-console.log("ok: independent nav widths and open state; a changing width settles after 300ms without stale timers crossing pages.");
+// Vertical split (withTopNav): height bounds, drag-to-resize persisted once on release, and fullNav mode.
+{
+  assert.deepEqual([...navHeightRange(900)], [110, 560]);
+  assert.deepEqual([...navHeightRange(500)], [110, 340], "content keeps 160px");
+  assert.equal(navHeight(700), 240, "default top pane height is 240");
+  const cx = { notified: 0, notify() { this.notified++; }, stop_propagation() {} };
+  const page = (opts = {}) => { made.length = 0; proxies.clear(); withTopNav({ border: "#333" }, "v", 700, { content: make(), head: make(), list: make(), open: true, ...opts }); return made; };
+  const nav = (els) => els.find(e => e.ids.includes("v-nav")), edge = (els) => els.find(e => e.ids.includes("v-nav-edge")), root = (els) => els.find(e => e.on.on_mouse_move);
+  store.set("local:nav.height", "240"); sets.length = 0;
+  let els = page();
+  assert.equal(nav(els).h, 240);
+  edge(els).on.on_mouse_down({ position: { x: 10, y: 240 } }, cx);
+  root(els).on.on_mouse_move({ position: { x: 10, y: 340 } }, cx);
+  assert.equal(nav(page()).h, 290, "100 zoomed px down at zoom 2: 50 logical px taller");
+  root(page()).on.on_mouse_up({ position: { x: 10, y: 340 } }, cx);
+  assert.deepEqual(sets, [["nav.height", "290"]]);
+  assert.ok(page({ fullNav: true }).some(e => e.ids.includes("v-nav-full")), "fullNav expands tree when no file is open");
+}
+
+console.log("ok: independent nav widths, vertical top-nav split, and open state; a changing width settles after 300ms without stale timers crossing pages.");

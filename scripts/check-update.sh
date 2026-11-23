@@ -56,22 +56,22 @@ case "$out" in *"kept, not in the repo: cmd-x = mine"*) ;; *) echo "FAIL check-u
 # The Review extra's review is the space panel's page, after Files; no id twice.
 pages='[.. | objects | select(.id? == "panel-body") | .children[].id] | join(",")'
 unique='[.. | objects | .id? | strings] | length == (unique | length)'
-is "$pages" "$app/layouts/herdr-t3.json" files,sessions,favorites,changes,tools,todos,review
+is "$pages" "$app/layouts/herdr-t3.json" files,sessions,changes,favorites,tools,review
 is "$unique" "$app/layouts/herdr-t3.json" true
 
 # Again changes nothing: neither Review block is doubled.
 HERDR_APP_HOME="$app" "$src/scripts/update.sh" >/dev/null
 is '[.. | objects | select(.id? == "my-review")] | length' "$app/layouts/herdr-t3.json" 1
-is "$pages" "$app/layouts/herdr-t3.json" files,sessions,favorites,changes,tools,todos,review
+is "$pages" "$app/layouts/herdr-t3.json" files,sessions,changes,favorites,tools,review
 
 # A Review bar named `review`, as the extra's README once had it, gives that id to the panel's page: it's renamed, its own sizing with it.
 jq '(.. | objects | select(.id? == "my-review")) |= (.id = "review" | .content.props.block = "review")' "$app/layouts/herdr-t3.json" > "$app/l" && mv "$app/l" "$app/layouts/herdr-t3.json"
 HERDR_APP_HOME="$app" "$src/scripts/update.sh" >/dev/null
 is '[.. | objects | select(.content?.mod? == "pulls-review") | .id + " " + .content.props.block] | join(",")' "$app/layouts/herdr-t3.json" "review-bar review-bar"
 is "$unique" "$app/layouts/herdr-t3.json" true
-is "$pages" "$app/layouts/herdr-t3.json" files,sessions,favorites,changes,tools,todos,review
+is "$pages" "$app/layouts/herdr-t3.json" files,sessions,changes,favorites,tools,review
 
 # Without the extra, the panel has the core pages: a block naming a mod that isn't there shows an error.
 rm -rf "$app/mods/pulls-review" "$app/mods/review"
 HERDR_APP_HOME="$app" "$src/scripts/update.sh" >/dev/null
-is "$pages" "$app/layouts/herdr-t3.json" files,sessions,favorites,changes,tools,todos
+is "$pages" "$app/layouts/herdr-t3.json" files,sessions,changes,favorites,tools

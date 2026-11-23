@@ -18,7 +18,6 @@ const PAGES = {
   favorites: ["Favorites", "star"],
   changes: ["Changes", "git-commit"],
   tools: ["Tools", "wrench"],
-  todos: ["Todos", "check-square"],
   review: ["Review", "pulls-review", true]
 };
 

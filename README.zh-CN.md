@@ -19,11 +19,12 @@
 - **Inbox 和 Lists**：两种侧栏，一键切换。Inbox 按什么需要你来排，带 T3 式的 Settle 和 Snooze；Lists 按项目排 space，agent 按优先级或按 space 分组，不带 Inbox 的 Settle 和 Snooze。
 - **Home**：收起正在看的 agent 后，回到一个安静的页面，不会自动跳到下一张卡片。下一步看什么由你决定。也可以在设置（`cmd-shift-,`）里改成跳到下一张卡片，或者把 Home 换成终端或你自己的 mod。
 - **同一个名字，同一套标记**：卡片、列表、标签和窗格标题用同样的方式给终端取名、标状态。
-- **跳转**（`cmd-p`）：按名字跳到任何窗格，agent 和普通程序都行。
+- **跳转**（`cmd-p` / `ctrl-shift-p`）：按名字跳到任何窗格，agent 和普通程序都行。
+- **全局搜索 Better Search**（`cmd-alt-p` / `ctrl-alt-p`）：一个弹窗搜遍所有标签、Agent（`@`）、命令（`>`）、仓库文件（`/`，直接联动打开右侧 `t3-files` 面板）、Space（`~`）和 Agent 历史输出（`?`），支持快速预览以及直接向 Agent 发送消息或递交文件。
 - **动作**：类似 T3 Code 的运行按钮，运行你自己的命令，在新标签或分屏里。
 - **窄标签、带框窗格**，照 T3 Code 的外观。
 - **其他机器**：它们的 space 按机器分组，Inbox 卡片带机器标记；Lists 中悬停 Agents 行查看机器名。
-- **Files**：在窗口右侧的面板里只读浏览 space 的文件夹：文件树贴窗口外沿，选中的文件显示在它旁边。切换标签时面板不动，换到别的 space 时跟着换。隐藏时停止文件刷新，每页只缓存最近三个 space 的完整数据。
+- **Files**：在窗口右侧面板中以**上下分栏**只读浏览 space 文件夹：上方全宽文件树与搜索（可拖拽分隔线调高、未打开文件时自动撑满整高、打开文件后可一键收起实现全高阅读），下方全宽代码 / Markdown / 图片预览；打开多个文件时自动出现最近文件快捷切换标签，并在顶栏提供一键复制相对路径、VS Code 打开、换行与关闭按钮。切换标签时面板不动，换到别的 space 时跟着换；隐藏时停止刷新，每页只缓存最近三个 space 的完整数据。
 - **Sessions（巡检与会话）**：右侧面板内置的实时 Agent 遥测与历史浏览器。支持 Google Antigravity、OpenAI Codex、Oh-My-Prompt、Pi 等多 Agent 协议；呈现 2x2 HUD 仪表盘（上下文余量/告警、缓存命中率、累计/当轮费用、速度与延迟）、Token 四色动态构成、实时调用动态流；展开工具库时高亮已调用的工具（翡翠绿 `ACTIVE` 徽标与独立“已调用”过滤）；自动识别当前主机（LOCAL / WSL / 远端 SSH），切端连续累计运行时长不归零；全新的历史会话浏览器支持多 Agent 分类切换、时间段分组与一键终端恢复。
 - **Review**（可选）：同一个面板的另一页，看当前 worktree 待评审的内容。Files 和 Review 各记文件、阅读位置、换行和树宽，切页恢复各自的状态。
 
@@ -50,7 +51,7 @@ cd herdr-t3
 ```
 
 脚本会自动完成：
-1. 将所有 `mods/t3-*`（包括 `t3-sessions`、`t3-inbox`、`t3-agents`、`t3-tabs`、`t3-pane`、`t3-chrome`、`t3-files`、`t3-todos`、`t3-tools` 等）完整同步至 Herdr 配置目录。
+1. 将所有内置 mod（`mods/t3-*` 与 `mods/better-search`，包括 `t3-sessions`、`t3-inbox`、`t3-agents`、`t3-tabs`、`t3-pane`、`t3-chrome`、`t3-files`、`t3-changes`、`t3-tools` 等）完整同步至 Herdr 配置目录。
 2. 安装 `layouts/herdr-t3.json` 布局文件和矢量图标。
 3. 安全合并快捷键 `keys.json`（保留你现有的个性化快捷键映射）。
 4. 完好保留你的置顶、已收起卡片、动作按钮、自定义主题和聚焦边框。
@@ -100,6 +101,7 @@ cd herdr-t3
 | `cmd-shift-s` / `ctrl-shift-s` | Settle 当前查看的 agent 并回到 Home，已 Settle 的则取回 |
 | `cmd-]` / `ctrl-shift-]`、`cmd-[` / `ctrl-shift-[` | 按侧栏的顺序到下一个或上一个 agent |
 | `cmd-p` / `ctrl-shift-p` | 跳到任一窗格 |
+| `cmd-alt-p` / `ctrl-alt-p` | Better Search 全局搜索（标签、Agent、命令、文件、Space、输出） |
 | `cmd-shift-h` / `ctrl-shift-h` | 回到 Home |
 | `cmd-shift-,` / `ctrl-shift-,` | 布局的设置 |
 | `cmd-alt-b` / `ctrl-alt-b` | 打开或关闭 space 面板，停在上次的页面 |
@@ -124,9 +126,10 @@ git clone --depth 1 https://github.com/JinJieBeWater/herdr-t3 && herdr-t3/script
 - `t3-tabs`：关闭终端前运行 `hc get`，看里面有没有程序在跑。用 `cmd-shift-s` Settle 或取回 agent 时运行 `hc label`；Herdr 显示了你没选的标签、清掉了未读的 done（`herdr.seen`）或 Woke 标记（`snoozed`）时，也用它还回去；这一轮失败或查看时有新工作结束 Snooze 时，运行 `hc label <agent> snoozed=`。
 - `t3-agents`：置顶一个 Snooze 中的 agent、结束它的 Snooze 时，运行 `hc label <agent> snoozed=`。
 - `t3-chrome`：macOS 上缩放变化时，改写已安装的 `layouts/herdr-t3.json` 里的窗口按钮位置，让按钮留在品牌栏的中线上。
-- `t3-files`：只读，在 space 所在的机器上执行：`git rev-parse`、`git status`、`git check-ignore` 和 `git ls-files`（带 `--no-optional-locks`，不会往 `.git` 里写东西），用 `sh` 列文件夹，在其他机器上也用它查文件大小、搜路径；不在 Git 里时用 `find`；其他机器上的图片用 `base64` 传回。显示的图片复制到 `cache/t3-files/`，mod 停止时删掉。右键菜单：Reveal in Finder（Windows 上为 Reveal in File Explorer）和 Open in default app（macOS 执行 `open`，Linux 执行 `xdg-open`，Windows 调起系统默认程序）；Mention in agent 借剪贴板粘贴进 agent 的终端，然后恢复你原来的剪贴板。
+- `t3-files`：只读，在 space 所在的机器上执行：`git rev-parse`、`git status`、`git check-ignore` 和 `git ls-files`（带 `--no-optional-locks`，不会往 `.git` 里写东西），用 `sh` 列文件夹，在其他机器上也用它查文件大小、搜路径；不在 Git 里时用 `find`；其他机器上的图片用 `base64` 传回。显示的图片复制到 `cache/t3-files/`，mod 停止时删掉。右键菜单：Reveal in Finder（Windows 上为 Reveal in File Explorer）和 Open in default app（macOS 执行 `open`，Linux 执行 `xdg-open`，Windows 调起系统默认程序）。
 - `t3-spaces`、`t3-agents`、`t3-inbox`、`t3-new-menu`、`t3-picker`：为每个 space 的图标，在 space 所在的位置（它的机器上）运行 `git rev-parse --show-toplevel`、`sh` 文件检测和 `base64`；找到的图标复制到 `cache/t3-icons/`。
 - `t3-sessions`：只读。每 1.5 秒通过 Node.js 解析当前焦点 Agent 会话的遥测数据（Antigravity、Codex、Omp、Pi 或系统终端）；跨机器时通过 `hc exec` 读取远端或 WSL 状态；每 4 秒扫描多 Agent 历史会话列表；为终端计时器保持独立运行时间。不写磁盘数据，不发外部网络请求。
+- `better-search`：按 `/` 搜索文件时运行 `git rev-parse --show-toplevel` 与 `git ls-files`；通过 `hc machine ls --json`、`hc read` 读取在线机器、阻塞提问和 `?` 输出搜索；仅在你明确提交消息或递交文件给 Agent 时执行 `hc send`。
 
 不发网络请求。
 
@@ -141,7 +144,7 @@ git clone --depth 1 https://github.com/JinJieBeWater/herdr-t3 && herdr-t3/script
 
 ## 致谢与许可证
 
-`t3-chrome`、`t3-spaces`、`t3-agents`、`t3-tabs`、`t3-pane`、`t3-new-menu`、`t3-picker` 和布局本身，分别基于 Herdr App 自带的 `workspace-chrome`、`spaces`、`agents`、`tabs`、`pane`、`new-menu`、`picker` 和 `main` 修改。Settle 参照 T3 Code 的设计。Catppuccin 主题使用 [Catppuccin](https://github.com/catppuccin/catppuccin) 色板（MIT 许可证，Copyright (c) 2021 Catppuccin）；T3 Code 主题取自 [T3 Code](https://github.com/pingdotgg/t3code) 的默认配色（MIT 许可证，Copyright (c) 2026 T3 Tools Inc.）。图标来自 [Lucide](https://lucide.dev)（ISC 许可证，Copyright (c) Lucide Contributors）；Files 和 Review 里的文件、文件夹图标来自 [Catppuccin 的 VS Code 图标](https://github.com/catppuccin/vscode-icons)（MIT 许可证，Copyright (c) 2023 Catppuccin、Copyright (c) 2023 thang-nm）。Files 用 [uFuzzy](https://github.com/leeoniya/uFuzzy) 给搜索结果排序（MIT 许可证，Copyright (c) 2022 Leon Sorokin）。Review 用 [get-east-asian-width](https://github.com/sindresorhus/get-east-asian-width) 的表计算字符宽度（MIT 许可证，Copyright (c) Sindre Sorhus）。许可证与 Herdr App 相同，为 Apache-2.0。
+`t3-chrome`、`t3-spaces`、`t3-agents`、`t3-tabs`、`t3-pane`、`t3-new-menu`、`t3-picker` 和布局本身，分别基于 Herdr App 自带的 `workspace-chrome`、`spaces`、`agents`、`tabs`、`pane`、`new-menu`、`picker` 和 `main` 修改。Settle 参照 T3 Code 的设计。Catppuccin 主题使用 [Catppuccin](https://github.com/catppuccin/catppuccin) 色板（MIT 许可证，Copyright (c) 2021 Catppuccin）；T3 Code 主题取自 [T3 Code](https://github.com/pingdotgg/t3code) 的默认配色（MIT 许可证，Copyright (c) 2026 T3 Tools Inc.）。图标来自 [Lucide](https://lucide.dev)（ISC 许可证，Copyright (c) Lucide Contributors）；Files 和 Review 里的文件、文件夹图标来自 [Catppuccin 的 VS Code 图标](https://github.com/catppuccin/vscode-icons)（MIT 许可证，Copyright (c) 2023 Catppuccin、Copyright (c) 2023 thang-nm）。Files 用 [uFuzzy](https://github.com/leeoniya/uFuzzy) 给搜索结果排序（MIT 许可证，Copyright (c) 2022 Leon Sorokin）。Review 用 [get-east-asian-width](https://github.com/sindresorhus/get-east-asian-width) 的表计算字符宽度（MIT 许可证，Copyright (c) Sindre Sorhus）。`better-search` 改编自 [munza/herdr-mods](https://github.com/munza/herdr-mods)（Apache-2.0 许可证）。许可证与 Herdr App 相同，为 Apache-2.0。
 
 ## 更多
 

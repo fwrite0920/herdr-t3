@@ -19,11 +19,12 @@ I'd worked this way in T3 Code: what's running stays out of sight, what needs me
 - **Inbox and Lists**: two sidebars, one key apart. Inbox sorts agents by what needs you, with T3-style Settle and Snooze; Lists shows spaces by project and agents by priority or by space, without Inbox's Settle and Snooze.
 - **Home**: putting away the agent you're looking at lands on a quiet page, not the next card. What to look at next is yours to pick. Settings (`cmd-shift-,`) can make it go on to the next card instead, or make Home a terminal or a mod of your own.
 - **One name, one set of marks**: cards, lists, tabs and pane headers name and mark each terminal the same way.
-- **Go to** (`cmd-p`): jump to any pane, agent or program, by its name.
+- **Go to** (`cmd-p` / `ctrl-shift-p`): jump to any pane, agent or program, by its name.
+- **Better Search** (`cmd-alt-p` / `ctrl-alt-p`): universal search popup across tabs, agents (`@`), commands (`>`), space files (`/`, opening directly in Herdr T3's Files panel), spaces (`~`), and agent output (`?`), with quick peek and direct message/file handoff to an agent.
 - **Actions**: T3 Code's run button for your own commands, in a new tab or a split.
 - **Slim tabs and framed panes**, in T3 Code's look.
 - **Other machines**: their spaces grouped by machine, their Inbox cards marked. In Lists, hover an Agents row to see its machine's name.
-- **Files**: the space's folder, read-only, in a panel at the window's right: the tree at its outer edge, the file you pick beside it. It stays put as you switch tabs and follows you to another space. Hidden pages do no file refreshes, and full data is cached for only three recent spaces per page.
+- **Files**: the space's folder, read-only, in a top-and-bottom split inside the right panel: full-width file tree and search on top (draggable divider, full-height when no file is open, collapsible for full-height reading) and full-width code/Markdown/image preview below, with quick-switch recent file tabs and 1-click toolbar actions (Copy path, Open in VS Code, Wrap, Close). It stays put as you switch tabs and follows you to another space. Hidden pages do no file refreshes, and full data is cached for only three recent spaces per page.
 - **Sessions (Inspector & History)**: A built-in agent telemetry dashboard and session history explorer in the right panel. Natively supports Google Antigravity, OpenAI Codex, Oh-My-Prompt, Inflection Pi, and terminal shells; features a 2x2 HUD (real-time context headroom & warning, cache hit rate, session/turn cost, speed & TTFT latency), dynamic 4-segment token breakdown, live tool activity stream, tools & skills catalog with emerald `ACTIVE` badges for invoked tools (and a dedicated "Used" filter tab), environment detection (`LOCAL` / `WSL` / remote SSH), persistent elapsed timers that never reset to zero when switching terminals, and a redesigned History browser with multi-agent categorization tabs, chronological time grouping, and 1-click terminal session resume.
 - **Review** (optional): what's left to review in the worktree, on the same panel's other page. Files and Review keep their own files, reading positions, line wrapping and tree widths; switching pages restores each one.
 
@@ -50,7 +51,7 @@ cd herdr-t3
 ```
 
 What the script does automatically:
-1. Syncs all `mods/t3-*` (including `t3-sessions`, `t3-inbox`, `t3-agents`, `t3-tabs`, `t3-pane`, `t3-chrome`, `t3-files`, `t3-todos`, `t3-tools`, etc.) into your Herdr App configuration directory.
+1. Syncs all shipped mods (`mods/t3-*` and `mods/better-search`, including `t3-sessions`, `t3-inbox`, `t3-agents`, `t3-tabs`, `t3-pane`, `t3-chrome`, `t3-files`, `t3-changes`, `t3-tools`, etc.) into your Herdr App configuration directory.
 2. Installs `layouts/herdr-t3.json` and its vector icon into `layouts/`.
 3. Safely merges shortcut bindings in `keys.json` without clobbering your existing custom shortcuts.
 4. Preserves your pins, settled agents, custom actions, themes, and focus ring settings.
@@ -100,6 +101,7 @@ Dragging, sweeping across rows, pins and the rest: [Everyday use](docs/user/guid
 | `cmd-shift-s` / `ctrl-shift-s` | Settle the agent you're looking at and go Home, or bring it back |
 | `cmd-]` / `ctrl-shift-]`, `cmd-[` / `ctrl-shift-[` | Next or previous agent, in the sidebar's order |
 | `cmd-p` / `ctrl-shift-p` | Go to any pane |
+| `cmd-alt-p` / `ctrl-alt-p` | Better Search (tabs, agents, commands, files, spaces, agent output) |
 | `cmd-shift-h` / `ctrl-shift-h` | Go Home |
 | `cmd-shift-,` / `ctrl-shift-,` | The layout's settings |
 | `cmd-alt-b` / `ctrl-alt-b` | Show or hide the space panel, on the page last shown |
@@ -124,9 +126,10 @@ It overwrites the layout and its mods and merges `keys.json`; your pins, settled
 - `t3-tabs`: `hc get` before closing a terminal, to see whether a program is running in it. `hc label` when `cmd-shift-s` settles or brings back an agent, and to give back an unread done (`herdr.seen`) or a Woke mark (`snoozed`) that Herdr cleared when it showed a tab you didn't pick, and `hc label <agent> snoozed=` when a failed turn or new work in view ends a snooze.
 - `t3-agents`: `hc label <agent> snoozed=` when pinning a snoozed agent ends its snooze.
 - `t3-chrome`: on macOS, when the zoom changes, it rewrites the window button position in the installed `layouts/herdr-t3.json`, so the buttons stay on the brand bar's middle line.
-- `t3-files`, read-only, where the space is (on its machine): `git rev-parse`, `git status`, `git check-ignore` and `git ls-files` (with `--no-optional-locks`, so nothing is written under `.git`), `sh` to list a folder or, on another machine, to check a file's size and search paths, `find` outside Git, `base64` for another machine's images. It copies images it shows into `cache/t3-files/` and deletes them when it stops. Right-click: Reveal in Finder (Reveal in File Explorer on Windows) and Open in default app run `open` (`xdg-open` on Linux, default app protocol handler on Windows); Mention in agent pastes into the agent's terminal through the clipboard, then puts your clipboard back.
+- `t3-files`, read-only, where the space is (on its machine): `git rev-parse`, `git status`, `git check-ignore` and `git ls-files` (with `--no-optional-locks`, so nothing is written under `.git`), `sh` to list a folder or, on another machine, to check a file's size and search paths, `find` outside Git, `base64` for another machine's images. It copies images it shows into `cache/t3-files/` and deletes them when it stops. Right-click: Reveal in Finder (Reveal in File Explorer on Windows) and Open in default app run `open` (`xdg-open` on Linux, default app protocol handler on Windows).
 - `t3-spaces`, `t3-agents`, `t3-inbox`, `t3-new-menu`, `t3-picker`: for each space's icon, `git rev-parse --show-toplevel`, `sh` file tests and `base64` where the space is (on its machine); a found icon is copied into `cache/t3-icons/`.
 - `t3-sessions`: read-only. Polls telemetry every 1.5s via Node.js for the focused agent session (Antigravity, Codex, Omp, Pi, or terminal shell); inspects remote machine or WSL state via `hc exec` when remote; refreshes multi-agent session history every 4s; keeps independent elapsed runtimes per terminal. Writes no disk data and makes no network requests.
+- `better-search`: runs `git rev-parse --show-toplevel` and `git ls-files` for `/` file searches, `hc machine ls --json` / `hc read` for machines, blocked agent questions and `?` output search, and `hc send` only when you explicitly send a message or file to an agent.
 
 No network requests.
 
@@ -141,7 +144,7 @@ How to add them: [the extras](docs/user/extras.md).
 
 ## Credits and license
 
-`t3-chrome`, `t3-spaces`, `t3-agents`, `t3-tabs`, `t3-pane`, `t3-new-menu`, `t3-picker` and the layout start from Herdr App's shipped `workspace-chrome`, `spaces`, `agents`, `tabs`, `pane`, `new-menu`, `picker` and `main`. Settle follows T3 Code's design. The Catppuccin themes use the [Catppuccin](https://github.com/catppuccin/catppuccin) palette (MIT License, Copyright (c) 2021 Catppuccin); the T3 Code themes take [T3 Code](https://github.com/pingdotgg/t3code)'s default colors (MIT License, Copyright (c) 2026 T3 Tools Inc.). Icons are [Lucide](https://lucide.dev)'s (ISC License, Copyright (c) Lucide Contributors); file and folder icons in Files and Review are [Catppuccin's VS Code icons](https://github.com/catppuccin/vscode-icons) (MIT License, Copyright (c) 2023 Catppuccin, Copyright (c) 2023 thang-nm). Files ranks search results with [uFuzzy](https://github.com/leeoniya/uFuzzy) (MIT License, Copyright (c) 2022 Leon Sorokin). Review counts characters' widths with [get-east-asian-width](https://github.com/sindresorhus/get-east-asian-width)'s table (MIT License, Copyright (c) Sindre Sorhus). Apache-2.0, as Herdr App.
+`t3-chrome`, `t3-spaces`, `t3-agents`, `t3-tabs`, `t3-pane`, `t3-new-menu`, `t3-picker` and the layout start from Herdr App's shipped `workspace-chrome`, `spaces`, `agents`, `tabs`, `pane`, `new-menu`, `picker` and `main`. Settle follows T3 Code's design. The Catppuccin themes use the [Catppuccin](https://github.com/catppuccin/catppuccin) palette (MIT License, Copyright (c) 2021 Catppuccin); the T3 Code themes take [T3 Code](https://github.com/pingdotgg/t3code)'s default colors (MIT License, Copyright (c) 2026 T3 Tools Inc.). Icons are [Lucide](https://lucide.dev)'s (ISC License, Copyright (c) Lucide Contributors); file and folder icons in Files and Review are [Catppuccin's VS Code icons](https://github.com/catppuccin/vscode-icons) (MIT License, Copyright (c) 2023 Catppuccin, Copyright (c) 2023 thang-nm). Files ranks search results with [uFuzzy](https://github.com/leeoniya/uFuzzy) (MIT License, Copyright (c) 2022 Leon Sorokin). Review counts characters' widths with [get-east-asian-width](https://github.com/sindresorhus/get-east-asian-width)'s table (MIT License, Copyright (c) Sindre Sorhus). `better-search` is adapted from [munza/herdr-mods](https://github.com/munza/herdr-mods) (Apache-2.0 License). Apache-2.0, as Herdr App.
 
 ## More
 

@@ -1,25 +1,32 @@
-# Herdr T3 + Omarchy Theme + Unified Agent Chat (herdr-chat) One-Click Installer for Windows
+# Herdr T3 + Omarchy Theme + Better Search One-Click Installer for Windows
 # Usage: powershell -ExecutionPolicy Bypass -File .\scripts\install-windows.ps1
 
 $ErrorActionPreference = "Stop"
 $src = Split-Path -Parent $PSScriptRoot
 $app = if ($env:HERDR_APP_HOME) { $env:HERDR_APP_HOME } else { Join-Path $HOME ".config\herdr-app" }
 
-Write-Host "==> Installing Herdr T3 + Omarchy Theme + Unified Agent Chat into $app ..." -ForegroundColor Cyan
+Write-Host "==> Installing Herdr T3 + Omarchy Theme + Better Search into $app ..." -ForegroundColor Cyan
 
 New-Item -ItemType Directory -Force -Path "$app\mods", "$app\layouts", "$app\themes" | Out-Null
 
-# 1. Install all T3 mods (excluding dev check files)
-Get-ChildItem -Directory "$src\mods\t3-*" | ForEach-Object {
-  $dest = Join-Path "$app\mods" $_.Name
+# 1. Install all shipped mods (t3-* and better-search), excluding dev check files
+$modDirs = @(Get-ChildItem -Directory "$src\mods\t3-*")
+if (Test-Path "$src\mods\better-search") {
+  $modDirs += Get-Item "$src\mods\better-search"
+}
+foreach ($modDir in $modDirs) {
+  $dest = Join-Path "$app\mods" $modDir.Name
   New-Item -ItemType Directory -Force -Path $dest | Out-Null
-  Get-ChildItem -Path $_.FullName -Recurse | Where-Object {
-    $_.Name -notlike "check*.cjs" -and $_.Name -ne "gpui-kit.d.ts" -and $_.Name -ne "jsconfig.json"
-  } | ForEach-Object {
-    $rel = $_.FullName.Substring($_.Directory.FullName.Length)
-    $targetDir = Join-Path $dest ($_.FullName.Substring((Join-Path $src "mods\$($_.Directory.Name)").Length) | Split-Path -Parent)
+  Copy-Item -Recurse -Force "$($modDir.FullName)\*" $dest -Exclude "check*.cjs", "gpui-kit.d.ts", "jsconfig.json"
+  Get-ChildItem -Path $dest -Filter "check*.cjs" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+}
+
+# Remove retired mods (t3-todos, chat, new-chat) if present from earlier installs
+foreach ($retired in @("t3-todos", "chat", "new-chat")) {
+  $retiredPath = Join-Path "$app\mods" $retired
+  if (Test-Path $retiredPath) {
+    Remove-Item -Recurse -Force $retiredPath -ErrorAction SilentlyContinue
   }
-  Copy-Item -Recurse -Force "$($_.FullName)\*" $dest -Exclude "check*.cjs", "gpui-kit.d.ts", "jsconfig.json"
 }
 
 # 2. Install themes (including Omarchy)
@@ -27,96 +34,46 @@ Get-ChildItem -File "$src\extras\themes\*.json" | ForEach-Object {
   Copy-Item -Force $_.FullName (Join-Path "$app\themes" $_.Name)
 }
 
-# 3. Install Unified Agent Chat (herdr-chat) mods and runtime dependencies
-$hcRoot = Join-Path $src "extras\herdr-chat"
-if (Test-Path $hcRoot) {
-  Write-Host "==> Installing herdr-chat runtime dependencies..." -ForegroundColor Cyan
-  if (-not (Test-Path (Join-Path $hcRoot "node_modules\ws"))) {
-    npm --prefix $hcRoot install --omit=dev --no-audit --no-fund
-  }
-
-  foreach ($m in @("chat", "new-chat")) {
-    $mDest = Join-Path "$app\mods" $m
-    if (Test-Path $mDest) { Remove-Item -Recurse -Force $mDest }
-    Copy-Item -Recurse -Force (Join-Path $hcRoot "herdr-app\mods\$m") $mDest
-  }
-
-  # Auto-detect CLI binary paths on this machine
-  $findCmd = {
-    param($name, $fallback)
-    $c = Get-Command $name -ErrorAction SilentlyContinue
-    if ($c -and $c.Source) { return $c.Source.Replace("\", "/") }
-    if ($fallback -and (Test-Path $fallback)) { return (Resolve-Path $fallback).Path.Replace("\", "/") }
-    return $name
-  }
-
-  $hostPath = (Join-Path $hcRoot "host\main.ts").Replace("\", "/")
-  $nodePath = & $findCmd "node" "C:\Program Files\nodejs\node.exe"
-  $hcPath   = & $findCmd "hc" "$env:LOCALAPPDATA\Programs\herdr-core\hc.exe"
-  $agyPath  = & $findCmd "agy" "$env:LOCALAPPDATA\agy\bin\agy.EXE"
-  $ompPath  = & $findCmd "omp" "$env:LOCALAPPDATA\omp\omp.exe"
-  $cdxPath  = & $findCmd "codex.cmd" "$env:APPDATA\npm\codex.cmd"
-  $piPath   = & $findCmd "pi" $null
-
-  $cfg = [ordered]@{
-    version = "0.3.0"
-    host    = $hostPath
-    node    = $nodePath
-    hc      = $hcPath
-    agy     = $agyPath
-    omp     = $ompPath
-    codex   = $cdxPath
-    pi      = $piPath
-    claude  = "claude"
-  } | ConvertTo-Json -Depth 5
-  [System.IO.File]::WriteAllText((Join-Path "$app\mods\chat" "config.json"), $cfg.Replace("`r`n", "`n"), (New-Object System.Text.UTF8Encoding($false)))
-}
-
-# 4. Install herdr-t3 layout with floating new-chat block and Omarchy theme
+# 3. Install herdr-t3 layout
 Copy-Item -Force "$src\layouts\herdr-t3.svg" "$app\layouts\herdr-t3.svg"
 $layoutObj = Get-Content -Raw "$src\layouts\herdr-t3.json" | ConvertFrom-Json
-if (Test-Path "$app\mods\new-chat") {
-  $floating = @($layoutObj.floating | Where-Object { $_.id -ne "new-chat" })
-  $floating += [pscustomobject]@{
-    id      = "new-chat"
-    content = [pscustomobject]@{
-      mod   = "new-chat"
-      props = [pscustomobject]@{ role = "commands" }
-    }
-    edge    = "bottom"
-    align   = "start"
-  }
-  $layoutObj.floating = $floating
-}
 $layoutJson = $layoutObj | ConvertTo-Json -Depth 20
 [System.IO.File]::WriteAllText("$app\layouts\herdr-t3.json", $layoutJson.Replace("`r`n", "`n"), (New-Object System.Text.UTF8Encoding($false)))
 
-# 5. Merge keys.json
+# 4. Merge keys.json
 $keysPath = "$app\keys.json"
 $repoKeys = Get-Content -Raw "$src\keys.json" | ConvertFrom-Json
 $userKeys = if (Test-Path $keysPath) { Get-Content -Raw $keysPath | ConvertFrom-Json } else { [pscustomobject]@{} }
-if (-not $userKeys.PSObject.Properties["global"]) {
-  $userKeys | Add-Member -NotePropertyName "global" -NotePropertyValue ([pscustomobject]@{}) -Force
+
+# Remove retired new-chat bindings only if they still hold our old defaults
+if ($userKeys.PSObject.Properties["global"]) {
+  foreach ($k in @("ctrl-i", "ctrl-shift-i", "cmd-i")) {
+    if ($userKeys.global.PSObject.Properties[$k] -and $userKeys.global.$k -eq "new-chat.open") {
+      $userKeys.global.PSObject.Properties.Remove($k)
+    }
+  }
 }
-# Remove superseded terminal-colliding keys only if they still hold our old defaults
-if ($userKeys.global.PSObject.Properties["ctrl-i"] -and $userKeys.global."ctrl-i" -eq "new-chat.open") {
-  $userKeys.global.PSObject.Properties.Remove("ctrl-i")
-}
-$userKeys.global | Add-Member -NotePropertyName "ctrl-shift-i" -NotePropertyValue "new-chat.open" -Force
-$userKeys.global | Add-Member -NotePropertyName "cmd-i" -NotePropertyValue "new-chat.open" -Force
 
 if ($userKeys.PSObject.Properties["layout:herdr-t3"]) {
   $oldLayoutKeys = @{
-    "ctrl-p" = "mod.open:t3-picker"
-    "ctrl-]" = "t3-tabs.next"
-    "ctrl-[" = "t3-tabs.prev"
-    "ctrl-w" = "t3-tabs.close-tab"
-    "ctrl-t" = "t3-tabs.new"
+    "ctrl-p"       = "mod.open:t3-picker"
+    "ctrl-]"       = "t3-tabs.next"
+    "ctrl-["       = "t3-tabs.prev"
+    "ctrl-w"       = "t3-tabs.close-tab"
+    "ctrl-t"       = "t3-tabs.new"
+    "cmd-i"        = "new-chat.open"
+    "ctrl-shift-i" = "new-chat.open"
   }
   foreach ($ok in $oldLayoutKeys.Keys) {
     if ($userKeys."layout:herdr-t3".PSObject.Properties[$ok] -and $userKeys."layout:herdr-t3".$ok -eq $oldLayoutKeys[$ok]) {
       $userKeys."layout:herdr-t3".PSObject.Properties.Remove($ok)
     }
+  }
+}
+
+foreach ($retiredSec in @("mod:t3-todos", "mod:new-chat", "mod:chat")) {
+  if ($userKeys.PSObject.Properties[$retiredSec]) {
+    $userKeys.PSObject.Properties.Remove($retiredSec)
   }
 }
 
@@ -134,9 +91,9 @@ foreach ($prop in $repoKeys.PSObject.Properties) {
 $keysJson = $userKeys | ConvertTo-Json -Depth 10
 [System.IO.File]::WriteAllText($keysPath, $keysJson.Replace("`r`n", "`n"), (New-Object System.Text.UTF8Encoding($false)))
 
-# 6. Switch to herdr-t3 layout if herdr-app is running
+# 5. Switch to herdr-t3 layout if herdr-app is running
 try {
   herdr-app do layout.switch --name herdr-t3 2>$null | Out-Null
 } catch {}
 
-Write-Host "==> Done! Layout 'herdr-t3' (Omarchy theme + Unified Agent Chat) is ready." -ForegroundColor Green
+Write-Host "==> Done! Layout 'herdr-t3' (with Better Search) is ready." -ForegroundColor Green

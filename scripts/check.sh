@@ -31,7 +31,8 @@ done
 # jsconfig.json implies.
 ts="--noEmit --allowJs --checkJs --target ES2022 --module ES2022 --moduleResolution bundler --lib ES2022 --strict
   --strictNullChecks false --noImplicitAny false --useUnknownInCatchVariables false --skipLibCheck"
-for d in mods/t3-*/ extras/mods/*/; do
+for d in mods/t3-*/ mods/better-search/ extras/mods/*/; do
+  [ -d "$d" ] || continue
   out=$(herdr-app check "$d" 2>&1) || { echo "FAIL herdr-app check $d"; echo "$out" | tail -20; fail=1; }
   # gpui-kit.d.ts is the API `herdr-app check` just wrote.
   out=$(bunx -p typescript tsc $ts "$d"*.js "$d"gpui-kit.d.ts types/*.d.ts 2>&1) || { echo "FAIL tsc $d"; echo "$out" | tail -20; fail=1; }

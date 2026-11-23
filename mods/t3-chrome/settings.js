@@ -7,7 +7,6 @@ import * as fs from "fs/promises";
 import { SETTINGS, t3Settings, DEFAULT_PANEL_TABS } from "./layout-settings.js";
 import { stopsInit, stop, focusRoot } from "./focus.js";
 import { menuJump } from "./list.js";
-import { keyOf } from "./tip.js";
 
 const SECTIONS = [
   { id: "home", title: "Home", icon: "mods/t3-chrome/icons/house.svg" },
@@ -25,7 +24,6 @@ const PANEL_TABS_CONFIG = [
   { id: "changes", title: "Changes", about: "Git status, staged changes, diffs and commit actions." },
   { id: "favorites", title: "Favorites", about: "Pinned workspaces, directories, and favorite files." },
   { id: "tools", title: "Tools", about: "Explore installed AI skills, plugins, and MCP server tools." },
-  { id: "todos", title: "Todos", about: "Project task checklist synchronized with TODO.md and agent actions." },
 ];
 
 // Home as a shell, not a mod (homeMod null): an agent started there turns that space into an ordinary one (t3-tabs/navigation.js).
@@ -166,9 +164,6 @@ export function settingsView(view) {
       }, item.locked);
     }))
     .child(div().pt(18).pb(4).text_size(12).font_semibold().text_color(t.dim).child("DEVELOPER FEATURES"))
-    .child(toggleRow("st-unified-chat", `Unified Agent Chat${keyOf("new-chat.open") ? ` (${keyOf("new-chat.open")})` : ""}`, "Use the unified GUI chat composer (herdr-chat) for Antigravity, Codex, OMP, and Pi. Turn off to disable the GUI chat launcher.", Boolean(now.unifiedChat !== false), () => {
-      pick("unifiedChat", !Boolean(now.unifiedChat !== false));
-    }))
     .child(toggleRow("st-live-ports", "Live Dev Ports", "Detect listening localhost dev server ports (3000, 5173...) and show 1-click browser badges in the panel header.", Boolean(now.livePorts !== false), () => {
       pick("livePorts", !Boolean(now.livePorts !== false));
     }));

@@ -78,11 +78,11 @@ Inbox 左侧列出当前 space 中未收起的（非 Settled／非 Snoozed，或
 
 只有一个右侧面板，跟随当前 space，跨标签固定。开关／页面／放大按 space（包括 Home）各记，未用过的默认关闭；宽度整个窗口共用。40px 固定头列出 `panel-body` 里的页（Files、Sessions、Favorites、Changes、Tools，加上装了才有的 Review）。页签高 28、圆角 6、12px 字、14px 图标，当前 `raised` 加细边框；右侧 24px 放大／还原、关闭隐藏或恢复工作列。Review 用 pulls.review 原色标记，未悬停／选中时 70%，并跟随该 space 分析状态。面板关闭时状态移到标签栏开关的图标左侧，不叠角标、不重复。Changes 默认扁平列表，工具栏提供 `folder-tree` 按钮（记住于 `localStorage`）切到压缩单目录链（`a / b`、目录优先、默认展开）的树状视图，并支持整目录暂存／取消暂存与二次确认丢弃。
 
-两页是同一张圆角 8、`background` 卡片；每页一条 40px 透明全宽工具栏，下面内容左、唯一导航列右；只靠细线分开，不换底色，代码行号栏也同色。加载是居中 14px 转圈加状态文字；空态是居中 24px 图标、13px medium 标题、12px 淡色提示、间隔 8；读取失败在工具栏下用 11px `ansi1` 错误条叠 `18` 透明底，带 Retry。空态也保留工具栏。
+两页是同一张圆角 8、`background` 卡片；每页一条 40px 透明全宽工具栏，只靠细线分开，不换底色，代码行号栏也同色。Review 为左内容右导航；Files 为全宽上下分栏（上树下预览，6px 横向拖动区记于 `nav.height`，默认 240、最小 110、最大 560、预览至少留 160；未选文件时树占满整高）。加载是居中 14px 转圈加状态文字；空态是居中 24px 图标、13px medium 标题、12px 淡色提示、间隔 8；读取失败在工具栏下用 11px `ansi1` 错误条叠 `18` 透明底，带 Retry。空态也保留工具栏。
 
-每页独立记导航开关／宽度、Wrap／Scroll。导航默认开、宽 256、最小 160、最大 560，内容至少留 256；左 6px 拖动区、40px 列头，不按断点重排。工具栏末尾 `folder-tree` 开关为 24px ghost，开时高亮。宽度稳定 300ms 才重排。切页只恢复自己的文件和阅读位置，没有跨页打开／定位。
+每页独立记导航开关／尺寸（Review 记 `nav.width`，Files 记 `nav.height`）与 Wrap／Scroll。Review 导航默认开、宽 256、最小 160、最大 560，内容至少留 256；左 6px 拖动区、40px 列头。工具栏 `folder-tree` 开关为 24px ghost，开时高亮。宽度稳定 300ms 才重排。切页只恢复自己的文件和阅读位置，没有跨页打开／定位。
 
-Files 只读，根是 space 所在机器的 `folder`，不跟终端 cwd。未选文件时工具栏只显示根名，选中后是路径面包屑，点目录在树里定位。Markdown 可 Preview／Code，其他文本是只读语法高亮 Editor，图片是预览。长行默认换行，`text-wrap` 切 Scroll，与 Review 独立。工具栏 24px ghost 按钮间隔 4，首字内缩 16。导航列头有 Search files、Collapse all／Expand all；全部展开最多列 200 个目录，Git 忽略的保持折叠。
+Files 只读，根是 space 所在机器的 `folder`，不跟终端 cwd。工具栏展示根名或路径面包屑（点目录展开树），并提供行数、复制相对路径、本地 VS Code 打开、Markdown Preview／Code、`text-wrap`、目录开关与关闭文件按钮（24px ghost、间隔 4）。打开 ≥ 2 个文件时预览上方出现 30px 最近文件标签条（点击切换、中键或 `×` 关闭）。导航头有 Search files（含匹配计数）、刷新与 Collapse all／Expand all（最多列 200 个目录，Git 忽略保持折叠）。
 
 共用树：行高 24、12px 界面字、圆角 6、内缩 2、每层 27.2、12px 箭头、16px Catppuccin 图标；悬停文字色 7%、选中 12%。单目录链压成 `a / b`。先目录后文件，不分大小写自然排序（`file2` 在 `file10` 前）；省略 `.git`、忽略项变暗。改动用 Review 色标 A／M／D／R，删除划线，含改动的折叠目录带点。虚拟列表只画可见行，不截前 N 个。方向键（←／→ 收起／到父级、展开／进入）、Home／End、Enter 移动 1px 环并打开所在行。
 
@@ -255,6 +255,7 @@ macOS 用 `osascript`、Linux `zenity` 选择，等待显示 Opening…；图片
 | `cmd-shift-g` | `t3-tabs.review`，Review 页开关；无键 `t3-tabs.files` 同理 |
 | `cmd-shift-s` | `t3-tabs.settle`，当前 Inbox agent/mod 卡 |
 | `cmd-p` | `mod.open:t3-picker` |
+| `cmd-alt-p`、`ctrl-alt-p` | `mod.open:better-search`（全局搜索标签/Agent/命令/文件/Space/输出；`/` 直接在 `t3-files` 打开） |
 | `cmd-]`／`cmd-[` | `t3-tabs.next/prev`，agent，不循环 |
 | `cmd-w`、`ctrl-alt-shift-x` | `t3-tabs.close-tab` |
 | `cmd-shift-w`、`ctrl-alt-x` | `t3-tabs.close-pane` |
@@ -304,7 +305,7 @@ floating root: tabs-keys:t3-tabs {part:"keys"}, bottom/end, 不画内容
 
 sidebar/work/panel 列 `resizable:false` 固定内部边界，外分隔线仍可拖。Spaces 传 `{newMenu:"t3-new-menu"}`；Inbox 传 `{newMenu:"t3-new-menu",picker:"t3-picker",home:"t3-tabs.home",menu:"t3-menu"}`。main/home-main 共用前述 background/border/focus/radius/gap/lone。浮动 keys 副本负责命令、Home、space 面板同步；其他 tab 副本共用导航，不各开一份确认。
 
-必需 mod：`t3-chrome`、`t3-spaces`、`t3-agents`、`t3-inbox`、`t3-tabs`、`t3-pane`、`t3-home`、`t3-files`、`t3-new-menu`、`t3-picker`、`t3-actions`、`t3-menu`。有对应的从官方 mod 改，Inbox/Home/Files 新建。保留官方 workspace-status/转圈/程序素材；UI 自带目录 Lucide 24网格/1.75px，文件用 vendored Catppuccin。mod 不能越目录 import，改 `shared/` 源后由 `scripts/sync.sh` 分发，复用命名/状态/pin/labels、焦点/菜单/动画/按钮、侧栏/面板/存储、文件树/菜单/状态模块。
+必需 mod：`t3-chrome`、`t3-spaces`、`t3-agents`、`t3-inbox`、`t3-tabs`、`t3-pane`、`t3-home`、`t3-files`、`t3-new-menu`、`t3-picker`、`t3-actions`、`t3-menu`、`better-search`。有对应的从官方 mod 改，Inbox/Home/Files 新建。保留官方 workspace-status/转圈/程序素材；UI 自带目录 Lucide 24网格/1.75px，文件用 vendored Catppuccin。mod 不能越目录 import，改 `shared/` 源后由 `scripts/sync.sh` 分发，复用命名/状态/pin/labels、焦点/菜单/动画/按钮、侧栏/面板/存储、文件树/菜单/状态模块。
 
 必需 mod 要真实文件（SVG 软链不加载），布局/SVG、按 context 合并 keys 放 `HERDR_APP_HOME` 或 `~/.config/herdr-app`，`layout.switch {"name":"herdr-t3"}` 选中。`scripts/update.sh` 要 `jq/rsync`，先验证旧 layout/keys，再 `rsync --delete` 自己 mod；保留主题/focus/stack 选择、支持的 extra 块、Review `config.json`，只更新已装 extras/主题，repo 键优先、报告替换。设置/pins/用户画不在替换目录。`scripts/sync.sh` 还写安装目录和同级独立仓库，不是只读检查。
 
