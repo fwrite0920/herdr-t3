@@ -4,8 +4,10 @@
 // scripts/sync.sh copies this to both mods.
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, agents, panes, run, notify, exec, focused, shared, setShared } from "herdr";
+import { spaces, agents, panes, run, notify, exec, focused, shared, setShared, layout } from "herdr";
 import { step } from "./list.js";
+
+const findNode = (node, id) => (node?.id === id ? node : (node?.children ?? []).reduce((hit, c) => hit ?? findNode(c, id), null));
 
 export const MENU_W = 220, MENU_ROW = 28;
 
@@ -22,16 +24,27 @@ export function fileMenuItems({ page, dir = false, remote = false, platform, age
     { id: "copy-relative", label: "Copy relative path", icon: "copy" },
     page === "files" && dir && { id: "cd-terminal", label: "cd in terminal", icon: "terminal" },
     page === "files" && dir && { id: "favorite", label: "Add to favorites", icon: "star" },
+    agent && { id: "mention", label: "Mention in agent", icon: "at-sign" },
     !remote && (mac || win) && { id: "reveal", label: mac ? "Reveal in Finder" : "Reveal in File Explorer", icon: "folder-open" },
     !remote && !dir && { id: "open", label: "Open in default app", icon: "external-link" },
     page === "review" && { id: reviewed ? "unreview" : "review", label: reviewed ? "Mark unreviewed" : "Mark reviewed", icon: "square-check" },
   ].filter(Boolean);
 }
 
-// The agent a mention goes to: the space's focused one, else one in its tab in view, else its first.
+// The target a mention goes to: the space's focused agent, else one in its active tab, else its first agent;
+// falls back to the space's focused or active terminal pane when no agent is registered.
 export function agentFor(spaceId) {
-  const sp = spaces().find((s) => s.id === spaceId), mine = agents().filter((a) => a.space === spaceId), tab = sp?.tabs.find((c) => c.active)?.id;
-  return mine.find((a) => a.focused) ?? mine.find((a) => a.tab === tab) ?? mine[0] ?? null;
+  const sp = spaces().find((s) => s.id === spaceId);
+  const tab = sp?.tabs?.find((c) => c.active)?.id;
+  const mine = agents().filter((a) => a.space === spaceId);
+  const found = mine.find((a) => a.focused) ?? mine.find((a) => a.tab === tab) ?? mine[0];
+  if (found) return found;
+  const ps = typeof panes === "function" ? panes() : [];
+  const tabIds = new Set((sp?.tabs ?? []).map((c) => c.id));
+  const pane = ps.find((p) => p.focused && p.terminal && tabIds.has(p.tab))
+    ?? ps.find((p) => p.tab === tab && p.terminal)
+    ?? ps.find((p) => p.terminal && tabIds.has(p.tab));
+  return pane ? { address: pane.terminal, program: pane.program ?? { name: "terminal" } } : null;
 }
 
 /** What the items both pages have do: `abs` the row's path, `rel` its path from the space's folder. False for another item. */
@@ -80,18 +93,33 @@ export function runCommon(id, { abs, rel, agent, platform }, cx) {
   return true;
 }
 
-// Into the agent's input as a paste, never sent: the clipboard carries it and gets its text back. Paste reads the clipboard a
-// moment later, so it's put back after 150 ms. A clipboard holding no text (an image) isn't touched.
+// Into the agent's input as a paste, never sent: reveals `work` if the panel was widened, focuses the target
+// terminal/agent and waits for focus to settle before pasting, then restores prior text clipboard after 500 ms.
 export function mention(path, address, cx) {
+  if (!address) return;
   const previous = cx.read_from_clipboard();
-  if (previous === undefined) {
-    notify({ title: "The clipboard holds something that isn't text", body: "Mention in agent would replace it. Copy relative path, then paste it yourself.", level: "warning" });
-    return;
-  }
-  cx.write_to_clipboard(`@${path} `);
-  run("pane.focus", { terminal: address });
-  run("terminal.paste");
-  cx.spawn(async (cx) => { await cx.sleep(150); cx.write_to_clipboard(previous); });
+  const text = `@${String(path).replace(/\\/g, "/")} `;
+  const work = typeof layout === "function" ? findNode(layout(), "work") : null;
+  if (work?.hidden) run("layout.show", { id: "work" });
+  const isAgent = agents().some((a) => a.address === address);
+  const targetPane = typeof panes === "function" ? panes().find((p) => p.terminal === address) : null;
+  if (isAgent) run("agent.focus", { terminal: address });
+  if (targetPane?.pane) run("pane.focus", { pane: targetPane.pane });
+  else if (!isAgent) run("pane.focus", { terminal: address });
+  cx.write_to_clipboard(text);
+  cx.spawn(async (cx) => {
+    for (let i = 0; i < 16; i++) {
+      await cx.sleep(25);
+      if (focused()?.terminal === address) break;
+    }
+    await cx.sleep(60);
+    cx.write_to_clipboard(text);
+    run("terminal.paste");
+    if (typeof previous === "string") {
+      await cx.sleep(500);
+      cx.write_to_clipboard(previous);
+    }
+  });
 }
 
 /**

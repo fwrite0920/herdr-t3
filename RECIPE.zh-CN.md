@@ -82,7 +82,7 @@ Inbox 左侧列出当前 space 中未收起的（非 Settled／非 Snoozed，或
 
 每页独立记导航开关／尺寸（Review 记 `nav.width`，Files 记 `nav.height`）与 Wrap／Scroll。Review 导航默认开、宽 256、最小 160、最大 560，内容至少留 256；左 6px 拖动区、40px 列头。工具栏 `folder-tree` 开关为 24px ghost，开时高亮。宽度稳定 300ms 才重排。切页只恢复自己的文件和阅读位置，没有跨页打开／定位。
 
-Files 只读，根是 space 所在机器的 `folder`，不跟终端 cwd。工具栏展示根名或路径面包屑（点目录展开树），并提供行数、复制相对路径、本地 VS Code 打开、Markdown Preview／Code、`text-wrap`、目录开关与关闭文件按钮（24px ghost、间隔 4）。打开 ≥ 2 个文件时预览上方出现 30px 最近文件标签条（点击切换、中键或 `×` 关闭）。导航头有 Search files（含匹配计数）、刷新与 Collapse all／Expand all（最多列 200 个目录，Git 忽略保持折叠）。
+Files 只读，根是 space 所在机器的 `folder`，不跟终端 cwd。工具栏展示根名或路径面包屑（点目录展开树），并提供行数、Mention 给 Agent、复制相对路径、本地 VS Code 打开、Markdown Preview／Code、`text-wrap`、目录开关与关闭文件按钮（24px ghost、间隔 4）。打开 ≥ 2 个文件时预览上方出现 30px 最近文件标签条（点击切换、中键或 `×` 关闭）。导航头有 Search files（含匹配计数）、刷新与 Collapse all／Expand all（最多列 200 个目录，Git 忽略保持折叠）。
 
 共用树：行高 24、12px 界面字、圆角 6、内缩 2、每层 27.2、12px 箭头、16px Catppuccin 图标；悬停文字色 7%、选中 12%。单目录链压成 `a / b`。先目录后文件，不分大小写自然排序（`file2` 在 `file10` 前）；省略 `.git`、忽略项变暗。改动用 Review 色标 A／M／D／R，删除划线，含改动的折叠目录带点。虚拟列表只画可见行，不截前 N 个。方向键（←／→ 收起／到父级、展开／进入）、Home／End、Enter 移动 1px 环并打开所在行。
 

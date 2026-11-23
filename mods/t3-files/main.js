@@ -11,7 +11,7 @@ import { step, scrollList } from "./list.js";
 import { fileIcon } from "./file-icons.js";
 import { TREE_ROW, treeRows, rowAt, treeKey, treeList, treeRow, revealRow, sortEntries } from "./file-tree.js";
 import { withTopNav, navToggle, foldAllButton, ghostButton, navOpen, setNavOpen, holdWidth } from "./nav-column.js";
-import { fileMenuItems, fileMenuView, runCommon } from "./file-menu.js";
+import { fileMenuItems, fileMenuView, agentFor, runCommon, mention } from "./file-menu.js";
 import { migratePagePrefs, wrapLines, setWrapLines } from "./store.js";
 import { loadingState, emptyState, errorBar } from "./panel-states.js";
 import { LIST, IGNORED, PROBE, REMOTE_SEARCH, RANKED, join, parentOf, nameOf, ancestors, parseListing, parseStatus, parseIgnored, markIgnored, folderEntries, terms, narrows,
@@ -547,10 +547,10 @@ export default class Files extends View {
 
   // A row's menu: file-menu.js's items.
   menuItems(st, path) {
-    const abs = join(st.root, path), platform = window()?.platform, dir = Boolean(this.rows(st).find((r) => r.path === path)?.dir);
-    const items = fileMenuItems({ page: "files", dir, remote: Boolean(st.on), platform }).map((it) => ({ ...it,
-      hint: it.id === "copy-path" ? st.on ?? "" : "",
-      run: (cx) => runCommon(it.id, { abs, rel: path, agent: null, platform }, cx) }));
+    const abs = join(st.root, path), agent = agentFor(st.id), platform = window()?.platform, dir = Boolean(this.rows(st).find((r) => r.path === path)?.dir);
+    const items = fileMenuItems({ page: "files", dir, remote: Boolean(st.on), platform, agent }).map((it) => ({ ...it,
+      hint: it.id === "copy-path" ? st.on ?? "" : it.id === "mention" ? agent.program?.name ?? "" : "",
+      run: (cx) => runCommon(it.id, { abs, rel: path, agent, platform }, cx) }));
     if (!st.on) {
       items.push({
         id: "vscode",
@@ -610,11 +610,12 @@ export default class Files extends View {
   }
 
   // The page's toolbar, across it, there with no file too: where the file is (the folder's name alone without one), quick
-  // actions (copy path, open in VS Code), Preview/Code for Markdown, Wrap for code, tree toggle & close.
+  // actions (mention in agent, copy path, open in VS Code), Preview/Code for Markdown, Wrap for code, tree toggle & close.
   toolbar(st, t) {
     const md = kindOf(st.file ?? "") === "markdown", code = shared(MARKDOWN) === "code";
     const parts = st.file?.split("/") ?? [];
     const lines = st.view?.text !== undefined ? lineCount(st.view.text) : 0;
+    const agent = st.file ? agentFor(st.id) : null;
     const crumb = (label, path, last) => div().id(`crumb-${path}`).flex_none().px(4).rounded(4).text_color(last ? t.foreground : t.muted)
       .when(!last, (el) => el.cursor_pointer().hover((s) => s.bg(t.foreground + "12").text_color(t.foreground)).on_click((_e, cx) => this.reveal(st, path, cx)))
       .child(label);
@@ -631,6 +632,7 @@ export default class Files extends View {
         .when(md, (el) => el.child(h_flex().flex_none().gap(2).child(tab("Preview", !code, "preview")).child(tab("Code", code, "code"))))
         // The page's buttons 4 apart, as Review's.
         .child(h_flex().flex_none().gap(4).items_center()
+          .when(Boolean(st.file && agent), (el) => el.child(ghostButton(t, MOD, "t3-files-mention", "at-sign", `Mention in ${agent.program?.name ?? "agent"}`, (cx) => mention(st.file, agent.address, cx), { view: this })))
           .when(Boolean(st.file), (el) => el.child(ghostButton(t, MOD, "t3-files-copy-path", "copy", "Copy relative path", (cx) => {
             cx.write_to_clipboard(st.file);
             notify({ title: "Copied path", body: st.file, level: "info" });
