@@ -15,8 +15,7 @@ import { t3Settings } from "./layout-settings.js";
 const PAGES = {
   files: ["Files", "folder-tree"],
   sessions: ["Sessions", "clock"],
-  favorites: ["Favorites", "star"],
-  changes: ["Changes", "git-commit"],
+  changes: ["Git", "git-branch"],
   tools: ["Tools", "wrench"],
   review: ["Review", "pulls-review", true]
 };

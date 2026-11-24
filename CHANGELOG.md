@@ -2,6 +2,16 @@
 
 English · [中文](CHANGELOG.zh-CN.md)
 
+## 2026-11-24
+
+- Removed **Favorites** (`mods/t3-favorites`) completely, along with its Space Panel tab, layout block, settings toggle, `keys.json` bindings, Files folder right-click item (`shared/file-menu.js`), and Windows installer cleanup hook.
+- Redesigned **Changes** (`mods/t3-changes`) into a **Read-First Git Radar & Agent Handoff** panel in the Space Panel (zero destructive Git mutations; delegate Git actions to your active agent via 1-click `@`):
+  - Added a quiet 40px repository radar bar displaying active branch / detached HEAD, upstream `↑ahead` / `↓behind` / `synced` / `gone` / `local` status, conflict counter with 1-click Agent handoff, diff totals, and read-only **Fetch** (`git fetch --prune`) + Refresh.
+  - Upgraded **Changes** with separated **Staged (`--cached`) vs Unstaged** diff loading, draggable top-and-bottom split (`changes.split`), compacted directory tree toggle (`list.mode`), line-wrap toggle (`diff.wrap`), per-file history jump (`clock`), 1-click `@` Agent mention, Copy path, and `j/k` / `↑/↓` navigation.
+  - Added **Git Log** with unpushed commit badges (`↑ local` via `@{u}..HEAD`), full-repository Enter-triggered backend search (`path:`, `author:`, grep, SHA), `Current branch` vs `All branches` toggle (`log.scope`), draggable split (`log.split`), commit file inspector, Copy SHA, and 1-click `@` commit handoff to the active agent.
+  - Added **Branches, Worktrees & Stashes** radar: click any Worktree to switch/open its Space, click any local or remote branch to inspect its commit log read-only without touching HEAD, and preview Stash diffs read-only with `@` handoff.
+  - Added theme-adaptive **syntax highlighting & intra-line word-diff coloring** (`mods/t3-changes/highlight.js`) across Changes, Log commit diffs, and Stash diffs, with dual old/new line numbers and 2px addition/deletion edge markers.
+
 ## 2026-11-23
 
 - Fixed unreadable terminal blue-background highlights (such as PowerShell 7 directory listings using `\e[44;1m`) in `extras/themes/omarchy.json`: deepened `ansi[4]` (`#8ba4b0` → `#366388`) so light text over ANSI blue background jumps from 1.45:1 to 4.30:1 contrast while keeping bright blue (`ansi[12]`) light; gently lifted `foreground`/`ansi[7]`/`done` (`#c1c1c1` → `#d4d4d4`), `cursor` (`#d1d1d1` → `#e0e0e0`), `ansi[15]` (`#d1d1d1` → `#e5e5e5`), and `ansi[8]` (`#666666` → `#767676`) for clearer terminal readability.

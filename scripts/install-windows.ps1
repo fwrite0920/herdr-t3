@@ -21,8 +21,8 @@ foreach ($modDir in $modDirs) {
   Get-ChildItem -Path $dest -Filter "check*.cjs" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
-# Remove retired mods (t3-todos, chat, new-chat) if present from earlier installs
-foreach ($retired in @("t3-todos", "chat", "new-chat")) {
+# Remove retired mods (t3-todos, t3-favorites, chat, new-chat) if present from earlier installs
+foreach ($retired in @("t3-todos", "t3-favorites", "chat", "new-chat")) {
   $retiredPath = Join-Path "$app\mods" $retired
   if (Test-Path $retiredPath) {
     Remove-Item -Recurse -Force $retiredPath -ErrorAction SilentlyContinue
@@ -71,7 +71,7 @@ if ($userKeys.PSObject.Properties["layout:herdr-t3"]) {
   }
 }
 
-foreach ($retiredSec in @("mod:t3-todos", "mod:new-chat", "mod:chat")) {
+foreach ($retiredSec in @("mod:t3-todos", "mod:t3-favorites", "mod:new-chat", "mod:chat")) {
   if ($userKeys.PSObject.Properties[$retiredSec]) {
     $userKeys.PSObject.Properties.Remove($retiredSec)
   }

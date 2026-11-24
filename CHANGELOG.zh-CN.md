@@ -2,6 +2,16 @@
 
 [English](CHANGELOG.md) · 中文
 
+## 2026-11-24
+
+- 彻底移除 **Favorites（收藏夹）**（`mods/t3-favorites`）及其 Space 面板页签、布局块、设置开关、`keys.json` 快捷键、Files 目录右键「Add to favorites」菜单项（`shared/file-menu.js`）与 Windows 安装脚本遗留清理。
+- 将右侧面板 **Changes**（`mods/t3-changes`）重构为 **只读 Git 雷达 + 一键 Agent 交接** 视图（界面零破坏性 Git 写操作，需要操作时通过 `@` 交由当前 Agent 处理）：
+  - 顶部 40px 仓库态势栏：展示当前分支或游离 `HEAD`、上游 `↑ahead` / `↓behind` / `synced` / `gone` / `local` 状态、合并冲突计数（点击一键交 Agent 解冲突）、总体增删行统计，以及纯只读的 **Fetch**（`git fetch --prune`）与刷新按钮。
+  - **Changes 视图**：严格区分 **Staged（`--cached`）与 Unstaged** 的 Diff 内容，新增可拖拽上下分栏（`changes.split`）、扁平/压缩目录树切换（`list.mode`）、长行自动换行开关（`diff.wrap`）、单文件历史跳转、一键 `@` 递交 Agent、复制路径与 `j/k` / `↑/↓` 快捷翻看。
+  - **Log 提交历史视图**：通过 `@{u}..HEAD` 标出尚未推送的 `↑ local` 提交，支持回车执行全库后端检索（支持 `path:`、`author:`、关键词与 SHA）、`Current branch` / `All branches` 切换（`log.scope`）、可拖拽上下分栏（`log.split`）、提交详情与改动文件检视、复制 SHA 以及一键 `@` 将提交上下文发送给 Agent。
+  - **Branches / Worktrees / Stashes 雷达视图**：点击 Worktree 直接切换或打开对应 Herdr Space；点击任意本地或远程分支直接切入 Log 只读浏览该分支历史（完全不动本地工作区）；只读查看 Stash 列表与着色 Diff 并支持 `@` 递交 Agent。
+  - 为 Changes、Log 提交详情与 Stash Diff 全面新增主题自适应**代码语法高亮与行内变更词高亮**（`mods/t3-changes/highlight.js`），并搭配旧/新双行号与左侧 2px 增删指示条。
+
 ## 2026-11-23
 
 - 修复 `extras/themes/omarchy.json` 在终端蓝色背景高亮下文字看不清的问题（如 PowerShell 7 目录默认样式 `\e[44;1m`）：将 `ansi[4]`（标准蓝）压深为沉稳石板蓝（`#8ba4b0` → `#366388`），使蓝底白字对比度由 1.45:1 提升至 4.30:1（同时保留亮蓝 `ansi[12]` 为 `#9bb4c0`）；并适度提亮 `foreground` / `ansi[7]` / `done`（`#c1c1c1` → `#d4d4d4`）、`cursor`（`#d1d1d1` → `#e0e0e0`）、`ansi[15]`（`#d1d1d1` → `#e5e5e5`）及 `ansi[8]`（`#666666` → `#767676`），改善整体终端与暗灰提示的可读性。

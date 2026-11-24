@@ -231,14 +231,6 @@
     "ctrl-shift-w": "t3-tabs.panel-close",
     "ctrl-shift-x": "t3-tabs.panel-close"
   },
-  "mod:t3-favorites": {
-    "cmd-w": "t3-tabs.panel-close",
-    "ctrl-alt-shift-x": "t3-tabs.panel-close",
-    "cmd-shift-w": "t3-tabs.panel-close",
-    "ctrl-alt-x": "t3-tabs.panel-close",
-    "ctrl-shift-w": "t3-tabs.panel-close",
-    "ctrl-shift-x": "t3-tabs.panel-close"
-  },
   "mod:t3-changes": {
     "cmd-w": "t3-tabs.panel-close",
     "ctrl-alt-shift-x": "t3-tabs.panel-close",

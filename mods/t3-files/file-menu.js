@@ -4,7 +4,7 @@
 // scripts/sync.sh copies this to both mods.
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { spaces, agents, panes, run, notify, exec, focused, shared, setShared, layout } from "herdr";
+import { spaces, agents, panes, run, notify, exec, focused, layout } from "herdr";
 import { step } from "./list.js";
 
 const findNode = (node, id) => (node?.id === id ? node : (node?.children ?? []).reduce((hit, c) => hit ?? findNode(c, id), null));
@@ -23,7 +23,6 @@ export function fileMenuItems({ page, dir = false, remote = false, platform, age
     { id: "copy-path", label: "Copy path", icon: "copy" },
     { id: "copy-relative", label: "Copy relative path", icon: "copy" },
     page === "files" && dir && { id: "cd-terminal", label: "cd in terminal", icon: "terminal" },
-    page === "files" && dir && { id: "favorite", label: "Add to favorites", icon: "star" },
     agent && { id: "mention", label: "Mention in agent", icon: "at-sign" },
     !remote && (mac || win) && { id: "reveal", label: mac ? "Reveal in Finder" : "Reveal in File Explorer", icon: "folder-open" },
     !remote && !dir && { id: "open", label: "Open in default app", icon: "external-link" },
@@ -64,20 +63,6 @@ export function runCommon(id, { abs, rel, agent, platform }, cx) {
       exec("hc", ["send", term, `cd "${q}"`]).catch(() => null);
     } else {
       notify({ title: "No terminal in active space", level: "warning" });
-    }
-  }
-  else if (id === "favorite") {
-    const norm = (p) => (p ? p.replace(/\\/g, "/").replace(/\/+$/, "") : "");
-    const keyOf = (p) => (platform === "windows" ? norm(p).toLowerCase() : norm(p));
-    const name = abs.split(/[\\/]/).filter(Boolean).pop() ?? abs;
-    const all = shared("t3.favorites") ?? shared("hs.favorites") ?? [];
-    if (!all.some((x) => keyOf(x.folder) === keyOf(abs) && (x.machine ?? null) === null)) {
-      const updated = [...all, { name, folder: abs, machine: null }];
-      setShared("t3.favorites", updated);
-      setShared("hs.favorites", updated);
-      notify({ title: "Added to favorites", body: abs, level: "success" });
-    } else {
-      notify({ title: "Already in favorites", body: abs, level: "info" });
     }
   }
   else if (id === "mention") mention(rel, agent.address, cx);

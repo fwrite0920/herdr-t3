@@ -9,7 +9,6 @@ export const DEFAULT_PANEL_TABS = {
   files: true,
   sessions: true,
   changes: true,
-  favorites: false,
   tools: false
 };
 

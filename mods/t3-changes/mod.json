@@ -1,5 +1,5 @@
 {
   "name": "t3-changes",
-  "version": "0.1.0",
-  "description": "Git diff and commit panel for Herdr T3"
+  "version": "0.3.0",
+  "description": "Read-first Git radar (changes, log, branches, worktrees, stashes) with 1-click Agent handoff for Herdr T3"
 }

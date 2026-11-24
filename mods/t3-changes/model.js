@@ -1,6 +1,19 @@
-// Pure data helpers for t3-changes: view mode persistence, compacted directory tree, and batched git commands.
+// Pure data helpers for t3-changes (Read-First Git Radar & Agent Handoff):
+// persisted prefs, compacted tree, branch/log/commit/stash/worktree parsers,
+// backend log query parser, staged vs unstaged diff args, and agent handoff formatters.
 
 export const VIEW_MODE_KEY = "list.mode";
+export const TAB_KEY = "git.tab";
+export const LOG_SCOPE_KEY = "log.scope";
+export const DIFF_WRAP_KEY = "diff.wrap";
+export const CHANGES_SPLIT_KEY = "changes.split";
+export const LOG_SPLIT_KEY = "log.split";
+
+export const LOG_FORMAT = "%x1e%H%x1f%h%x1f%P%x1f%D%x1f%an%x1f%ae%x1f%ar%x1f%aI%x1f%s%x1f%b";
+export const BRANCH_FORMAT = "%(HEAD)%1f%(refname)%1f%(refname:short)%1f%(objectname:short)%1f%(upstream:short)%1f%(upstream:track)%1f%(committerdate:relative)%1f%(subject)";
+export const STASH_FORMAT = "%gd%x1f%h%x1f%cr%x1f%gs";
+
+const VALID_TABS = new Set(["changes", "log", "branches"]);
 
 const sortKey = (name) => name.toLowerCase().replace(/\d+/g, (d) => d.padStart(16, "0"));
 const compareNames = (a, b) => {
@@ -20,10 +33,411 @@ export function readViewMode() {
 /** Persist file list layout ("list" or "tree"). */
 export function writeViewMode(mode) {
   const value = mode === "tree" ? "tree" : "list";
-  try {
-    localStorage.setItem(VIEW_MODE_KEY, value);
-  } catch {}
+  try { localStorage.setItem(VIEW_MODE_KEY, value); } catch {}
   return value;
+}
+
+/** Read persisted active Git sub-tab ("changes", "log", or "branches"). */
+export function readActiveTab() {
+  try {
+    const v = localStorage.getItem(TAB_KEY);
+    return VALID_TABS.has(v) ? v : "changes";
+  } catch {
+    return "changes";
+  }
+}
+
+/** Persist active Git sub-tab. */
+export function writeActiveTab(tab) {
+  const value = VALID_TABS.has(tab) ? tab : "changes";
+  try { localStorage.setItem(TAB_KEY, value); } catch {}
+  return value;
+}
+
+/** Read persisted Git log scope ("current" or "all"). */
+export function readLogScope() {
+  try {
+    return localStorage.getItem(LOG_SCOPE_KEY) === "all" ? "all" : "current";
+  } catch {
+    return "current";
+  }
+}
+
+/** Persist Git log scope ("current" or "all"). */
+export function writeLogScope(scope) {
+  const value = scope === "all" ? "all" : "current";
+  try { localStorage.setItem(LOG_SCOPE_KEY, value); } catch {}
+  return value;
+}
+
+/** Read persisted diff line-wrap preference (false by default). */
+export function readDiffWrap() {
+  try {
+    return localStorage.getItem(DIFF_WRAP_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+/** Persist diff line-wrap preference. */
+export function writeDiffWrap(on) {
+  const value = Boolean(on);
+  try { localStorage.setItem(DIFF_WRAP_KEY, String(value)); } catch {}
+  return value;
+}
+
+/** Read persisted split height in logical px, clamped to `[min, max]`. */
+export function readSplitHeight(storageKey, fallback, min = 90, max = 460) {
+  try {
+    const n = Number(localStorage.getItem(storageKey));
+    if (Number.isFinite(n) && n >= min && n <= max) return Math.round(n);
+  } catch {}
+  return fallback;
+}
+
+/** Persist clamped split height in logical px. */
+export function writeSplitHeight(storageKey, value, min = 90, max = 460) {
+  const clamped = Math.round(Math.max(min, Math.min(max, Number(value) || min)));
+  try { localStorage.setItem(storageKey, String(clamped)); } catch {}
+  return clamped;
+}
+
+/** Parse `%(upstream:track)` or status bracket text like `[ahead 2, behind 1]` / `[gone]`. */
+export function parseAheadBehind(trackText) {
+  const text = String(trackText || "");
+  const aheadMatch = /ahead\s+(\d+)/i.exec(text);
+  const behindMatch = /behind\s+(\d+)/i.exec(text);
+  const gone = /\bgone\b/i.test(text);
+  return {
+    ahead: aheadMatch ? Number(aheadMatch[1]) : 0,
+    behind: behindMatch ? Number(behindMatch[1]) : 0,
+    gone,
+  };
+}
+
+/**
+ * Parse the leading `## ...` header from `git status --porcelain=v1 -b -z`.
+ * Handles unborn branches, detached HEAD, upstream tracking, ahead/behind, and gone upstreams.
+ */
+export function parseBranchHeader(line, headSha = "") {
+  const raw = String(line || "").replace(/^##\s*/, "").trim();
+  if (!raw) {
+    return { branch: "", upstream: "", ahead: 0, behind: 0, gone: false, detached: false, unborn: false, headSha };
+  }
+  const unborn = /^(?:No commits yet on|Initial commit on)\s+(.+)$/i.exec(raw);
+  if (unborn) {
+    return { branch: unborn[1].trim(), upstream: "", ahead: 0, behind: 0, gone: false, detached: false, unborn: true, headSha: "" };
+  }
+  if (/^HEAD\s*\(no branch\)/i.test(raw) || raw === "HEAD") {
+    return { branch: headSha ? `HEAD@${headSha}` : "HEAD", upstream: "", ahead: 0, behind: 0, gone: false, detached: true, unborn: false, headSha };
+  }
+  const trackMatch = /^(.*?)\s+\[([^\]]+)\]\s*$/.exec(raw);
+  const mainPart = trackMatch ? trackMatch[1].trim() : raw;
+  const track = parseAheadBehind(trackMatch ? trackMatch[2] : "");
+  const dots = mainPart.indexOf("...");
+  const branch = dots >= 0 ? mainPart.slice(0, dots) : mainPart;
+  const upstream = dots >= 0 ? mainPart.slice(dots + 3) : "";
+  return { branch, upstream, ...track, detached: false, unborn: false, headSha };
+}
+
+/** Parse `%D` decoration string into structured badges (`head`, `local`, `remote`, `tag`). */
+export function parseRefDecorations(raw, remoteNames = new Set(["origin"])) {
+  if (!raw || !raw.trim()) return [];
+  const out = [];
+  for (const part of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
+    if (part.startsWith("HEAD -> ")) {
+      out.push({ kind: "head", label: part.slice("HEAD -> ".length).trim(), isHead: true });
+    } else if (part === "HEAD") {
+      out.push({ kind: "head", label: "HEAD", isHead: true });
+    } else if (part.startsWith("tag: ")) {
+      out.push({ kind: "tag", label: part.slice("tag: ".length).trim(), isHead: false });
+    } else {
+      const slash = part.indexOf("/");
+      const prefix = slash > 0 ? part.slice(0, slash) : "";
+      const isRemote = Boolean(prefix && remoteNames.has(prefix));
+      if (isRemote && part.endsWith("/HEAD")) continue;
+      out.push({ kind: isRemote ? "remote" : "local", label: part, isHead: false });
+    }
+  }
+  return out;
+}
+
+/** Parse `git rev-list @{u}..HEAD` output into a Set of full commit SHAs not yet pushed upstream. */
+export function parseUnpushedShas(stdout) {
+  const out = new Set();
+  for (const line of String(stdout || "").split(/\r?\n/)) {
+    const sha = line.trim();
+    if (/^[0-9a-f]{7,40}$/i.test(sha)) out.add(sha);
+  }
+  return out;
+}
+
+/** Parse `git log --format=LOG_FORMAT` output into structured commit records. */
+export function parseGitLog(stdout, remoteNames = new Set(["origin"]), unpushedSet = null) {
+  if (!stdout) return [];
+  const commits = [];
+  for (const raw of stdout.split("\x1e")) {
+    const cleaned = raw.replace(/^\r?\n/, "");
+    if (!cleaned) continue;
+    const fields = cleaned.split("\x1f");
+    if (fields.length < 9) continue;
+    const [sha, shortSha, parentStr, decos, author, email, relTime, isoTime, subject, ...bodyParts] = fields;
+    if (!sha || !shortSha) continue;
+    const fullSha = sha.trim();
+    const parents = parentStr ? parentStr.trim().split(/\s+/).filter(Boolean) : [];
+    const body = bodyParts.join("\x1f").replace(/\r\n/g, "\n").trim();
+    commits.push({
+      sha: fullSha,
+      shortSha: shortSha.trim(),
+      parents,
+      isMerge: parents.length > 1,
+      unpushed: Boolean(unpushedSet && unpushedSet.has(fullSha)),
+      refs: parseRefDecorations(decos, remoteNames),
+      author: author.trim(),
+      email: email.trim(),
+      relTime: relTime.trim(),
+      isoTime: isoTime.trim(),
+      subject: subject.trim(),
+      body,
+    });
+  }
+  return commits;
+}
+
+/**
+ * Parse a log search query into structured backend git log filters.
+ * Supports `path:<file>`, `author:<name>`, and free-text grep terms (or standalone 7-40 char hex SHA).
+ */
+export function parseLogQuery(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return { path: "", author: "", grep: "", sha: "", active: false };
+  let path = "", author = "";
+  const rest = [];
+  for (const tok of text.split(/\s+/)) {
+    if (tok.toLowerCase().startsWith("path:") && tok.length > 5) path = tok.slice(5);
+    else if (tok.toLowerCase().startsWith("author:") && tok.length > 7) author = tok.slice(7);
+    else rest.push(tok);
+  }
+  const grep = rest.join(" ").trim();
+  const sha = !path && !author && /^[0-9a-f]{7,40}$/i.test(grep) ? grep : "";
+  return { path, author, grep: sha ? "" : grep, sha, active: Boolean(path || author || grep || sha) };
+}
+
+/** Build read-only `git log` arg array honoring scope, branch override, pagination, and backend query. */
+export function buildLogArgs({ limit = 80, scope = "current", branch = "", query = "" }) {
+  const q = parseLogQuery(query);
+  const args = ["log", "-n", String(limit + 1), `--format=${LOG_FORMAT}`];
+  if (q.sha) {
+    args.push(q.sha);
+  } else {
+    if (branch) args.push(branch);
+    else if (scope === "all") args.push("--all");
+    if (q.author) args.push("--regexp-ignore-case", `--author=${q.author}`);
+    if (q.grep) args.push("--regexp-ignore-case", "--fixed-strings", `--grep=${q.grep}`);
+    if (q.path) args.push("--", q.path);
+  }
+  return args;
+}
+
+/** Multi-token case-insensitive client-side filter for instant feedback while typing. */
+export function filterCommits(commits, query) {
+  const q = parseLogQuery(query);
+  if (!q.active) return commits;
+  // When user is typing `path:...`, let backend search handle it rather than hiding everything locally.
+  if (q.path && !q.grep && !q.author && !q.sha) return commits;
+  const tokens = [q.sha, q.author, ...q.grep.split(/\s+/)].filter(Boolean).map((s) => s.toLowerCase());
+  if (!tokens.length) return commits;
+  return commits.filter((c) => {
+    const hay = `${c.sha} ${c.shortSha} ${c.subject} ${c.body} ${c.author} ${(c.refs || []).map((r) => r.label).join(" ")}`.toLowerCase();
+    return tokens.every((tok) => hay.includes(tok));
+  });
+}
+
+/**
+ * Parse `git diff-tree --root --no-commit-id --name-status -r -z -M` and `--numstat -z -M` outputs
+ * into changed files for a commit.
+ */
+export function parseCommitFiles(nameStatusOut, numstatOut = "") {
+  const stats = new Map();
+  if (numstatOut) {
+    const tokens = numstatOut.split("\0");
+    for (let i = 0; i < tokens.length; i++) {
+      const entry = tokens[i];
+      if (!entry) continue;
+      const parts = entry.split("\t");
+      if (parts.length < 3) continue;
+      const [a, d, ...rest] = parts;
+      let path = rest.join("\t");
+      if (!path && i + 2 < tokens.length) {
+        i += 2;
+        path = tokens[i];
+      }
+      if (!path) continue;
+      stats.set(path, { add: Number(a) || 0, del: Number(d) || 0, binary: a === "-" });
+    }
+  }
+  const files = [];
+  const tokens = String(nameStatusOut || "").split("\0");
+  for (let i = 0; i < tokens.length; i++) {
+    const rawStatus = tokens[i];
+    if (!rawStatus) continue;
+    const code = rawStatus[0];
+    if (code === "R" || code === "C") {
+      const oldPath = tokens[++i] || "";
+      const newPath = tokens[++i] || "";
+      if (!newPath) continue;
+      const stat = stats.get(newPath) ?? { add: 0, del: 0, binary: false };
+      files.push({ path: newPath, oldPath, status: code, ...stat });
+    } else {
+      const path = tokens[++i] || "";
+      if (!path) continue;
+      const stat = stats.get(path) ?? { add: 0, del: 0, binary: false };
+      files.push({ path, oldPath: null, status: code === "A" || code === "D" || code === "M" ? code : "M", ...stat });
+    }
+  }
+  return files;
+}
+
+/** Parse `git for-each-ref --format=BRANCH_FORMAT refs/heads refs/remotes` output. */
+export function parseBranches(stdout) {
+  const local = [];
+  const remote = [];
+  const remoteNames = new Set();
+  for (const line of String(stdout || "").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const [headMark, refname, shortName, sha, upstream, track, relTime, ...subjectParts] = line.split("\x1f");
+    if (!refname || !shortName) continue;
+    const subject = subjectParts.join("\x1f").trim();
+    const isRemote = refname.startsWith("refs/remotes/");
+    if (isRemote) {
+      if (refname.endsWith("/HEAD")) continue;
+      const slash = shortName.indexOf("/");
+      if (slash > 0) remoteNames.add(shortName.slice(0, slash));
+      remote.push({
+        name: shortName,
+        refname,
+        sha: (sha || "").trim(),
+        relTime: (relTime || "").trim(),
+        subject,
+        isRemote: true,
+      });
+    } else if (refname.startsWith("refs/heads/")) {
+      const ab = parseAheadBehind(track);
+      local.push({
+        name: shortName,
+        refname,
+        isHead: headMark === "*",
+        sha: (sha || "").trim(),
+        upstream: (upstream || "").trim(),
+        ...ab,
+        relTime: (relTime || "").trim(),
+        subject,
+        isRemote: false,
+      });
+    }
+  }
+  local.sort((a, b) => Number(b.isHead) - Number(a.isHead));
+  if (!remoteNames.size) remoteNames.add("origin");
+  return { local, remote, remoteNames };
+}
+
+/** Parse `git stash list --format=STASH_FORMAT` output. */
+export function parseStashes(stdout) {
+  const out = [];
+  for (const line of String(stdout || "").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const [ref, sha, relTime, ...msgParts] = line.split("\x1f");
+    if (!ref) continue;
+    const rawMsg = msgParts.join("\x1f").trim();
+    const bm = /^(?:WIP on|On)\s+([^:]+):\s*(.*)$/i.exec(rawMsg);
+    out.push({
+      ref: ref.trim(),
+      sha: (sha || "").trim(),
+      relTime: (relTime || "").trim(),
+      branch: bm ? bm[1].trim() : "",
+      message: bm ? (bm[2].trim() || rawMsg) : rawMsg,
+    });
+  }
+  return out;
+}
+
+/** Parse `git worktree list --porcelain` output. */
+export function parseWorktrees(stdout) {
+  const blocks = String(stdout || "").replace(/\r\n/g, "\n").trim().split(/\n\n+/);
+  const out = [];
+  for (const block of blocks) {
+    if (!block.trim()) continue;
+    const item = { path: "", head: "", shortHead: "", branch: "", bare: false, detached: false };
+    for (const line of block.split("\n")) {
+      if (line.startsWith("worktree ")) item.path = line.slice("worktree ".length).trim().replace(/\\/g, "/");
+      else if (line.startsWith("HEAD ")) {
+        item.head = line.slice("HEAD ".length).trim();
+        item.shortHead = item.head.slice(0, 7);
+      } else if (line.startsWith("branch ")) item.branch = line.slice("branch ".length).trim().replace(/^refs\/heads\//, "");
+      else if (line === "bare") item.bare = true;
+      else if (line === "detached") item.detached = true;
+    }
+    if (item.path) out.push(item);
+  }
+  return out;
+}
+
+/**
+ * Build read-only `git diff` arg array for a working tree file, strictly separating
+ * staged (`--cached`) vs unstaged (working tree) diffs when the file lives in a split section.
+ */
+export function buildWorkingDiffArgs(file, { section = "all", hasHead = true }) {
+  const base = ["diff", "--no-ext-diff", "--no-textconv", "--no-color"];
+  if (section === "staged") return [...base, "--cached", "--", file.path];
+  if (section === "unstaged") return [...base, "--", file.path];
+  if (file.staged && !file.unstaged) return [...base, "--cached", "--", file.path];
+  return [...base, ...(hasHead ? ["HEAD"] : []), "--", file.path];
+}
+
+/** Parse unified diff lines into renderable numbered rows (with both oldNum and newNum). */
+export function diffRows(lines) {
+  let old = 0, next = 0;
+  return lines.map((line) => {
+    const match = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(line);
+    if (match) {
+      old = +match[1];
+      next = +match[2];
+      return { kind: "@", text: line };
+    }
+    if (line.startsWith("diff --git ")) return { kind: "file", text: line };
+    const kind = line[0];
+    if (kind === "-") {
+      const n = old++;
+      return { kind, number: n, oldNum: n, newNum: undefined, text: line.slice(1) || " " };
+    }
+    if (kind === "+") {
+      const n = next++;
+      return { kind, number: n, oldNum: undefined, newNum: n, text: line.slice(1) || " " };
+    }
+    if (kind === " ") {
+      const o = old++, n = next++;
+      return { kind, number: n, oldNum: o, newNum: n, text: line.slice(1) || " " };
+    }
+    return { kind: "", text: line };
+  });
+}
+
+/** Format clean, concise context snippets for 1-click Agent handoff. */
+export function formatAgentMention(kind, payload) {
+  if (kind === "file") {
+    return `@${String(payload || "").replace(/\\/g, "/")} `;
+  }
+  if (kind === "commit" && payload) {
+    const subj = payload.subject ? ` ("${payload.subject}")` : "";
+    return `commit ${payload.shortSha || payload.sha}${subj} `;
+  }
+  if (kind === "conflicts" && Array.isArray(payload) && payload.length) {
+    return `Resolve git merge conflicts in ${payload.map((p) => `@${String(p).replace(/\\/g, "/")}`).join(" ")} `;
+  }
+  if (kind === "stash" && payload) {
+    return `${payload.ref}${payload.message ? ` ("${payload.message}")` : ""} `;
+  }
+  return "";
 }
 
 /** Build a nested raw tree from changed files, compacting single-child folder chains. */
@@ -98,8 +512,6 @@ export function buildChangeTree(files, collapsed = new Set(), group = "all") {
     for (const dir of node.dirs) {
       const collapsedKey = `${group}:${dir.path}`;
       const open = !collapsed.has(collapsedKey);
-      const allStaged = dir.allFiles.length > 0 && dir.allFiles.every((f) => f.staged && !f.unstaged);
-      const anyStaged = dir.allFiles.some((f) => f.staged);
       rows.push({
         kind: "dir",
         path: dir.path,
@@ -113,8 +525,6 @@ export function buildChangeTree(files, collapsed = new Set(), group = "all") {
         count: dir.allFiles.length,
         add: dir.add,
         del: dir.del,
-        allStaged,
-        anyStaged,
       });
       if (open) walk(dir, depth + 1);
     }
@@ -147,46 +557,4 @@ export function expandAncestors(collapsed, filePath, groups = ["all", "staged", 
     const ancestor = parts.slice(0, i).join("/");
     for (const group of groups) collapsed.delete(`${group}:${ancestor}`);
   }
-}
-
-function chunked(items, size) {
-  const out = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
-}
-
-/** Build batched git stage/unstage arg arrays for one or more files. */
-export function buildStageCommands(files, { unstage, hasHead, chunkSize = 50 }) {
-  const paths = [...new Set(files.map((f) => f.path).filter(Boolean))];
-  if (!paths.length) return [];
-  const prefix = unstage
-    ? (hasHead ? ["reset", "HEAD", "--"] : ["rm", "--cached", "--"])
-    : ["add", "--"];
-  return chunked(paths, chunkSize).map((batch) => [...prefix, ...batch]);
-}
-
-/** Build batched git discard arg arrays for one or more files (matching single-file discard semantics). */
-export function buildDiscardCommands(files, { hasHead, chunkSize = 50 }) {
-  const fresh = [], added = [], tracked = [];
-  const seen = new Set();
-  for (const f of files) {
-    if (!f?.path || seen.has(f.path)) continue;
-    seen.add(f.path);
-    if (f.fresh) fresh.push(f.path);
-    else if (f.status === "A" || !hasHead) added.push(f.path);
-    else tracked.push(f.path);
-  }
-  const cmds = [];
-  if (added.length) {
-    const unstagePrefix = hasHead ? ["reset", "HEAD", "--"] : ["rm", "--cached", "--"];
-    for (const batch of chunked(added, chunkSize)) cmds.push([...unstagePrefix, ...batch]);
-    for (const batch of chunked(added, chunkSize)) cmds.push(["clean", "-fd", "--", ...batch]);
-  }
-  if (fresh.length) {
-    for (const batch of chunked(fresh, chunkSize)) cmds.push(["clean", "-fd", "--", ...batch]);
-  }
-  if (tracked.length) {
-    for (const batch of chunked(tracked, chunkSize)) cmds.push(["checkout", "HEAD", "--", ...batch]);
-  }
-  return cmds;
 }

@@ -21,8 +21,7 @@ const ROWS = [
 const PANEL_TABS_CONFIG = [
   { id: "files", title: "Files", about: "Browse workspace files, preview markdown and code.", locked: true },
   { id: "sessions", title: "Sessions", about: "Recent sessions, conversation history and agent resume." },
-  { id: "changes", title: "Changes", about: "Git status, staged changes, diffs and commit actions." },
-  { id: "favorites", title: "Favorites", about: "Pinned workspaces, directories, and favorite files." },
+  { id: "changes", title: "Git", about: "Read-first Git radar: staged/unstaged diffs, commit log, branches, worktrees, and 1-click Agent handoff." },
   { id: "tools", title: "Tools", about: "Explore installed AI skills, plugins, and MCP server tools." },
 ];
 
