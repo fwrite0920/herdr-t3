@@ -82,13 +82,13 @@ Inbox 左侧列出当前 space 中未收起的（非 Settled／非 Snoozed，或
 
 每页独立记导航开关／尺寸（Review 记 `nav.width`，Files 记 `nav.height`）与 Wrap／Scroll。Review 导航默认开、宽 256、最小 160、最大 560，内容至少留 256；左 6px 拖动区、40px 列头。工具栏 `folder-tree` 开关为 24px ghost，开时高亮。宽度稳定 300ms 才重排。切页只恢复自己的文件和阅读位置，没有跨页打开／定位。
 
-Files 只读，根是 space 所在机器的 `folder`，不跟终端 cwd。工具栏展示根名或路径面包屑（点目录展开树），并提供行数、Mention 给 Agent、复制相对路径、本地 VS Code 打开、Markdown Preview／Code、`text-wrap`、目录开关与关闭文件按钮（24px ghost、间隔 4）。打开 ≥ 2 个文件时预览上方出现 30px 最近文件标签条（点击切换、中键或 `×` 关闭）。导航头有 Search files（含匹配计数）、刷新与 Collapse all／Expand all（最多列 200 个目录，Git 忽略保持折叠）。
+Files 只读，根是 space 所在机器的 `folder`，不跟终端 cwd。工具栏展示根名或路径面包屑（点目录展开树），并提供行数／文件大小、Mention 给 Agent、复制相对路径、本地默认程序／VS Code 打开、Markdown／SVG／HTML 的 Preview／Code 与 JSON 的 Pretty／Raw 切换、`text-wrap`、目录开关与关闭文件按钮（24px ghost、间隔 4）。打开 ≥ 2 个文件时预览上方出现 30px 最近文件标签条（点击切换、中键或 `×` 关闭）。导航头有 Search files（含匹配计数）、刷新与 Collapse all／Expand all（最多列 200 个目录，Git 忽略保持折叠）。
 
 共用树：行高 24、12px 界面字、圆角 6、内缩 2、每层 27.2、12px 箭头、16px Catppuccin 图标；悬停文字色 7%、选中 12%。单目录链压成 `a / b`。先目录后文件，不分大小写自然排序（`file2` 在 `file10` 前）；省略 `.git`、忽略项变暗。改动用 Review 色标 A／M／D／R，删除划线，含改动的折叠目录带点。虚拟列表只画可见行，不截前 N 个。方向键（←／→ 收起／到父级、展开／进入）、Home／End、Enter 移动 1px 环并打开所在行。
 
 搜索要求空格分开的每个词都在路径中，不分大小写。最多显示 200 行并提示超出数量。在 Git 内搜索引和未跟踪非忽略文件，外部最多 20 万路径；远程过滤最多回传 1,000。不超过 1,000 候选时用 uFuzzy 排序高亮；↑／↓、Enter、Esc 同其他搜索列表。
 
-仅本页、space、窗口都可见才刷新：回来立即读，通常本机每 5s、远程每 10s，慢读取延长。文本只在变化时重读，图片重新点选才刷新。太大、二进制、缺失、非 UTF-8 是带文件名说明的空态；真正的读取／列目录失败用 Retry。远程图片上限 512KB，文本先检查大小／NUL。完整内容和 Editor 只保留最近显示的三个 space，更早只留轻量阅读选择，回来重读。
+仅本页、space、窗口都可见才刷新：回来立即读，通常本机每 5s、远程每 10s，慢读取延长。文本只在变化时重读，图片重新点选才刷新。图片（`png`/`jpg`/`jpeg`/`gif`/`webp`/`svg`/`bmp`/`ico`/`avif`，远程上限 4 MB）顶部提供 32px 控制条（格式／尺寸／大小、`Fit`/`Width`/`100%`/`−`/`+` 缩放，长截屏自动按 `Width` 滚动浏览，`Auto`/`Light`/`Dark` 画布背景）与双轴滚动视口。超过 1 MB 的文本展示前 256 KB 截断预览；二进制或超限文件展示带图标、类型、大小与外部打开／定位／复制路径的卡片；Markdown／HTML 相对链接可在页内跳转，压缩 JSON 自动美化并支持 `Pretty`/`Raw` 切换。真正的读取／列目录失败用 Retry。完整内容和 Editor 只保留最近显示的三个 space，更早只留轻量阅读选择，回来重读。
 
 文件／目录右键：Copy path（远程带机器）、Copy relative path、Mention in agent，本机另有 Reveal in Finder（Windows 为 Reveal in File Explorer），文件还有 Open in default app。Mention 发给该 space 当前查看的 agent，粘贴 `@<相对路径> `，150ms 后恢复原文本剪贴板；非文本剪贴板不动，提示改用复制路径。目录没有默认程序打开项。
 

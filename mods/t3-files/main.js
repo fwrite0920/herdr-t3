@@ -4,6 +4,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Editor, EditorState, TextView } from "gpui-base";
 import { spaces, panes, focused, nextCommand, exec, readTextFile, theme, settings, shared, setShared, home, appHome, window, watchFolder, notify } from "herdr";
+import { Buffer } from "buffer";
 import * as fs from "fs/promises";
 import uFuzzy from "./vendor/ufuzzy.js";
 import { panelState, hidePanel } from "./panel.js";
@@ -12,13 +13,15 @@ import { fileIcon } from "./file-icons.js";
 import { TREE_ROW, treeRows, rowAt, treeKey, treeList, treeRow, revealRow, sortEntries } from "./file-tree.js";
 import { withTopNav, navToggle, foldAllButton, ghostButton, navOpen, setNavOpen, holdWidth } from "./nav-column.js";
 import { fileMenuItems, fileMenuView, agentFor, runCommon, mention } from "./file-menu.js";
+import { button as drawButton } from "./button.js";
 import { migratePagePrefs, wrapLines, setWrapLines } from "./store.js";
 import { loadingState, emptyState, errorBar } from "./panel-states.js";
 import { LIST, IGNORED, PROBE, REMOTE_SEARCH, RANKED, join, parentOf, nameOf, ancestors, parseListing, parseStatus, parseIgnored, markIgnored, folderEntries, terms, narrows,
-  filterPaths, rank, kindOf, languageOf, readProblem, failedRead, ticket, resolveRoot } from "./model.js";
+  filterPaths, rank, extOf, kindOf, isSvg, isJson, isHtml, formatBytes, imageDimensions, svgDimensions, defaultImageMode, computeImageLayout, stepImageZoom, formatJsonPreview,
+  resolveRelPath, describeFileKind, languageOf, readProblem, failedRead, ticket, resolveRoot } from "./model.js";
 
 const MOD = "mods/t3-files";
-const RESULTS = 200, REMOTE_IMAGE = 512 * 1024, TEXT_MAX = 1024 * 1024;
+const RESULTS = 200, REMOTE_IMAGE = 4 * 1024 * 1024, TEXT_MAX = 1024 * 1024, HEAD_PREVIEW = 256 * 1024;
 // Expand all lists at most this many folders, Git-ignored ones left closed, as T3's.
 // shortcut: a folder past it stays closed; list more in batches if a big repo wants it all.
 const EXPAND_MAX = 200;
@@ -45,6 +48,18 @@ const count = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 const lineCount = (text) => (text ? text.split("\n").length - Number(text.endsWith("\n")) : 0);
 const zoom = () => Number(settings()?.zoom) || 1;
 const RECENT_MAX = 6;
+const psQuote = (s) => String(s).replace(/['‘’‚‛]/g, "$&$&");
+const decodeBase64 = (b64) => {
+  if (typeof Buffer === "function") return Buffer.from(b64, "base64");
+  const bin = /** @type {any} */ (globalThis).atob(b64), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+};
+const utf8Bytes = (text) => (typeof Buffer === "function" ? Buffer.from(text, "utf8").length : text.length);
+const trimHeadPreview = (text) => {
+  const cut = text.lastIndexOf("\n");
+  return cut > 0 ? text.slice(0, cut + 1) : text;
+};
 
 // What one space's page knows and shows.
 function blank(sp, root = sp.folder ?? "") {
@@ -66,6 +81,10 @@ export default class Files extends View {
     // The width the code is laid out at, behind its room while that moves (codeView, nav-column.js holdWidth).
     /** @type {{ at?: number, want?: number, run?: number }} */
     this.codeHold = {};
+    // Image preview viewport size and canvas backdrop ("auto" | "light" | "dark"), kept in memory for this run only (只记本次运行).
+    /** @type {{ width: number, height: number } | null} */
+    this.imgBox = null;
+    this.imgBg = "auto";
     this.cached = new Set();
     // The state being worked for, and a count that moves each time that changes (going).
     this.awake = null; this.gen = 0;
@@ -410,6 +429,7 @@ export default class Files extends View {
   open(st, rel, cx, again = false) {
     if (!again) {
       if (st.view?.code) st.view.code.release();
+      if (st.view?.image) this.uncache(st.view.image);
       st.file = rel; st.lit = null; st.view = { loading: true };
       st.recent = [rel, ...(st.recent ?? []).filter((p) => p !== rel)].slice(0, RECENT_MAX);
       this.changed(st);
@@ -420,11 +440,33 @@ export default class Files extends View {
     cx.spawn(async (cx) => {
       const view = await this.read(st, abs, rel, kind, fresh).catch(() => ({ problem: "This file can't be read." }));
       if (view?.problem) view.failed = failedRead(view.problem);
-      if (!view || !fresh() || st.file !== rel) return;
+      if (!view || !fresh() || st.file !== rel) {
+        if (view?.image) this.uncache(view.image);
+        return;
+      }
       const old = st.view;
       if (again && old && view.text !== undefined && view.text === old.text) return;
       if (old?.image && old.image !== view.image) this.uncache(old.image);
-      if (view.text !== undefined && (kind === "text" || shared(MARKDOWN) === "code")) this.editor(view, rel);
+      if (view.image) {
+        view.imgMode = again && old?.imgMode ? old.imgMode : defaultImageMode(view.dims, this.imgBox);
+        view.imgManual = again ? Boolean(old?.imgManual) : false;
+        view.imgScale = again && old?.imgScale ? old.imgScale : 1;
+      }
+      if (isSvg(rel)) view.svgMode = again && old?.svgMode ? old.svgMode : "preview";
+      if (isHtml(rel)) view.htmlMode = again && old?.htmlMode ? old.htmlMode : "code";
+      if (isJson(rel) && view.text !== undefined && !view.truncated) {
+        const fmt = formatJsonPreview(view.text);
+        if (fmt) {
+          view.prettyText = fmt.pretty;
+          view.jsonMode = again && old?.jsonMode ? old.jsonMode : fmt.minified ? "pretty" : "raw";
+        }
+      }
+      const needsCode = view.text !== undefined && (
+        (kind === "text" && (!isHtml(rel) || view.htmlMode === "code"))
+        || (kind === "markdown" && shared(MARKDOWN) === "code")
+        || (isSvg(rel) && view.svgMode === "code")
+      );
+      if (needsCode) this.editor(view, rel);
       if (old?.code) old.code.release();
       st.view = view;
       cx.notify();
@@ -441,39 +483,158 @@ export default class Files extends View {
       if (!fresh()) return null;
       if (p.code !== 0) return { problem: "This file can't be read." };
       const [bytes, nuls] = p.stdout.trim().split(" ").map(Number);
-      size = bytes;
-      if (kind !== "image" && bytes > TEXT_MAX) return { problem: "This file is larger than 1 MB, too large to preview." };
-      if (kind !== "image" && nuls > 0) return { problem: "This is a binary file, so there's no text to show." };
+      size = Number.isFinite(bytes) ? bytes : null;
+      if (kind !== "image" && nuls > 0) return { problem: "This is a binary file, so there's no text to show.", binary: true, bytes: size };
+      if (kind !== "image" && size > TEXT_MAX) {
+        const head = await exec("sh", ["-c", `head -c ${HEAD_PREVIEW} "$1"`, "head", abs], { on: st.on }).catch(() => null);
+        if (!fresh()) return null;
+        if (head?.code === 0 && !head.stdout.includes("\0")) {
+          const text = trimHeadPreview(head.stdout);
+          return { text, bytes: size, truncated: true, shownBytes: Math.min(size, HEAD_PREVIEW) };
+        }
+        return { problem: "This file is larger than 1 MB, too large to preview.", binary: true, bytes: size };
+      }
     }
     if (kind === "image") {
-      if (st.on && size > REMOTE_IMAGE) return { problem: `This image is larger than 512 KB, too large to bring over from ${st.on}.` };
+      if (st.on && size > REMOTE_IMAGE)
+        return { problem: `This image is larger than 4 MB, too large to bring over from ${st.on}.`, binary: true, bytes: size };
       const name = `${CACHE}/${Date.now()}-${nameOf(rel).replace(/[^\w.-]/g, "_")}`, dest = `${appHome()}/${name}`;
       await fs.mkdir(`${appHome()}/${CACHE}`, { recursive: true }).catch(() => null);
       if (!fresh()) return null;
+      let dims = null, imgBytes = size, svgText;
       if (st.on) {
-        const r = await exec("base64", [abs], { on: st.on, timeout: 60000 });
-        if (!fresh()) return null;
-        if (r.code !== 0) return { problem: "This image can't be read." };
-        const bin = /** @type {any} */ (globalThis).atob(r.stdout.replace(/\s+/g, "")), bytes = new Uint8Array(bin.length);
-        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-        await fs.writeFile(dest, bytes);
+        if (isSvg(rel) && (size == null || size <= TEXT_MAX)) {
+          const text = await readTextFile(abs, { on: st.on }).catch(() => null);
+          if (!fresh()) return null;
+          if (typeof text === "string" && !text.includes("\0")) {
+            await fs.writeFile(dest, text);
+            svgText = text;
+            dims = svgDimensions(text);
+            imgBytes = size ?? utf8Bytes(text);
+          }
+        }
+        if (svgText === undefined) {
+          const r = await exec("base64", [abs], { on: st.on, timeout: 60000 });
+          if (!fresh()) return null;
+          if (r.code !== 0) return { problem: "This image can't be read." };
+          const b64 = r.stdout.replace(/\s+/g, "");
+          const bytes = decodeBase64(b64);
+          if (!bytes.length && size > 0) return { problem: "This image can't be read." };
+          const ok = await this.writeImageBytes(dest, bytes, b64);
+          if (!fresh()) { await fs.unlink(dest).catch(() => null); return null; }
+          if (!ok) return { problem: "This image can't be read." };
+          dims = imageDimensions(bytes);
+          imgBytes = size ?? bytes.length;
+        }
       } else if (window()?.platform === "windows") {
-        const r = await exec("powershell", ["-NoProfile", "-Command", `Copy-Item -LiteralPath '${abs.replace(/'/g, "''")}' -Destination '${dest.replace(/'/g, "''")}'`]).catch(() => null);
+        const r = await exec("powershell", ["-NoProfile", "-Command", `Copy-Item -LiteralPath '${psQuote(abs)}' -Destination '${psQuote(dest)}'`]).catch(() => null);
         if (r?.code !== 0) return { problem: "This image can't be read." };
       } else {
         const r = await exec("cp", [abs, dest]);
         if (r.code !== 0) return { problem: "This image can't be read." };
       }
       if (!fresh()) { await fs.unlink(dest).catch(() => null); return null; }
+      if (!st.on && typeof fs.readFile === "function") {
+        if (isSvg(rel)) {
+          const text = await fs.readFile(dest, "utf8").catch(() => null);
+          if (typeof text === "string") {
+            svgText = text;
+            dims = svgDimensions(text);
+            imgBytes = utf8Bytes(text);
+          }
+        } else {
+          const raw = await fs.readFile(dest).catch(() => null);
+          if (raw && raw.length) {
+            dims = imageDimensions(raw);
+            imgBytes = raw.length;
+          }
+        }
+      }
+      if (!fresh()) { await fs.unlink(dest).catch(() => null); return null; }
       this.cached.add(name);
-      return { image: name };
+      return { image: name, dims, bytes: imgBytes, ...(svgText !== undefined ? { text: svgText } : {}) };
     }
     let text;
     try { text = await readTextFile(abs, { on: st.on }); }
-    catch (e) { return { problem: readProblem(e) }; }
+    catch (e) {
+      const msg = String(e);
+      if (!st.on && msg.includes("exceeds 1 MiB")) {
+        const large = await this.readLargeLocal(abs, fresh);
+        if (large) return large;
+      }
+      if (!st.on && msg.includes("UTF-8")) {
+        const bytes = await this.localFileSize(abs);
+        if (!fresh()) return null;
+        return { problem: readProblem(e), binary: true, bytes };
+      }
+      return { problem: readProblem(e) };
+    }
     if (text === null) return { problem: "This file isn't there anymore." };
-    if ((st.on && text.includes("\uFFFD")) || text.includes("\0")) return { problem: "This file isn't UTF-8 text, so there's nothing to show." };
-    return { text };
+    if ((st.on && text.includes("\uFFFD")) || text.includes("\0"))
+      return { problem: "This file isn't UTF-8 text, so there's nothing to show.", binary: true, bytes: size ?? utf8Bytes(text) };
+    return { text, bytes: size ?? utf8Bytes(text) };
+  }
+
+  // Write decoded image bytes under appHome(). Works around a Herdr 0.1.16 / gpui-shell 0.7.1 bug where
+  // fs.writeFile(path, Uint8Array) silently creates a 0-byte file by falling back to writing ASCII base64 + native decode.
+  async writeImageBytes(dest, bytes, b64) {
+    await fs.writeFile(dest, bytes);
+    if (!bytes.length || typeof fs.readFile !== "function") return true;
+    const written = await fs.readFile(dest).catch(() => null);
+    if (written && written.length === bytes.length) return true;
+    const b64Path = `${dest}.b64`;
+    try {
+      await fs.writeFile(b64Path, b64);
+      let r;
+      if (window()?.platform === "windows") {
+        r = await exec("powershell", ["-NoProfile", "-Command",
+          `& { param($s,$d) [IO.File]::WriteAllBytes($d, [Convert]::FromBase64String([IO.File]::ReadAllText($s))) } '${psQuote(b64Path)}' '${psQuote(dest)}'`
+        ]).catch(() => null);
+      } else {
+        r = await exec("sh", ["-c", 'base64 -d "$1" > "$2" 2>/dev/null || base64 -D "$1" > "$2"', "b64", b64Path, dest]).catch(() => null);
+      }
+      return r?.code === 0;
+    } finally {
+      await fs.unlink(b64Path).catch(() => null);
+    }
+  }
+
+  async localFileSize(abs) {
+    try {
+      if (typeof fs.stat === "function") {
+        const s = await fs.stat(abs);
+        if (typeof (/** @type {any} */ (s)).size === "number") return /** @type {any} */ (s).size;
+      }
+    } catch {}
+    if (window()?.platform === "windows") {
+      const r = await exec("powershell", ["-NoProfile", "-Command", `(Get-Item -LiteralPath '${psQuote(abs)}' -ErrorAction Stop).Length`]).catch(() => null);
+      const n = Number(r?.stdout?.trim());
+      return r?.code === 0 && Number.isFinite(n) ? n : null;
+    }
+    const r = await exec("sh", ["-c", 'wc -c < "$1"', "size", abs]).catch(() => null);
+    const n = Number(r?.stdout?.trim());
+    return r?.code === 0 && Number.isFinite(n) ? n : null;
+  }
+
+  async readLargeLocal(abs, fresh) {
+    if (window()?.platform === "windows") {
+      const script = `[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); & { param($p,$lim) $fi = Get-Item -LiteralPath $p -ErrorAction Stop; $len = $fi.Length; $fs = [IO.File]::OpenRead($p); try { $n = [int][Math]::Min($len, $lim); $buf = New-Object byte[] $n; $read = $fs.Read($buf, 0, $n); $probe = [Math]::Min($read, 8192); $bin = $false; for ($i = 0; $i -lt $probe; $i++) { if ($buf[$i] -eq 0) { $bin = $true; break } }; if ($bin) { [Console]::Out.Write("BIN:$len") } else { [Console]::Out.Write("TXT:$len\n"); [Console]::Out.Write([Text.Encoding]::UTF8.GetString($buf, 0, $read)) } } finally { $fs.Dispose() } } '${psQuote(abs)}' ${HEAD_PREVIEW}`;
+      const r = await exec("powershell", ["-NoProfile", "-Command", script]).catch(() => null);
+      if (!fresh() || r?.code !== 0) return null;
+      if (r.stdout.startsWith("BIN:")) return { problem: "This is a binary file, so there's no text to show.", binary: true, bytes: Number(r.stdout.slice(4)) || null };
+      if (r.stdout.startsWith("TXT:")) {
+        const nl = r.stdout.indexOf("\n"), bytes = Number(r.stdout.slice(4, nl)) || null;
+        return { text: trimHeadPreview(r.stdout.slice(nl + 1)), bytes, truncated: true, shownBytes: HEAD_PREVIEW };
+      }
+      return null;
+    }
+    const p = await exec("sh", ["-c", PROBE, "probe", abs]).catch(() => null);
+    if (!fresh() || p?.code !== 0) return null;
+    const [bytes, nuls] = p.stdout.trim().split(" ").map(Number);
+    if (nuls > 0) return { problem: "This is a binary file, so there's no text to show.", binary: true, bytes: Number.isFinite(bytes) ? bytes : null };
+    const head = await exec("sh", ["-c", `head -c ${HEAD_PREVIEW} "$1"`, "head", abs]).catch(() => null);
+    if (!fresh() || head?.code !== 0 || head.stdout.includes("\0")) return null;
+    return { text: trimHeadPreview(head.stdout), bytes: Number.isFinite(bytes) ? bytes : null, truncated: true, shownBytes: HEAD_PREVIEW };
   }
 
   uncache(name) {
@@ -484,9 +645,25 @@ export default class Files extends View {
   // The view's code, wrapped as the layout's Lines choice says (store.js), which it notes: the editor takes it only when made.
   editor(view, rel) {
     const t = theme();
+    const value = view.jsonMode === "pretty" && view.prettyText ? view.prettyText : view.text;
     view.wrap = wrapLines();
-    view.code = EditorState.new({ language: languageOf(nameOf(rel)), value: view.text, readonly: true, soft_wrap: view.wrap, font_family: /** @type {string} */ (settings().font_family), font_size: 12,
+    view.code = EditorState.new({ language: languageOf(nameOf(rel)), value, readonly: true, soft_wrap: view.wrap, font_family: /** @type {string} */ (settings().font_family), font_size: 12,
       syntax: { keyword: t.ansi5, string: t.ansi2, comment: t.dim, function: t.ansi4, type: t.ansi3, number: t.ansi1, constant: t.ansi6 } });
+  }
+
+  openLink(st, url, cx) {
+    if (!url) return;
+    if (/^https?:\/\//i.test(url)) { cx.open_url(url); return; }
+    const target = resolveRelPath(st.file, url);
+    if (target) { this.open(st, target, cx); this.reveal(st, target, cx); }
+  }
+
+  openExternal(st, rel, cx) {
+    if (!st.root || !rel || st.on) return;
+    const platform = window()?.platform;
+    const rawAbs = join(st.root, rel);
+    const abs = platform === "windows" ? rawAbs.replace(/\//g, "\\") : rawAbs;
+    runCommon("open", { abs, rel, agent: null, platform }, cx);
   }
 
   // Every term in the path, case aside. Here, over the folder's whole list, kept until the next refresh; elsewhere, there.
@@ -610,26 +787,62 @@ export default class Files extends View {
   }
 
   // The page's toolbar, across it, there with no file too: where the file is (the folder's name alone without one), quick
-  // actions (mention in agent, copy path, open in VS Code), Preview/Code for Markdown, Wrap for code, tree toggle & close.
+  // actions (mention in agent, copy path, open in default app / VS Code), mode toggles (Markdown, SVG, HTML, JSON),
+  // Wrap for code, tree toggle & close.
   toolbar(st, t) {
+    const v = st.view;
     const md = kindOf(st.file ?? "") === "markdown", code = shared(MARKDOWN) === "code";
+    const svgFile = Boolean(st.file && isSvg(st.file) && v?.image && v?.text !== undefined);
+    const htmlFile = Boolean(st.file && isHtml(st.file) && v?.text !== undefined);
+    const jsonFile = Boolean(st.file && isJson(st.file) && v?.prettyText);
     const parts = st.file?.split("/") ?? [];
-    const lines = st.view?.text !== undefined ? lineCount(st.view.text) : 0;
+    const shownText = v?.jsonMode === "pretty" && v?.prettyText ? v.prettyText : v?.text;
+    const lines = shownText !== undefined && !v?.image ? lineCount(shownText) : 0;
+    const sizeText = v?.bytes != null && !v?.image ? formatBytes(v.bytes) : "";
+    const metaLabel = lines > 0 ? (sizeText ? `${count(lines)}L · ${sizeText}` : `${count(lines)}L`) : sizeText;
+    const codeActive = Boolean(v?.code && (
+      (!md && !svgFile && !htmlFile)
+      || (md && code)
+      || (svgFile && v.svgMode === "code")
+      || (htmlFile && v.htmlMode === "code")
+    ));
     const agent = st.file ? agentFor(st.id) : null;
     const crumb = (label, path, last) => div().id(`crumb-${path}`).flex_none().px(4).rounded(4).text_color(last ? t.foreground : t.muted)
       .when(!last, (el) => el.cursor_pointer().hover((s) => s.bg(t.foreground + "12").text_color(t.foreground)).on_click((_e, cx) => this.reveal(st, path, cx)))
       .child(label);
-    const tab = (label, on, value) => div().id(`t3-files-${value}`).h(24).px(8).flex().items_center().rounded(8).text_size(12)
+    const seg = (id, label, on, click) => div().id(id).h(24).px(8).flex().items_center().rounded(6).text_size(12)
       .text_color(on ? t.foreground : t.muted).when(on, (el) => el.bg(t.selected)).when(!on, (el) => el.cursor_pointer().hover((s) => s.text_color(t.foreground)))
-      .on_click((_e, cx) => { if (on) return; if (value === "code" && st.view?.text !== undefined && !st.view.code) this.editor(st.view, st.file); setShared(MARKDOWN, value); cx.notify(); })
+      .on_click((_e, cx) => { if (!on) click(cx); })
       .child(label);
+    const ensureCode = () => { if (v?.text !== undefined && !v.code) this.editor(v, st.file); };
     return h_flex().id("t3-files-toolbar").h(40).flex_none().px(8).gap(6).items_center().border_b(1).border_color(t.border)
         // The first word 16 in, as Review's scope button's: the toolbar's 8 and an xs button's 8 (a crumb's own 4, and 4 more).
         .child(h_flex().flex_1().min_w(0).overflow_hidden().items_center().text_size(12).pl(4)
           .when(Boolean(st.root), (el) => el.child(crumb(nameOf(st.root.replace(/[/\\]+$/, "")) || st.root, "", !st.file)))
           .children(parts.flatMap((part, i) => [div().flex_none().text_color(t.dim).child("/"), crumb(part, parts.slice(0, i + 1).join("/"), i === parts.length - 1)])))
-        .when(lines > 0, (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(`${count(lines)}L`)))
-        .when(md, (el) => el.child(h_flex().flex_none().gap(2).child(tab("Preview", !code, "preview")).child(tab("Code", code, "code"))))
+        .when(Boolean(metaLabel), (el) => el.child(div().flex_none().text_size(11).text_color(t.dim).child(metaLabel)))
+        .when(md, (el) => el.child(h_flex().flex_none().gap(2)
+          .child(seg("t3-files-preview", "Preview", !code, (cx) => { setShared(MARKDOWN, "preview"); cx.notify(); }))
+          .child(seg("t3-files-code", "Code", code, (cx) => { ensureCode(); setShared(MARKDOWN, "code"); cx.notify(); }))))
+        .when(svgFile, (el) => el.child(h_flex().flex_none().gap(2)
+          .child(seg("t3-files-svg-preview", "Preview", v.svgMode !== "code", (cx) => { v.svgMode = "preview"; cx.notify(); }))
+          .child(seg("t3-files-svg-code", "Code", v.svgMode === "code", (cx) => { v.svgMode = "code"; ensureCode(); cx.notify(); }))))
+        .when(htmlFile, (el) => el.child(h_flex().flex_none().gap(2)
+          .child(seg("t3-files-html-code", "Code", v.htmlMode !== "preview", (cx) => { v.htmlMode = "code"; ensureCode(); cx.notify(); }))
+          .child(seg("t3-files-html-preview", "Preview", v.htmlMode === "preview", (cx) => { v.htmlMode = "preview"; cx.notify(); }))))
+        .when(jsonFile, (el) => el.child(h_flex().flex_none().gap(2)
+          .child(seg("t3-files-json-pretty", "Pretty", v.jsonMode === "pretty", (cx) => {
+            v.jsonMode = "pretty";
+            if (v.code) v.code.release();
+            this.editor(v, st.file);
+            cx.notify();
+          }))
+          .child(seg("t3-files-json-raw", "Raw", v.jsonMode !== "pretty", (cx) => {
+            v.jsonMode = "raw";
+            if (v.code) v.code.release();
+            this.editor(v, st.file);
+            cx.notify();
+          }))))
         // The page's buttons 4 apart, as Review's.
         .child(h_flex().flex_none().gap(4).items_center()
           .when(Boolean(st.file && agent), (el) => el.child(ghostButton(t, MOD, "t3-files-mention", "at-sign", `Mention in ${agent.program?.name ?? "agent"}`, (cx) => mention(st.file, agent.address, cx), { view: this })))
@@ -637,6 +850,7 @@ export default class Files extends View {
             cx.write_to_clipboard(st.file);
             notify({ title: "Copied path", body: st.file, level: "info" });
           }, { view: this })))
+          .when(Boolean(st.file && st.root && !st.on), (el) => el.child(ghostButton(t, MOD, "t3-files-open-default", "external-link", "Open in default app", (cx) => this.openExternal(st, st.file, cx), { view: this })))
           // Open in VS Code (local spaces only)
           .when(Boolean(st.root && !st.on), (el) => el.child(ghostButton(t, MOD, "t3-files-open-vscode", "code", "Open in VS Code", () => {
             const target = st.file ? join(st.root, st.file) : st.root;
@@ -644,8 +858,8 @@ export default class Files extends View {
             if (platform === "windows") exec("cmd", ["/c", "code", target]).catch(() => null);
             else exec("code", [target]).catch(() => null);
           }, { view: this })))
-          // Wrap or scroll long lines, this page's own choice (only shown when code view is active, not Markdown Preview).
-          .when(Boolean(st.view?.code && (!md || code)), (el) => el.child(ghostButton(t, MOD, "t3-files-wrap", "text-wrap", wrapLines() ? "Scroll long lines" : "Wrap long lines", (cx) => { setWrapLines(!wrapLines()); cx.notify(); }, { on: wrapLines(), view: this })))
+          // Wrap or scroll long lines, this page's own choice (only shown when code view is active).
+          .when(codeActive, (el) => el.child(ghostButton(t, MOD, "t3-files-wrap", "text-wrap", wrapLines() ? "Scroll long lines" : "Wrap long lines", (cx) => { setWrapLines(!wrapLines()); cx.notify(); }, { on: wrapLines(), view: this })))
           .when(Boolean(st.file), (el) => el.child(navToggle(t, MOD, "t3-files-nav-toggle", this.navOpen, (cx) => { this.navOpen = !this.navOpen; setNavOpen(this.navOpen); cx.notify(); }, false, this)))
           .when(Boolean(st.file), (el) => el.child(ghostButton(t, MOD, "t3-files-close-file", "x", "Close file", (cx) => this.closeFile(st, st.file, cx), { view: this }))));
   }
@@ -675,24 +889,115 @@ export default class Files extends View {
       }));
   }
 
-  // The file: recent-file tabs when 2+ files are open, then Preview or Code for Markdown, code, image or why there's none.
+  // The file: recent-file tabs when 2+ files are open, then Preview or Code for Markdown/SVG/HTML, image viewer, code or binary card.
   content(st, t) {
     const v = st.view, md = kindOf(st.file ?? "") === "markdown", code = shared(MARKDOWN) === "code";
+    const svgCode = Boolean(st.file && isSvg(st.file) && v?.svgMode === "code" && v?.code);
+    const htmlPreview = Boolean(st.file && isHtml(st.file) && v?.htmlMode === "preview" && v?.text !== undefined);
     if (!st.file) return emptyState(t, "t3-files-empty", `${MOD}/icons/file-text.svg`, "No file open", st.root ? "Pick one in the tree, or search for it." : "This space has no folder.");
     const tabs = this.fileTabs(st, t);
+    const truncBanner = v?.truncated ? h_flex().id("t3-files-truncated").h(28).flex_none().px(12).gap(8).items_center().border_b(1).border_color(t.border).bg(t.raised).text_size(11).text_color(t.muted)
+      .child(div().flex_1().min_w(0).truncate().child(`Large file (${formatBytes(v.bytes)}) · showing first ${formatBytes(v.shownBytes)}`))
+      .when(Boolean(!st.on), (el) => el.child(div().id("t3-files-truncated-open").flex_none().cursor_pointer().text_color(t.foreground).hover((s) => s.underline())
+        .on_click((_e, cx) => this.openExternal(st, st.file, cx))
+        .child("Open in default app"))) : null;
     const body = div().flex_1().min_h(0).min_w(0).w_full()
       .child(!v || v.loading ? loadingState(t, "t3-files-loading", "Loading the file…")
-        // A read that failed is the error bar's (the toolbar's); a file there's nothing to show of says why, as an empty page.
+        // A read that failed is the error bar's (the toolbar's); a binary/oversized file gets an actionable card; other notices an empty state.
         : v.problem && v.failed ? div()
+        : v.problem && v.binary ? this.binaryView(st, v, t)
         : v.problem ? emptyState(t, "t3-files-problem", `${MOD}/icons/file-text.svg`, nameOf(st.file), v.problem)
-        : v.image ? div().size_full().p(16).flex().items_center().justify_center().child(image(v.image).max_w_full().max_h_full())
-        : md && !code ? div().id("t3-files-md").size_full().overflow_y_scrollbar().px(20).py(16).child(TextView.markdown(`t3-files-md-${st.id}-${st.file}`, v.text).selectable(true).scrollable(false).text_size(14))
+        : v.image && !svgCode ? this.imageView(st, v, t)
+        : md && !code ? div().id("t3-files-md").size_full().overflow_y_scrollbar().px(20).py(16)
+          .child(TextView.markdown(`t3-files-md-${st.id}-${st.file}`, v.text).selectable(true).scrollable(false).text_size(14).on_link_click((url, cx) => this.openLink(st, url, cx)))
+        : htmlPreview ? div().id("t3-files-html").size_full().overflow_y_scrollbar().px(20).py(16)
+          .child(TextView.html(`t3-files-html-${st.id}-${st.file}`, v.text).selectable(true).scrollable(false).text_size(14).on_link_click((url, cx) => this.openLink(st, url, cx)))
         // Laid out at the width its room last held (nav-column.js holdWidth), cut off or short of it while the room moves.
         : v.code ? this.codeView(v.code)
         : div());
     return v_flex().size_full().min_h(0).min_w(0)
       .when(Boolean(tabs), (el) => el.child(tabs))
+      .when(Boolean(truncBanner), (el) => el.child(truncBanner))
       .child(body);
+  }
+
+  // Image preview: info + zoom/fit/backdrop controls above a scrollable viewport that keeps natural aspect ratio.
+  imageView(st, v, t) {
+    const ext = extOf(st.file ?? "").toUpperCase() || "IMAGE";
+    const mode = v.imgMode ?? "fit";
+    const layout = computeImageLayout(v.dims, this.imgBox, mode, v.imgScale);
+    const scale = layout?.scale ?? v.imgScale ?? 1;
+    const pct = `${Math.round(scale * 100)}%`;
+    const metaParts = [ext];
+    if (v.dims) metaParts.push(`${v.dims.width} × ${v.dims.height}`);
+    if (v.bytes != null) metaParts.push(formatBytes(v.bytes));
+    const pill = (id, label, on, click) => div().id(id).h(20).px(6).flex().items_center().rounded(4).text_size(11).flex_none()
+      .text_color(on ? t.foreground : t.muted)
+      .when(on, (el) => el.bg(t.selected).font_medium())
+      .when(!on, (el) => el.cursor_pointer().hover((s) => s.bg(t.foreground + "12").text_color(t.foreground)))
+      .on_click((_e, cx) => click(cx))
+      .child(label);
+    const setMode = (next, cx) => { v.imgMode = next; v.imgManual = true; if (next === "actual") v.imgScale = 1; cx.notify(); };
+    const stepZoom = (dir, cx) => { v.imgMode = "custom"; v.imgManual = true; v.imgScale = stepImageZoom(scale, dir); cx.notify(); };
+    const canvasBg = this.imgBg === "light" ? "#f3f4f6" : this.imgBg === "dark" ? "#111214" : t.raised;
+    const imgEl = layout
+      ? image(v.image).w(layout.width).h(layout.height).flex_none()
+      : image(v.image).max_w_full().max_h_full();
+    const minW = Math.max(0, (this.imgBox?.width ?? 0) - 24);
+    const minH = Math.max(0, (this.imgBox?.height ?? 0) - 24);
+    return v_flex().id("t3-files-image").size_full().min_h(0).min_w(0)
+      .child(h_flex().id("t3-files-img-bar").h(32).flex_none().px(10).gap(6).items_center().border_b(1).border_color(t.border).bg(t.raised).overflow_hidden()
+        .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.muted).child(metaParts.join(" · ")))
+        .when(Boolean(v.dims), (el) => el.child(h_flex().flex_none().gap(2).items_center()
+          .child(pill("t3-files-img-fit", "Fit", mode === "fit", (cx) => setMode("fit", cx)))
+          .child(pill("t3-files-img-width", "Width", mode === "width", (cx) => setMode("width", cx)))
+          .child(pill("t3-files-img-actual", "100%", mode === "actual", (cx) => setMode("actual", cx)))
+          .child(div().w(1).h(12).mx(2).bg(t.border).flex_none())
+          .child(pill("t3-files-img-out", "−", false, (cx) => stepZoom(-1, cx)))
+          .child(div().id("t3-files-img-pct").min_w(34).text_center().text_size(11).text_color(t.dim).child(pct))
+          .child(pill("t3-files-img-in", "+", false, (cx) => stepZoom(1, cx)))))
+        .child(div().w(1).h(12).mx(2).bg(t.border).flex_none())
+        .child(h_flex().flex_none().gap(2).items_center()
+          .child(pill("t3-files-img-bg-auto", "Auto", this.imgBg === "auto", (cx) => { this.imgBg = "auto"; cx.notify(); }))
+          .child(pill("t3-files-img-bg-light", "Light", this.imgBg === "light", (cx) => { this.imgBg = "light"; cx.notify(); }))
+          .child(pill("t3-files-img-bg-dark", "Dark", this.imgBg === "dark", (cx) => { this.imgBg = "dark"; cx.notify(); }))))
+      .child(div().id("t3-files-img-viewport").flex_1().min_h(0).min_w(0).w_full().overflow_scrollbar()
+        .on_size_change((size, cx) => {
+          const width = size.width / zoom(), height = size.height / zoom();
+          if (this.imgBox && Math.abs(this.imgBox.width - width) < 2 && Math.abs(this.imgBox.height - height) < 2) return;
+          this.imgBox = { width, height };
+          if (!v.imgManual && v.dims) v.imgMode = defaultImageMode(v.dims, this.imgBox);
+          cx.notify();
+        })
+        .child(div().p(12).flex().items_center().justify_center()
+          .when(minW > 0, (el) => el.min_w(minW))
+          .when(minH > 0, (el) => el.min_h(minH))
+          .child(div().id("t3-files-img-frame").p(4).rounded(6).border_1().border_color(t.border).bg(canvasBg).flex().items_center().justify_center()
+            .child(imgEl))));
+  }
+
+  // Actionable card for binary files or oversized remote images.
+  binaryView(st, v, t) {
+    const abs = join(st.root, st.file), platform = window()?.platform;
+    const winAbs = platform === "windows" ? abs.replace(/\//g, "\\") : abs;
+    const kindLabel = describeFileKind(st.file);
+    const meta = v.bytes != null ? `${kindLabel} · ${formatBytes(v.bytes)}` : kindLabel;
+    const revealLabel = platform === "macos" ? "Reveal in Finder" : "Reveal in File Explorer";
+    const actionBtn = (id, label, icon, press) => drawButton(t, id, { variant: "outline", size: "sm", text: label, icon: `${MOD}/icons/${icon}.svg`, surface: "card", hot: this.hot === id })
+      .on_hover((on, cx) => { if (on) this.hot = id; else if (this.hot === id) this.hot = null; cx.notify(); })
+      .on_click((_e, cx) => press(cx));
+    return v_flex().id("t3-files-binary").size_full().p(24).gap(10).items_center().justify_center().text_center()
+      .child(image(`${MOD}/${fileIcon(st.file)}`).size(32).flex_none())
+      .child(div().text_size(14).font_medium().text_color(t.foreground).child(nameOf(st.file)))
+      .child(div().text_size(12).text_color(t.muted).child(meta))
+      .when(Boolean(v.problem), (el) => el.child(div().max_w(360).text_size(12).text_color(t.dim).child(v.problem)))
+      .child(h_flex().mt(4).gap(8).items_center().justify_center()
+        .when(Boolean(!st.on), (el) => el.child(actionBtn("t3-files-bin-open", "Open in default app", "external-link", (cx) => this.openExternal(st, st.file, cx))))
+        .when(Boolean(!st.on && (platform === "macos" || platform === "windows")), (el) => el.child(actionBtn("t3-files-bin-reveal", revealLabel, "folder-open", (cx) => runCommon("reveal", { abs: winAbs, rel: st.file, agent: null, platform }, cx))))
+        .child(actionBtn("t3-files-bin-copy", st.on ? `Copy path (${st.on})` : "Copy path", "copy", (cx) => {
+          cx.write_to_clipboard(abs);
+          notify({ title: "Copied path", body: abs, level: "info" });
+        })));
   }
 
   codeView(code) {

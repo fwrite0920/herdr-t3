@@ -11,7 +11,7 @@ const load = (file) => fs.readFileSync(path.join(__dirname, file), "utf8")
   .replace(/^import [^;]*;\r?\n/gm, "").replace(/^export (async function|function|const) /gm, "$1 ").replace(/^export \{[\s\S]*?\};?\s*$/m, "");
 const context = vm.createContext({});
 vm.runInContext([load("vendor/ufuzzy.js"), load("file-icons-data.js"), load("file-icons.js"), load("file-tree.js"), load("model.js"),
-  "globalThis.m = { join, placeOf, resolveRoot, uFuzzy, fileIcon, folderIcon, FILE_NAMES, FILE_EXTENSIONS, FOLDER_NAMES, LIST, IGNORED, PROBE, REMOTE_SEARCH, RANKED, ancestors, parseListing, parseStatus, parseIgnored, markIgnored, folderEntries, treeRows, terms, narrows, filterPaths, rank, kindOf, languageOf, readProblem, failedRead, ticket };"].join("\n"), context);
+  "globalThis.m = { join, placeOf, resolveRoot, uFuzzy, fileIcon, folderIcon, FILE_NAMES, FILE_EXTENSIONS, FOLDER_NAMES, LIST, IGNORED, PROBE, REMOTE_SEARCH, RANKED, ancestors, parseListing, parseStatus, parseIgnored, markIgnored, folderEntries, treeRows, terms, narrows, filterPaths, rank, extOf, kindOf, isSvg, isJson, isHtml, formatBytes, imageDimensions, svgDimensions, ZOOM_STEPS, defaultImageMode, computeImageLayout, stepImageZoom, formatJsonPreview, resolveRelPath, describeFileKind, languageOf, readProblem, failedRead, ticket };"].join("\n"), context);
 const m = context.m;
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
@@ -39,11 +39,18 @@ const space = (id, folder, active = false, machine = null) => ({ id, folder, mac
 
 // The page, started in a fake `herdr`: the panel on `page` with Review installed too, every folder holding a.js (changed) and
 // b.js. Each folder is in Git but `/n…`. `w` is the world: what ran, what's watched, the editors made, reads held back.
-function makePage({ page = "files", spaces = [space("s1", "/r", true)] } = {}) {
-  const w = { spaces, windowActive: true, ran: [], read: [], watchers: [], made: [], hold: null, held: [], stall: null, stalled: [], files: ["a.js", "b.js"], notified: 0 };
+function makePage({ page = "files", spaces = [space("s1", "/r", true)], zeroWrite = false, platform = "macos" } = {}) {
+  const w = { spaces, windowActive: true, ran: [], read: [], watchers: [], made: [], hold: null, held: [], stall: null, stalled: [], files: ["a.js", "b.js"], notified: 0, unlinked: [], wroteFiles: new Map(), texts: {}, probe: null };
   const shared = { "t3.wrap": false, "t3.navWidth": 300 }, wrote = [], store = new Map(), timers = [], everies = [], failed = [];
   const commands = [];
   let wake = null, running = null;
+  // Minimal valid 2x3 PNG base64 for image tests.
+  const pngBytes = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03,
+    0x08, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  ]);
   const exec = async (cmd, args, o = {}) => {
     const line = [cmd, ...args].join(" "), cwd = o.cwd ?? (cmd === "sh" ? args[3] : "") ?? "";
     w.ran.push({ line, cwd, on: o.on ?? null });
@@ -53,13 +60,15 @@ function makePage({ page = "files", spaces = [space("s1", "/r", true)] } = {}) {
     if (line.includes(" status ")) return { code: 0, stdout: "1 .M N... 100644 100644 100644 h1 h2 a.js\0" };
     if (line.includes("ls-files")) return { code: 0, stdout: w.files.map((f) => `${f}\0`).join("") };
     if (cmd === "sh" && args[1] === m.LIST) return { code: 0, stdout: cwd.endsWith("/src") ? "d\0d\0" : "f\0a.js\0f\0b.js\0" };
-    if (cmd === "sh" && args[1] === m.PROBE) return { code: 0, stdout: "12 0\n" };
+    if (cmd === "sh" && args[1] === m.PROBE) return { code: 0, stdout: w.probe ? w.probe(args[3]) : "12 0\n" };
+    if (cmd === "base64") return { code: 0, stdout: pngBytes.toString("base64") + "\n" };
+    if (cmd === "sh" && args[1]?.startsWith("head -c ")) return { code: 0, stdout: "line1\nline2\npartial" };
     return { code: 0, stdout: "" };
   };
   const task = () => ({ cancelled: false, done: false, cancel() { this.cancelled = true; }, is_done() { return this.done || this.cancelled; } });
   // As Herdr's: cancelling a task stops nothing already awaited (a watch, an exec); it only says it's done.
   const cx = {
-    notify() { w.notified++; }, stop_propagation() {}, write_to_clipboard() {}, focus_handle: () => ({ focus() {}, is_focused: () => false }),
+    notify() { w.notified++; }, stop_propagation() {}, write_to_clipboard() {}, open_url() {}, focus_handle: () => ({ focus() {}, is_focused: () => false }),
     spawn(f) {
       const t = task();
       Promise.resolve().then(() => { running = t; try { return f(cx); } finally { running = null; } }).then(() => { t.done = true; }, (e) => failed.push(e));
@@ -76,14 +85,22 @@ function makePage({ page = "files", spaces = [space("s1", "/r", true)] } = {}) {
   const layout = { id: "root", children: [{ id: "work" }, { id: "panel", children: [body] }] };
   const ctx = vm.createContext({
     View: class {}, div: element, svg: element, image: element, h_flex: element, v_flex: element,
-    Input: { new: element }, Editor: { new: element }, TextView: { markdown: element },
+    Input: { new: element }, Editor: { new: element }, TextView: { markdown: element, html: element },
     InputState: { new: () => { let v = ""; return { on() {}, value: () => v, set_value(x) { v = x; } }; } },
     EditorState: { new: (o) => { const e = { wrap: o.soft_wrap, text: o.value, released: false, release() { this.released = true; return true; } }; w.made.push(e); return e; } },
     spaces: () => w.spaces, panes: () => [], focused: () => null, agents: () => [], layout: () => layout,
-    theme: () => ({}), settings: () => ({ zoom: 1, font_family: "mono" }), window: () => ({ active: w.windowActive, platform: "macos" }), home: () => "/Users/test", appHome: () => "/tmp/none",
+    theme: () => ({}), settings: () => ({ zoom: 1, font_family: "mono" }), window: () => ({ active: w.windowActive, platform }), home: () => "/Users/test", appHome: () => "/tmp/none",
     shared: (k) => shared[k], setShared: (k, v) => { wrote.push(k); shared[k] = v; },
     run() {}, notify() {}, exec,
-    readTextFile: async (p) => { w.read.push(p); return w.hold && p.startsWith(w.hold) ? new Promise((r) => w.held.push(() => r("held\n"))) : "const a = 1;\n"; },
+    readTextFile: async (p) => {
+      w.read.push(p);
+      if (p in w.texts) {
+        const val = w.texts[p];
+        if (val instanceof Error) throw val;
+        return val;
+      }
+      return w.hold && p.startsWith(w.hold) ? new Promise((r) => w.held.push(() => r("held\n"))) : "const a = 1;\n";
+    },
     watchFolder: (p) => {
       let finish;
       const wait = new Promise((resolve, reject) => {
@@ -94,9 +111,18 @@ function makePage({ page = "files", spaces = [space("s1", "/r", true)] } = {}) {
       return wait;
     },
     nextCommand: () => commands.length ? Promise.resolve(commands.shift()) : new Promise((r) => { wake = r; }),
-    fs: { unlink: async () => {}, mkdir: async () => {}, writeFile: async () => {} },
+    fs: {
+      unlink: async (p) => { w.unlinked.push(p); w.wroteFiles.delete(p); },
+      mkdir: async () => {},
+      writeFile: async (p, c) => { w.wroteFiles.set(p, zeroWrite && typeof c !== "string" ? new Uint8Array(0) : c); },
+      readFile: async (p, enc) => {
+        const v = w.wroteFiles.get(p);
+        if (v === undefined) return enc ? '<svg width="32" height="16"></svg>' : pngBytes;
+        return enc ? String(v) : v;
+      },
+    },
     localStorage: { getItem: (k) => store.has(k) ? store.get(k) : null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) },
-    Date, Promise, Math, Number, String, Boolean, Map, Set, Object, Array, JSON, RegExp, Error, Uint8Array,
+    Buffer, Date, Promise, Math, Number, String, Boolean, Map, Set, Object, Array, JSON, RegExp, Error, Uint8Array,
   });
   const files = ["vendor/ufuzzy.js", "store.js", "list.js", "panel.js", "file-icons-data.js", "file-icons.js", "file-tree.js", "nav-column.js", "file-menu.js", "panel-states.js", "model.js", "main.js"];
   const buttons = "const drawButton = (() => {\n" + load("button.js") + "\nreturn button;\n})();\n";
@@ -505,5 +531,130 @@ async function resources() {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   await page();
   await resources();
+  await previews();
   console.log("t3-files checks passed");
 })().catch((e) => { console.error(e); process.exit(1); });
+
+async function previews() {
+  // Unit checks: image dimension parsers (PNG, GIF, BMP, ICO, WebP VP8/VP8L/VP8X, JPEG), SVG dims, zoom layout, JSON, links.
+  assert.equal(m.kindOf("icon.ico"), "image");
+  assert.equal(m.kindOf("photo.BMP"), "image");
+  assert.equal(m.kindOf("hero.avif"), "image");
+  assert.equal(m.isSvg("logo.SVG"), true);
+  assert.equal(m.isJson("data.json"), true);
+  assert.equal(m.isHtml("index.HTML"), true);
+  assert.deepEqual([m.formatBytes(512), m.formatBytes(1536), m.formatBytes(458803), m.formatBytes(2.5 * 1024 * 1024)], ["512 B", "1.5 KB", "448 KB", "2.5 MB"]);
+  assert.equal(m.describeFileKind("report.pdf"), "PDF document");
+  assert.equal(m.describeFileKind("unknown.bin"), "Binary file");
+
+  // PNG 390x5195
+  const png = new Uint8Array(24);
+  png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  png[18] = 0x01; png[19] = 0x86; png[22] = 0x14; png[23] = 0x4b;
+  assert.deepEqual(plain(m.imageDimensions(png)), { width: 390, height: 5195 });
+
+  // GIF 320x240
+  const gif = Buffer.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x40, 0x01, 0xf0, 0x00]);
+  assert.deepEqual(plain(m.imageDimensions(gif)), { width: 320, height: 240 });
+
+  // BMP 640x480 (negative top-down height)
+  const bmp = Buffer.alloc(26);
+  bmp.write("BM", 0); bmp.writeInt32LE(640, 18); bmp.writeInt32LE(-480, 22);
+  assert.deepEqual(plain(m.imageDimensions(bmp)), { width: 640, height: 480 });
+
+  // ICO with 16x16 and 256x256 (0 encodes 256)
+  const ico = Buffer.alloc(6 + 32);
+  ico[2] = 1; ico[4] = 2; ico[6] = 16; ico[7] = 16; ico[22] = 0; ico[23] = 0;
+  assert.deepEqual(plain(m.imageDimensions(ico)), { width: 256, height: 256 });
+
+  // JPEG SOF0 800x600
+  const jpg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x02, 0x58, 0x03, 0x20, 0x01, 0x01, 0x11, 0x00]);
+  assert.deepEqual(plain(m.imageDimensions(jpg)), { width: 800, height: 600 });
+
+  // WebP VP8X 1200x800
+  const webp = Buffer.alloc(30);
+  webp.write("RIFF", 0); webp.write("WEBP", 8); webp.write("VP8X", 12);
+  const w1 = 1199, h1 = 799;
+  webp[24] = w1 & 255; webp[25] = (w1 >> 8) & 255; webp[26] = (w1 >> 16) & 255;
+  webp[27] = h1 & 255; webp[28] = (h1 >> 8) & 255; webp[29] = (h1 >> 16) & 255;
+  assert.deepEqual(plain(m.imageDimensions(webp)), { width: 1200, height: 800 });
+
+  // SVG dimensions from width/height and viewBox
+  assert.deepEqual(plain(m.svgDimensions('<svg width="48px" height="24px"></svg>')), { width: 48, height: 24 });
+  assert.deepEqual(plain(m.svgDimensions('<svg viewBox="0 0 120 60"></svg>')), { width: 120, height: 60 });
+
+  // Tall screenshot defaults to Fit Width; small icon does not upscale in Fit mode
+  assert.equal(m.defaultImageMode({ width: 390, height: 5195 }, { width: 500, height: 400 }), "width");
+  assert.equal(m.defaultImageMode({ width: 800, height: 600 }, { width: 500, height: 400 }), "fit");
+  assert.deepEqual(plain(m.computeImageLayout({ width: 24, height: 24 }, { width: 500, height: 400 }, "fit", 1)), { width: 24, height: 24, scale: 1 });
+  assert.deepEqual(plain(m.computeImageLayout({ width: 390, height: 5195 }, { width: 500, height: 400 }, "width", 1)), { width: 390, height: 5195, scale: 1 });
+  assert.equal(m.stepImageZoom(1, 1), 1.25);
+  assert.equal(m.stepImageZoom(1, -1), 0.75);
+
+  // Minified JSON auto-pretty + relative Markdown link resolution
+  const minified = JSON.stringify({ alpha: "x".repeat(120), beta: "y".repeat(120) });
+  const fmt = m.formatJsonPreview(minified);
+  assert.ok(fmt && fmt.minified && fmt.pretty.includes("\n"));
+  assert.equal(m.resolveRelPath("docs/user/guide.md", "../adr/0001.md#top"), "docs/adr/0001.md");
+  assert.equal(m.resolveRelPath("README.md", "https://example.com"), null);
+  assert.equal(m.resolveRelPath("README.md", "../../etc/passwd"), null);
+
+  // Page integration: remote image 0-byte fs.writeFile fallback (Herdr 0.1.16 workaround) + large remote text head preview + SVG/JSON/HTML/binary views.
+  const { view, cx, w, settle, send } = makePage({ spaces: [space("v", "/x", true, "ubuntu")], zeroWrite: true, platform: "windows" });
+  w.probe = (p) => p.endsWith("big.log") ? "2097152 0\n" : p.endsWith("app.pdf") ? "4096 12\n" : "32 0\n";
+  w.texts["/x/min.json"] = minified;
+  w.texts["/x/logo.svg"] = '<svg width="32" height="16"></svg>';
+  w.texts["/x/page.html"] = "<h1>Hello</h1>";
+  view.render(cx);
+  await settle();
+
+  // Remote PNG with zeroWrite=true must trigger .b64 fallback + PowerShell decode and clean up .b64.
+  send("open:shot.png");
+  await settle();
+  let root = view.render(cx);
+  assert.ok(find(root, "t3-files-image"), "remote image renders viewer");
+  assert.deepEqual(plain(view.current().view.dims), { width: 2, height: 3 }, "parsed PNG dimensions");
+  assert.ok(w.ran.some((r) => r.line.includes("FromBase64String")), "0-byte Uint8Array writeFile fell back to PowerShell base64 decode");
+  assert.ok(w.unlinked.some((p) => p.endsWith(".b64")), "temporary .b64 cleaned up");
+  const firstImg = view.current().view.image;
+
+  // Switching away uncached previous image (fixes cache leak).
+  send("open:big.log");
+  await settle();
+  root = view.render(cx);
+  assert.ok(w.unlinked.some((p) => p.endsWith(firstImg)), "switching files uncaches old image");
+  assert.ok(find(root, "t3-files-truncated"), "large >1MB text file shows truncated head preview banner");
+  assert.ok(find(root, "t3-files-code"), "large >1MB text file renders head in code viewer");
+
+  // Binary file gets actionable binary card.
+  send("open:app.pdf");
+  await settle();
+  root = view.render(cx);
+  assert.ok(find(root, "t3-files-binary"), "binary file renders rich info card");
+
+  // Minified JSON auto-prettifies and toggles back to Raw.
+  send("open:min.json");
+  await settle();
+  root = view.render(cx);
+  assert.equal(view.current().view.jsonMode, "pretty", "minified JSON defaults to Pretty");
+  assert.ok(find(root, "t3-files-json-raw"), "JSON Raw toggle shown");
+  find(root, "t3-files-json-raw").handlers.on_click({}, cx);
+  assert.equal(view.current().view.jsonMode, "raw");
+
+  // SVG toggles Preview / Code; HTML toggles Code / Preview.
+  send("open:logo.svg");
+  await settle();
+  root = view.render(cx);
+  assert.ok(find(root, "t3-files-image") && find(root, "t3-files-svg-code"), "SVG defaults to image Preview with Code toggle");
+  find(root, "t3-files-svg-code").handlers.on_click({}, cx);
+  root = view.render(cx);
+  assert.ok(find(root, "t3-files-code"), "SVG Code mode renders editor");
+
+  send("open:page.html");
+  await settle();
+  root = view.render(cx);
+  assert.ok(find(root, "t3-files-code") && find(root, "t3-files-html-preview"), "HTML defaults to Code with Preview toggle");
+  find(root, "t3-files-html-preview").handlers.on_click({}, cx);
+  root = view.render(cx);
+  assert.ok(find(root, "t3-files-html"), "HTML Preview mode renders TextView.html");
+}

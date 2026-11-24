@@ -187,14 +187,194 @@ export function rank(uf, paths, query, limit) {
 }
 
 // What a file is shown as.
-const IMAGES = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg"]);
+const IMAGES = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "avif"]);
 export const extOf = (name) => name.includes(".") ? name.split(".").pop().toLowerCase() : "";
 export const kindOf = (name) => IMAGES.has(extOf(name)) ? "image" : /^(md|markdown|mdx)$/.test(extOf(name)) ? "markdown" : "text";
+export const isSvg = (name) => extOf(name) === "svg";
+export const isJson = (name) => extOf(name) === "json";
+export const isHtml = (name) => /^(html|htm)$/.test(extOf(name));
+
+export function formatBytes(n) {
+  if (typeof n !== "number" || !Number.isFinite(n) || n < 0) return "";
+  if (n < 1024) return `${Math.round(n)} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Parse natural pixel dimensions from common raster image headers (PNG, GIF, BMP, ICO, WebP, JPEG).
+export function imageDimensions(bytes) {
+  if (!bytes || bytes.length < 10) return null;
+  const u16BE = (i) => (bytes[i] << 8) | bytes[i + 1];
+  const u16LE = (i) => bytes[i] | (bytes[i + 1] << 8);
+  const u32BE = (i) => ((bytes[i] << 24) | (bytes[i + 1] << 16) | (bytes[i + 2] << 8) | bytes[i + 3]) >>> 0;
+  const u32LE = (i) => (bytes[i] | (bytes[i + 1] << 8) | (bytes[i + 2] << 16) | (bytes[i + 3] << 24)) >>> 0;
+  const i32LE = (i) => bytes[i] | (bytes[i + 1] << 8) | (bytes[i + 2] << 16) | (bytes[i + 3] << 24);
+  const tag = (i, s) => s.length + i <= bytes.length && [...s].every((ch, k) => bytes[i + k] === ch.charCodeAt(0));
+
+  // PNG: signature + IHDR width/height at offsets 16..24
+  if (bytes.length >= 24 && bytes[0] === 0x89 && tag(1, "PNG\r\n\x1a\n")) {
+    const width = u32BE(16), height = u32BE(20);
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+  // GIF87a / GIF89a
+  if (bytes.length >= 10 && (tag(0, "GIF87a") || tag(0, "GIF89a"))) {
+    const width = u16LE(6), height = u16LE(8);
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+  // BMP
+  if (bytes.length >= 26 && tag(0, "BM")) {
+    const width = i32LE(18), height = Math.abs(i32LE(22));
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+  // ICO: pick the largest embedded icon entry (0 encodes 256)
+  if (bytes.length >= 22 && bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 1 && bytes[3] === 0) {
+    const count = u16LE(4);
+    let best = null;
+    for (let k = 0; k < count && 6 + (k + 1) * 16 <= bytes.length; k++) {
+      const off = 6 + k * 16;
+      const width = bytes[off] || 256, height = bytes[off + 1] || 256;
+      if (!best || width * height > best.width * best.height) best = { width, height };
+    }
+    return best;
+  }
+  // WebP: RIFF....WEBP (VP8, VP8L, VP8X)
+  if (bytes.length >= 30 && tag(0, "RIFF") && tag(8, "WEBP")) {
+    if (tag(12, "VP8 ") && bytes[23] === 0x9d && bytes[24] === 0x01 && bytes[25] === 0x2a) {
+      const width = u16LE(26) & 0x3fff, height = u16LE(28) & 0x3fff;
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+    if (tag(12, "VP8L") && bytes[20] === 0x2f) {
+      const bits = u32LE(21);
+      const width = (bits & 0x3fff) + 1, height = ((bits >> 14) & 0x3fff) + 1;
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+    if (tag(12, "VP8X")) {
+      const width = 1 + (bytes[24] | (bytes[25] << 8) | (bytes[26] << 16));
+      const height = 1 + (bytes[27] | (bytes[28] << 8) | (bytes[29] << 16));
+      return width > 0 && height > 0 ? { width, height } : null;
+    }
+  }
+  // JPEG: walk markers until a SOF frame header
+  if (bytes[0] === 0xff && bytes[1] === 0xd8) {
+    let i = 2;
+    while (i + 3 < bytes.length) {
+      while (i < bytes.length && bytes[i] !== 0xff) i++;
+      while (i < bytes.length && bytes[i] === 0xff) i++;
+      if (i >= bytes.length) break;
+      const marker = bytes[i++];
+      if (marker === 0xd9 || marker === 0xda) break; // EOI / SOS
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd8)) continue;
+      if (i + 1 >= bytes.length) break;
+      const len = u16BE(i);
+      if (len < 2) break;
+      if ((marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf)) {
+        if (i + 7 <= bytes.length) {
+          const height = u16BE(i + 3), width = u16BE(i + 5);
+          if (width > 0 && height > 0) return { width, height };
+        }
+        break;
+      }
+      if (i + len > bytes.length) break;
+      i += len;
+    }
+  }
+  return null;
+}
+
+// Parse intrinsic dimensions from an SVG root tag's width/height or viewBox.
+export function svgDimensions(text) {
+  if (!text) return null;
+  const m = /<svg\b([^>]*)>/i.exec(text);
+  if (!m) return null;
+  const attrs = m[1];
+  const num = (re) => {
+    const hit = re.exec(attrs);
+    if (!hit || hit[1].includes("%")) return NaN;
+    const v = parseFloat(hit[1]);
+    return Number.isFinite(v) && v > 0 ? v : NaN;
+  };
+  let w = num(/\bwidth\s*=\s*["']([^"']+)["']/i), h = num(/\bheight\s*=\s*["']([^"']+)["']/i);
+  if (!(w > 0 && h > 0)) {
+    const vb = /\bviewBox\s*=\s*["']\s*[-+]?[\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)\s*["']/i.exec(attrs);
+    if (vb) { w = parseFloat(vb[1]); h = parseFloat(vb[2]); }
+  }
+  return w > 0 && h > 0 ? { width: Math.round(w), height: Math.round(h) } : null;
+}
+
+export const ZOOM_STEPS = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
+
+// Tall screenshots (e.g. mobile/full-page captures) default to Fit Width so they stay legible and scrollable.
+export function defaultImageMode(dims, box) {
+  if (!dims || !box?.width || !box?.height) return "fit";
+  if (dims.height / dims.width >= 2.2 && dims.height > box.height) return "width";
+  return "fit";
+}
+
+export function computeImageLayout(dims, box, mode = "fit", customScale = 1) {
+  if (!dims?.width || !dims?.height) return null;
+  const availW = Math.max(80, (box?.width ?? 480) - 32);
+  const availH = Math.max(80, (box?.height ?? 360) - 32);
+  let scale = 1;
+  if (mode === "fit") scale = Math.min(1, availW / dims.width, availH / dims.height);
+  else if (mode === "width") scale = Math.min(1, availW / dims.width);
+  else if (mode === "actual") scale = 1;
+  else scale = Math.max(ZOOM_STEPS[0], Math.min(ZOOM_STEPS[ZOOM_STEPS.length - 1], customScale || 1));
+  return { width: Math.max(1, Math.round(dims.width * scale)), height: Math.max(1, Math.round(dims.height * scale)), scale };
+}
+
+export function stepImageZoom(currentScale, dir) {
+  const s = currentScale || 1;
+  if (dir > 0) return ZOOM_STEPS.find((z) => z > s + 0.01) ?? ZOOM_STEPS[ZOOM_STEPS.length - 1];
+  for (let i = ZOOM_STEPS.length - 1; i >= 0; i--) if (ZOOM_STEPS[i] < s - 0.01) return ZOOM_STEPS[i];
+  return ZOOM_STEPS[0];
+}
+
+// Pretty-print valid JSON when formatting differs from the raw text; mark compact single-line JSON as minified.
+export function formatJsonPreview(text) {
+  if (!text || text.length > 512 * 1024) return null;
+  try {
+    const parsed = JSON.parse(text);
+    const pretty = JSON.stringify(parsed, null, 2) + (text.endsWith("\n") ? "\n" : "");
+    if (pretty === text) return null;
+    const lines = text.split("\n").length - Number(text.endsWith("\n"));
+    return { pretty, minified: lines <= 3 && text.trim().length > 180 };
+  } catch { return null; }
+}
+
+// Resolve a relative Markdown/HTML link against the current file's path; returns null for external URLs or paths above root.
+export function resolveRelPath(fromFile, href) {
+  if (!href || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(href)) return null;
+  const clean = href.split(/[?#]/)[0];
+  if (!clean) return null;
+  let decoded = clean;
+  try { decoded = decodeURIComponent(clean); } catch {}
+  const base = decoded.startsWith("/") ? [] : parentOf(fromFile || "").split("/").filter(Boolean);
+  for (const part of decoded.replace(/^\/+/, "").split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (!base.length) return null;
+      base.pop();
+    } else base.push(part);
+  }
+  return base.length ? base.join("/") : null;
+}
+
+const BINARY_LABELS = {
+  pdf: "PDF document",
+  zip: "Archive", tar: "Archive", gz: "Archive", tgz: "Archive", bz2: "Archive", xz: "Archive", "7z": "Archive", rar: "Archive",
+  mp4: "Video file", mov: "Video file", webm: "Video file", mkv: "Video file", avi: "Video file",
+  mp3: "Audio file", wav: "Audio file", ogg: "Audio file", flac: "Audio file", m4a: "Audio file", aac: "Audio file",
+  ttf: "Font file", otf: "Font file", woff: "Font file", woff2: "Font file",
+  exe: "Executable binary", dll: "Shared library", so: "Shared library", dylib: "Shared library", wasm: "WebAssembly binary",
+  doc: "Office document", docx: "Office document", xls: "Spreadsheet", xlsx: "Spreadsheet", ppt: "Presentation", pptx: "Presentation",
+  db: "Database file", sqlite: "SQLite database", sqlite3: "SQLite database",
+};
+export const describeFileKind = (name) => BINARY_LABELS[extOf(name)] ?? "Binary file";
 
 // The Editor's languages that color something (docs/research/files-panel-verify-local.md); the rest stay plain.
 const LANGUAGES = {
-  js: "js", mjs: "js", cjs: "js", jsx: "js", ts: "js", mts: "js", cts: "js", tsx: "js", json: "json", jsonc: "json", yaml: "yaml", yml: "yaml",
-  rs: "rust", go: "go", py: "python", sh: "sh", bash: "bash", zsh: "zsh", css: "css", c: "c", h: "c", cpp: "cpp", cc: "cpp", cxx: "cpp",
+  js: "js", mjs: "js", cjs: "js", jsx: "js", ts: "js", mts: "js", cts: "js", tsx: "js", json: "json", jsonc: "json", json5: "json", jsonl: "json", yaml: "yaml", yml: "yaml",
+  rs: "rust", go: "go", py: "python", sh: "sh", bash: "bash", zsh: "zsh", css: "css", scss: "css", less: "css", c: "c", h: "c", cpp: "cpp", cc: "cpp", cxx: "cpp",
   hpp: "cpp", java: "java", kt: "kotlin", kts: "kotlin", rb: "ruby", php: "php", sql: "sql", lua: "lua", graphql: "graphql", gql: "graphql",
 };
 export const languageOf = (name) => /^(gnu)?makefile$/i.test(name) ? "makefile" : LANGUAGES[extOf(name)];

@@ -8,7 +8,11 @@
 - 升级 **Files 文件浏览器**（`mods/t3-files`、`shared/nav-column.js`）为**上下分栏**并大幅提升日常可用性：
   - 由狭窄的左右分栏改为全宽上下分栏（`withTopNav`）：上方为全宽搜索与文件树（可拖拽分隔线调高，`localStorage` 持久化为 `nav.height`，范围 110–560px），下方为全宽代码 / Markdown / 图片预览；未打开文件时文件树自动占满整高，打开文件后点击目录开关可收起文件树实现全高沉浸阅读。
   - 新增紧凑的**最近打开文件标签条**（打开 ≥ 2 个文件时自动出现，支持一键切换、中键或点 `×` 关闭并自动回退到上一个文件）。
-  - 工具栏新增一键 **Mention 给 Agent（`@`）**、**复制相对路径**、**行数标记**、**关闭文件**按钮，并在搜索框旁实时显示匹配文件数量；修复 `Mention in agent`（`shared/file-menu.js`）在剪贴板为空/非文本、面板放大隐藏 `work` 或聚焦与粘贴同帧竞态时不起作用的问题（并补充终端兜底与 500ms 剪贴板恢复）。
+  - 工具栏新增一键 **Mention 给 Agent（`@`）**、**复制相对路径**、**行数与文件大小标记**、**默认程序打开**、**关闭文件**按钮，并在搜索框旁实时显示匹配文件数量；修复 `Mention in agent`（`shared/file-menu.js`）在剪贴板为空/非文本、面板放大隐藏 `work` 或聚焦与粘贴同帧竞态时不起作用的问题（并补充终端兜底与 500ms 剪贴板恢复）。
+  - 全面升级 **Files 文件预览**（`mods/t3-files`）：
+    - 修复**远程图片预览空白**的根因（绕过 Herdr 0.1.16 宿主 `fs.writeFile(..., Uint8Array)` 静默写出 0 字节文件的 Bug，自动回退为 ASCII base64 文本 + 本机原生解码），远程图片上限由 512 KB 提升至 4 MB，扩展支持 `bmp` / `ico` / `avif`，修复切文件时的图片缓存泄漏与 Windows 路径引号转义。
+    - 新增完整**图片预览控制条**：解析图片真实分辨率（`W × H`）与文件大小，提供保持纵横比的 `Fit` / `Width` / `100%` / `−` / `+` 缩放（长截屏自动按 `Width` 滚动预览，不再压成细条）及 `Auto` / `Light` / `Dark` 画布背景切换，透明 PNG / SVG 清晰可见。
+    - 新增 **SVG `Preview | Code`**、**HTML `Code | Preview`**、**JSON `Pretty | Raw`**（单行压缩 JSON 自动美化）、**Markdown / HTML 相对链接页内跳转**、超过 1 MB 大文本/日志的 **256 KB 截断预览**，以及带类型/大小与外部打开/定位/复制路径按钮的**二进制文件信息卡片**。
 - 新增 **Better Search 全局搜索**（`mods/better-search`，改编自 `munza/herdr-mods`，快捷键 `cmd-alt-p` / `ctrl-alt-p`）：
   - 一个弹窗搜遍所有标签、Agent（`@`）、命令（`>`）、仓库文件（`/`）、Space（`~`）与 Agent 历史输出（`?`），支持快速预览以及直接向 Agent 发送消息或递交文件。
   - 深度适配 Herdr T3 与 Windows：选中 `/` 文件时直接唤醒并打开右侧面板的 `t3-files` 定位预览；自动过滤 T3 隐藏的 Home 空间；兼容 Windows CRLF 路径与 `.exe` helper 检测；按平台显示修饰键提示（非 macOS 显示 `Ctrl+↵` / `Shift+↵`）；未安装对应 helper 时隐藏 `# PRs` / `$ issues` 标签芯片。
