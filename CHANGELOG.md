@@ -10,7 +10,8 @@ English · [中文](CHANGELOG.zh-CN.md)
   - Upgraded **Changes** with separated **Staged (`--cached`) vs Unstaged** diff loading, draggable top-and-bottom split (`changes.split`), compacted directory tree toggle (`list.mode`), line-wrap toggle (`diff.wrap`), per-file history jump (`clock`), 1-click `@` Agent mention, Copy path, and `j/k` / `↑/↓` navigation.
   - Added **Git Log** with unpushed commit badges (`↑ local` via `@{u}..HEAD`), full-repository Enter-triggered backend search (`path:`, `author:`, grep, SHA), `Current branch` vs `All branches` toggle (`log.scope`), draggable split (`log.split`), commit file inspector, Copy SHA, and 1-click `@` commit handoff to the active agent.
   - Added **Branches, Worktrees & Stashes** radar: click any Worktree to switch/open its Space, click any local or remote branch to inspect its commit log read-only without touching HEAD, and preview Stash diffs read-only with `@` handoff.
-  - Added theme-adaptive **syntax highlighting & intra-line word-diff coloring** (`mods/t3-changes/highlight.js`) across Changes, Log commit diffs, and Stash diffs, with dual old/new line numbers and 2px addition/deletion edge markers.
+  - Added **Branch Diff (`vs <base>`)** mode in `Changes` (`base...HEAD` PR-style aggregated diff against auto-detected `main`/`master`/upstream), **line-number & hunk-level `@path:Lstart-Lend`** Agent handoff directly from diffs, **tree view** for large Commit file lists, **multi-lane Commit Graph** tracks in `Log`, **dirty/ahead status badges** on Worktree rows, a quiet **Git tab status indicator** (`t3-changes.status`) in `t3-chrome`, and **multi-line stateful syntax highlighting** (`/* */`, `<!-- -->`, template literals, Python triple quotes) in `highlight.js`.
+  - Trimmed `RECIPE.md` for comfortable Gallery size headroom and added native Windows one-command sync & check script (`scripts/check-windows.ps1`).
 
 ## 2026-11-23
 

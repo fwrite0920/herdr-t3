@@ -10,7 +10,8 @@
   - **Changes 视图**：严格区分 **Staged（`--cached`）与 Unstaged** 的 Diff 内容，新增可拖拽上下分栏（`changes.split`）、扁平/压缩目录树切换（`list.mode`）、长行自动换行开关（`diff.wrap`）、单文件历史跳转、一键 `@` 递交 Agent、复制路径与 `j/k` / `↑/↓` 快捷翻看。
   - **Log 提交历史视图**：通过 `@{u}..HEAD` 标出尚未推送的 `↑ local` 提交，支持回车执行全库后端检索（支持 `path:`、`author:`、关键词与 SHA）、`Current branch` / `All branches` 切换（`log.scope`）、可拖拽上下分栏（`log.split`）、提交详情与改动文件检视、复制 SHA 以及一键 `@` 将提交上下文发送给 Agent。
   - **Branches / Worktrees / Stashes 雷达视图**：点击 Worktree 直接切换或打开对应 Herdr Space；点击任意本地或远程分支直接切入 Log 只读浏览该分支历史（完全不动本地工作区）；只读查看 Stash 列表与着色 Diff 并支持 `@` 递交 Agent。
-  - 为 Changes、Log 提交详情与 Stash Diff 全面新增主题自适应**代码语法高亮与行内变更词高亮**（`mods/t3-changes/highlight.js`），并搭配旧/新双行号与左侧 2px 增删指示条。
+  - 补充 **Branch Diff（`vs <base>`）** 分支汇总对比（自动识别 `main`/`master`/上游的 `base...HEAD` 聚合 Diff）、Diff 行号与 Hunk 级 **`@path:Lstart-Lend`** 精准递交 Agent、大 Commit 改动文件树状视图、`Log` **多轨道分支拓扑图**、Worktree 脏/领先状态微标、面板 `Git` 页签极简状态角标（`t3-changes.status`），以及跨行状态机语法高亮（`/* */`、`<!-- -->`、模板字符串与 Python 三引号）和行内变更词对比（`mods/t3-changes/highlight.js`）。
+  - 精简 `RECIPE.md` 留出充足的 60 KB Gallery 安全余量，并新增 Windows 原生一键同步与全量校验脚本 `scripts/check-windows.ps1`。
 
 ## 2026-11-23
 

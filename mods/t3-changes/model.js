@@ -1,6 +1,6 @@
 // Pure data helpers for t3-changes (Read-First Git Radar & Agent Handoff):
 // persisted prefs, compacted tree, branch/log/commit/stash/worktree parsers,
-// backend log query parser, staged vs unstaged diff args, and agent handoff formatters.
+// default-base branch comparison, commit graph lane layout, hunk/line agent handoff.
 
 export const VIEW_MODE_KEY = "list.mode";
 export const TAB_KEY = "git.tab";
@@ -205,6 +205,94 @@ export function parseGitLog(stdout, remoteNames = new Set(["origin"]), unpushedS
 }
 
 /**
+ * Assign compact multi-lane graph metadata to a list of commits (capped at `maxLanes`).
+ * Returns an array parallel to `commits` with `{ col, lanesTop, lanesBottom, maxCols, mergeCols }`.
+ */
+export function assignGraphLanes(commits, maxLanes = 5) {
+  let active = []; // array of expected next commit SHAs per lane
+  let peak = 1;
+  const raw = commits.map((c) => {
+    let col = active.indexOf(c.sha);
+    if (col < 0) {
+      // Find first empty slot or append
+      const empty = active.indexOf(null);
+      if (empty >= 0) {
+        col = empty;
+        active[col] = c.sha;
+      } else if (active.length < maxLanes) {
+        col = active.length;
+        active.push(c.sha);
+      } else {
+        col = maxLanes - 1;
+        active[col] = c.sha;
+      }
+    }
+    const lanesTop = active.map((sha, idx) => (sha ? idx : -1)).filter((idx) => idx >= 0);
+
+    // Replace all lanes waiting for this commit; first parent continues in `col`, extra parents fork/merge
+    const next = [...active];
+    for (let i = 0; i < next.length; i++) {
+      if (next[i] === c.sha && i !== col) next[i] = null;
+    }
+    const [firstParent, ...extraParents] = c.parents || [];
+    next[col] = firstParent || null;
+
+    const mergeCols = [];
+    for (const p of extraParents) {
+      const existing = next.indexOf(p);
+      if (existing >= 0) {
+        mergeCols.push(existing);
+      } else {
+        const slot = next.indexOf(null);
+        if (slot >= 0) {
+          next[slot] = p;
+          mergeCols.push(slot);
+        } else if (next.length < maxLanes) {
+          mergeCols.push(next.length);
+          next.push(p);
+        }
+      }
+    }
+
+    // Trim trailing null slots
+    while (next.length > 0 && next[next.length - 1] === null) next.pop();
+    const lanesBottom = next.map((sha, idx) => (sha ? idx : -1)).filter((idx) => idx >= 0);
+    const rowCols = Math.max(col + 1, active.length, next.length);
+    if (rowCols > peak) peak = rowCols;
+    active = next;
+    return { col, lanesTop, lanesBottom, mergeCols };
+  });
+
+  const maxCols = Math.min(maxLanes, Math.max(1, peak));
+  return raw.map((r) => ({ ...r, maxCols }));
+}
+
+/**
+ * Pick the best comparison base for `Branch Diff` (`<base>...HEAD`).
+ * On a feature branch: prefers local `main`/`master` or `origin/main`/`origin/master`.
+ * On the default branch itself: compares against `upstream` (e.g. `origin/main`) when ahead/diverged.
+ */
+export function detectDefaultBase(branches, repo) {
+  const current = repo?.branch || "";
+  const localNames = new Set((branches?.local || []).map((b) => b.name));
+  const remoteNames = new Set((branches?.remote || []).map((b) => b.name));
+
+  // If currently on a non-default branch, compare against default base branch
+  const candidates = ["main", "master", "origin/main", "origin/master", "develop", "origin/develop"];
+  for (const name of candidates) {
+    if (name === current) continue;
+    if (localNames.has(name) || remoteNames.has(name)) {
+      return { base: name, range: `${name}...HEAD`, label: `vs ${name}` };
+    }
+  }
+  // If on main/master itself and has an upstream, allow comparing against upstream (`origin/main..HEAD`)
+  if (repo?.upstream && !repo.gone) {
+    return { base: repo.upstream, range: `${repo.upstream}...HEAD`, label: `vs ${repo.upstream}` };
+  }
+  return null;
+}
+
+/**
  * Parse a log search query into structured backend git log filters.
  * Supports `path:<file>`, `author:<name>`, and free-text grep terms (or standalone 7-40 char hex SHA).
  */
@@ -243,7 +331,6 @@ export function buildLogArgs({ limit = 80, scope = "current", branch = "", query
 export function filterCommits(commits, query) {
   const q = parseLogQuery(query);
   if (!q.active) return commits;
-  // When user is typing `path:...`, let backend search handle it rather than hiding everything locally.
   if (q.path && !q.grep && !q.author && !q.sha) return commits;
   const tokens = [q.sha, q.author, ...q.grep.split(/\s+/)].filter(Boolean).map((s) => s.toLowerCase());
   if (!tokens.length) return commits;
@@ -254,8 +341,8 @@ export function filterCommits(commits, query) {
 }
 
 /**
- * Parse `git diff-tree --root --no-commit-id --name-status -r -z -M` and `--numstat -z -M` outputs
- * into changed files for a commit.
+ * Parse `git diff-tree --root --no-commit-id --name-status -r -z -M` (or `git diff --name-status -z -M`)
+ * and matching `--numstat -z -M` outputs into changed file entries.
  */
 export function parseCommitFiles(nameStatusOut, numstatOut = "") {
   const stats = new Map();
@@ -367,7 +454,7 @@ export function parseWorktrees(stdout) {
   const out = [];
   for (const block of blocks) {
     if (!block.trim()) continue;
-    const item = { path: "", head: "", shortHead: "", branch: "", bare: false, detached: false };
+    const item = { path: "", head: "", shortHead: "", branch: "", bare: false, detached: false, dirtyCount: 0, ahead: 0, behind: 0 };
     for (const line of block.split("\n")) {
       if (line.startsWith("worktree ")) item.path = line.slice("worktree ".length).trim().replace(/\\/g, "/");
       else if (line.startsWith("HEAD ")) {
@@ -382,6 +469,31 @@ export function parseWorktrees(stdout) {
   return out;
 }
 
+/** Parse `git status --porcelain=v1 -b` of a secondary worktree into `{ dirtyCount, ahead, behind }`. */
+export function parseWorktreeStatus(stdout) {
+  const lines = String(stdout || "").split(/\r?\n/).filter(Boolean);
+  let header = "";
+  let dirtyCount = 0;
+  for (const line of lines) {
+    if (!header && line.startsWith("## ")) { header = line; continue; }
+    dirtyCount++;
+  }
+  const info = parseBranchHeader(header, "");
+  return { dirtyCount, ahead: info.ahead, behind: info.behind };
+}
+
+/** Parse a unified diff hunk header `@@ -a,b +c,d @@` into line range metadata. */
+export function parseHunkRange(text) {
+  const m = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(String(text || ""));
+  if (!m) return null;
+  const oldStart = Number(m[1]);
+  const oldCount = m[2] === undefined ? 1 : Number(m[2]);
+  const newStart = Number(m[3]);
+  const newCount = m[4] === undefined ? 1 : Number(m[4]);
+  const newEnd = newCount > 0 ? newStart + newCount - 1 : newStart;
+  return { oldStart, oldCount, newStart, newCount, newEnd };
+}
+
 /**
  * Build read-only `git diff` arg array for a working tree file, strictly separating
  * staged (`--cached`) vs unstaged (working tree) diffs when the file lives in a split section.
@@ -394,15 +506,15 @@ export function buildWorkingDiffArgs(file, { section = "all", hasHead = true }) 
   return [...base, ...(hasHead ? ["HEAD"] : []), "--", file.path];
 }
 
-/** Parse unified diff lines into renderable numbered rows (with both oldNum and newNum). */
+/** Parse unified diff lines into renderable numbered rows (with both oldNum, newNum, and hunk range). */
 export function diffRows(lines) {
   let old = 0, next = 0;
   return lines.map((line) => {
-    const match = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(line);
-    if (match) {
-      old = +match[1];
-      next = +match[2];
-      return { kind: "@", text: line };
+    const hunk = parseHunkRange(line);
+    if (hunk) {
+      old = hunk.oldStart;
+      next = hunk.newStart;
+      return { kind: "@", text: line, hunk };
     }
     if (line.startsWith("diff --git ")) return { kind: "file", text: line };
     const kind = line[0];
@@ -422,10 +534,21 @@ export function diffRows(lines) {
   });
 }
 
-/** Format clean, concise context snippets for 1-click Agent handoff. */
+/** Format clean, concise context snippets for 1-click Agent handoff (file, line, range, commit, conflicts, stash). */
 export function formatAgentMention(kind, payload) {
   if (kind === "file") {
     return `@${String(payload || "").replace(/\\/g, "/")} `;
+  }
+  if (kind === "line" && payload?.path) {
+    const p = String(payload.path).replace(/\\/g, "/");
+    return payload.line != null ? `@${p}:L${payload.line} ` : `@${p} `;
+  }
+  if (kind === "range" && payload?.path) {
+    const p = String(payload.path).replace(/\\/g, "/");
+    const s = payload.start, e = payload.end;
+    if (s != null && e != null && e > s) return `@${p}:L${s}-L${e} `;
+    if (s != null) return `@${p}:L${s} `;
+    return `@${p} `;
   }
   if (kind === "commit" && payload) {
     const subj = payload.subject ? ` ("${payload.subject}")` : "";
@@ -550,7 +673,7 @@ export function orderedTreeFiles(files) {
 }
 
 /** Remove any collapsed ancestor keys for `filePath` so navigating to a file reveals it in tree view. */
-export function expandAncestors(collapsed, filePath, groups = ["all", "staged", "unstaged"]) {
+export function expandAncestors(collapsed, filePath, groups = ["all", "staged", "unstaged", "branch", "commit"]) {
   if (!collapsed || !filePath) return;
   const parts = filePath.split("/");
   for (let i = 1; i < parts.length; i++) {

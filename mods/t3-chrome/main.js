@@ -238,6 +238,13 @@ export default class WorkspaceChrome extends View {
     const mark = word === "working" ? svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)
       : word === "blocked" ? div().size(14).flex_none().rounded(4).bg(t.blocked + "26").text_size(11).font_bold().text_color(t.blocked).flex().items_center().justify_center().child("!")
       : word === "done" ? div().size(6).flex_none().rounded_full().bg(t.done) : null;
+    // Quiet Git radar badge for the active space: red `!` on conflicts, muted file count when dirty.
+    const git = space && shared(KEY.gitStatus)?.[space.id];
+    const gitMark = git?.conflicts > 0
+      ? div().px(4).flex_none().rounded(4).bg(t.ansi1 + "26").text_size(10).font_bold().text_color(t.ansi1).child(`!${git.conflicts}`)
+      : git?.files > 0
+        ? div().px(4).flex_none().rounded(4).bg(t.foreground + "14").text_size(10).text_color(t.muted).child(String(git.files))
+        : null;
     const own = (el) => el.on_mouse_down("left", (_e, cx) => cx.stop_propagation());
     const page = (id) => {
       const [label, icon, colored] = PAGES[id] ?? [id, "folder-tree"], on = s.page === id, key = `page-${id}`;
@@ -252,6 +259,7 @@ export default class WorkspaceChrome extends View {
         .child(colored ? image(`mods/t3-chrome/icons/${icon}.svg`).size(14).flex_none().opacity(on || this.hot === key ? 1 : 0.7)
           : svg(`mods/t3-chrome/icons/${icon}.svg`).size(14).flex_none())
         .child(label)
+        .when(id === "changes" && gitMark != null, el => el.child(gitMark))
         .when(id === "review" && mark != null, el => el.child(mark))), 6);
     };
     /** @param {"xs" | "sm"} [size] */

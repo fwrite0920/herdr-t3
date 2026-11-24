@@ -1,6 +1,6 @@
-// Lightweight, zero-dependency syntax highlighter & intra-line word-diff annotator for t3-changes.
-// Produces semantic token kinds (`keyword`, `string`, `comment`, `function`, `type`, `number`,
-// `constant`, `tag`, `plain`) so theme switches recolor instantly without re-tokenizing.
+// Lightweight, zero-dependency stateful syntax highlighter & intra-line word-diff annotator for t3-changes.
+// Tracks multi-line block comments (/* */, <!-- -->) and multi-line strings (backticks, Python triple quotes)
+// independently per diff side, producing semantic token kinds so theme switches recolor instantly.
 
 const MAX_LINE_LEN = 500;
 const MAX_SPANS = 80;
@@ -117,17 +117,20 @@ function readString(line, start, quote) {
   let i = start + 1;
   while (i < line.length) {
     if (line[i] === "\\" && i + 1 < line.length) { i += 2; continue; }
-    if (line[i] === quote) return i + 1;
+    if (line[i] === quote) return { end: i + 1, closed: true };
     i++;
   }
-  return line.length;
+  return { end: line.length, closed: false };
 }
 
-function tokenizeMarkdown(line) {
+function tokenizeMarkdown(line, state) {
+  if (/^\s*```/.test(line)) {
+    return { tokens: [[line, "type"]], state: state === "fence" ? null : "fence" };
+  }
+  if (state === "fence") return { tokens: [[line, "string"]], state: "fence" };
+  if (/^\s*#{1,6}\s/.test(line)) return { tokens: [[line, "keyword"]], state: null };
+  if (/^\s*>\s?/.test(line)) return { tokens: [[line, "comment"]], state: null };
   const out = [];
-  if (/^\s*#{1,6}\s/.test(line)) return [[line, "keyword"]];
-  if (/^\s*>\s?/.test(line)) return [[line, "comment"]];
-  if (/^\s*```/.test(line)) return [[line, "type"]];
   let i = 0;
   while (i < line.length) {
     if (line[i] === "`") {
@@ -153,18 +156,29 @@ function tokenizeMarkdown(line) {
     pushToken(out, line[i], "plain");
     i++;
   }
-  return out;
+  return { tokens: out, state: null };
 }
 
-function tokenizeMarkup(line) {
+function tokenizeMarkup(line, state) {
   const out = [];
   let i = 0;
+  let nextState = state;
+  if (nextState === "html-comment") {
+    const end = line.indexOf("-->");
+    if (end < 0) return { tokens: [[line, "comment"]], state: "html-comment" };
+    pushToken(out, line.slice(0, end + 3), "comment");
+    i = end + 3;
+    nextState = null;
+  }
   while (i < line.length) {
     if (line.startsWith("<!--", i)) {
       const end = line.indexOf("-->", i + 4);
-      const to = end >= 0 ? end + 3 : line.length;
-      pushToken(out, line.slice(i, to), "comment");
-      i = to;
+      if (end < 0) {
+        pushToken(out, line.slice(i), "comment");
+        return { tokens: out, state: "html-comment" };
+      }
+      pushToken(out, line.slice(i, end + 3), "comment");
+      i = end + 3;
       continue;
     }
     if (line[i] === "<") {
@@ -176,9 +190,9 @@ function tokenizeMarkup(line) {
       }
     }
     if (line[i] === '"' || line[i] === "'") {
-      const to = readString(line, i, line[i]);
-      pushToken(out, line.slice(i, to), "string");
-      i = to;
+      const { end } = readString(line, i, line[i]);
+      pushToken(out, line.slice(i, end), "string");
+      i = end;
       continue;
     }
     const attrM = /^([A-Za-z_:@-][\w:.-]*)(?==)/.exec(line.slice(i));
@@ -190,41 +204,53 @@ function tokenizeMarkup(line) {
     pushToken(out, line[i], "plain");
     i++;
   }
-  return out;
+  return { tokens: out, state: nextState };
 }
 
 function tokenizeYaml(line) {
   const out = [];
   const trimmed = line.trimStart();
-  if (trimmed.startsWith("#")) return [[line, "comment"]];
+  if (trimmed.startsWith("#")) return { tokens: [[line, "comment"]], state: null };
   const keyM = /^(\s*(?:-\s+)?)([A-Za-z0-9_.-]+)(\s*:)(.*)$/.exec(line);
   if (keyM) {
     if (keyM[1]) pushToken(out, keyM[1], "plain");
     pushToken(out, keyM[2], "type");
     pushToken(out, keyM[3], "plain");
     if (keyM[4]) {
-      for (const tok of tokenizeCode(keyM[4], "sh")) pushToken(out, tok[0], tok[1]);
+      const sub = tokenizeCode(keyM[4], "sh", null);
+      for (const tok of sub.tokens) pushToken(out, tok[0], tok[1]);
     }
-    return out;
+    return { tokens: out, state: null };
   }
-  return tokenizeCode(line, "sh");
+  return tokenizeCode(line, "sh", null);
 }
 
-function tokenizeCss(line) {
+function tokenizeCss(line, state) {
   const out = [];
   let i = 0;
+  let nextState = state;
+  if (nextState === "block-comment") {
+    const end = line.indexOf("*/");
+    if (end < 0) return { tokens: [[line, "comment"]], state: "block-comment" };
+    pushToken(out, line.slice(0, end + 2), "comment");
+    i = end + 2;
+    nextState = null;
+  }
   while (i < line.length) {
     if (line.startsWith("/*", i)) {
       const end = line.indexOf("*/", i + 2);
-      const to = end >= 0 ? end + 2 : line.length;
-      pushToken(out, line.slice(i, to), "comment");
-      i = to;
+      if (end < 0) {
+        pushToken(out, line.slice(i), "comment");
+        return { tokens: out, state: "block-comment" };
+      }
+      pushToken(out, line.slice(i, end + 2), "comment");
+      i = end + 2;
       continue;
     }
     if (line[i] === '"' || line[i] === "'") {
-      const to = readString(line, i, line[i]);
-      pushToken(out, line.slice(i, to), "string");
-      i = to;
+      const { end } = readString(line, i, line[i]);
+      pushToken(out, line.slice(i, end), "string");
+      i = end;
       continue;
     }
     const hex = /^#[0-9a-fA-F]{3,8}\b/.exec(line.slice(i));
@@ -254,10 +280,10 @@ function tokenizeCss(line) {
     pushToken(out, line[i], "plain");
     i++;
   }
-  return out;
+  return { tokens: out, state: nextState };
 }
 
-function tokenizeCode(line, lang) {
+function tokenizeCode(line, lang, state) {
   const out = [];
   const isHashComment = lang === "py" || lang === "sh" || lang === "yaml";
   const isSlashComment = lang === "js" || lang === "clang" || lang === "json";
@@ -270,6 +296,30 @@ function tokenizeCode(line, lang) {
     : null;
 
   let i = 0;
+  let nextState = state;
+
+  // Continue open multi-line constructs from previous line
+  if (nextState === "block-comment") {
+    const end = line.indexOf("*/");
+    if (end < 0) return { tokens: [[line, "comment"]], state: "block-comment" };
+    pushToken(out, line.slice(0, end + 2), "comment");
+    i = end + 2;
+    nextState = null;
+  } else if (nextState === "template") {
+    const { end, closed } = readString(line, -1, "`");
+    pushToken(out, line.slice(0, end), "string");
+    if (!closed) return { tokens: out, state: "template" };
+    i = end;
+    nextState = null;
+  } else if (nextState === "py-triple-dq" || nextState === "py-triple-sq") {
+    const delim = nextState === "py-triple-dq" ? '"""' : "'''";
+    const end = line.indexOf(delim);
+    if (end < 0) return { tokens: [[line, "string"]], state: nextState };
+    pushToken(out, line.slice(0, end + 3), "string");
+    i = end + 3;
+    nextState = null;
+  }
+
   while (i < line.length) {
     const ch = line[i];
 
@@ -278,11 +328,14 @@ function tokenizeCode(line, lang) {
       pushToken(out, line.slice(i), "comment");
       break;
     }
-    if (isSlashComment && ch === "/" && line[i + 1] === "*") {
+    if ((isSlashComment || isSql) && ch === "/" && line[i + 1] === "*") {
       const end = line.indexOf("*/", i + 2);
-      const to = end >= 0 ? end + 2 : line.length;
-      pushToken(out, line.slice(i, to), "comment");
-      i = to;
+      if (end < 0) {
+        pushToken(out, line.slice(i), "comment");
+        return { tokens: out, state: "block-comment" };
+      }
+      pushToken(out, line.slice(i, end + 2), "comment");
+      i = end + 2;
       continue;
     }
     if (isHashComment && ch === "#") {
@@ -294,13 +347,27 @@ function tokenizeCode(line, lang) {
       break;
     }
 
-    // Strings (including JSON keys `"foo":`)
+    // Python triple-quoted multi-line strings
+    if (lang === "py" && (line.startsWith('"""', i) || line.startsWith("'''", i))) {
+      const delim = line.slice(i, i + 3);
+      const end = line.indexOf(delim, i + 3);
+      if (end < 0) {
+        pushToken(out, line.slice(i), "string");
+        return { tokens: out, state: delim === '"""' ? "py-triple-dq" : "py-triple-sq" };
+      }
+      pushToken(out, line.slice(i, end + 3), "string");
+      i = end + 3;
+      continue;
+    }
+
+    // Strings (including JS template literals and JSON keys `"foo":`)
     if (ch === '"' || ch === "'" || (ch === "`" && (lang === "js" || lang === "sh"))) {
-      const to = readString(line, i, ch);
-      const slice = line.slice(i, to);
-      const isJsonKey = lang === "json" && ch === '"' && /^\s*:/.test(line.slice(to));
+      const { end, closed } = readString(line, i, ch);
+      const slice = line.slice(i, end);
+      const isJsonKey = lang === "json" && ch === '"' && /^\s*:/.test(line.slice(end));
       pushToken(out, slice, isJsonKey ? "type" : "string");
-      i = to;
+      if (!closed && ch === "`" && lang === "js") return { tokens: out, state: "template" };
+      i = end;
       continue;
     }
 
@@ -353,19 +420,24 @@ function tokenizeCode(line, lang) {
     pushToken(out, ch, "plain");
     i++;
   }
-  return out;
+  return { tokens: out, state: nextState };
 }
 
-/** Tokenize a single code line into `[[text, kind], ...]` pairs. */
-export function tokenizeLine(text, lang = "plain") {
-  if (!text) return [[" ", "plain"]];
+/** Stateful tokenizer returning `{ tokens, state }` for multi-line constructs. */
+export function tokenizeLineStateful(text, lang = "plain", state = null) {
+  if (!text) return { tokens: [[" ", "plain"]], state };
   const expanded = text.replaceAll("\t", "    ");
-  if (lang === "plain" || expanded.length > MAX_LINE_LEN) return [[expanded, "plain"]];
-  if (lang === "md") return tokenizeMarkdown(expanded);
-  if (lang === "html") return tokenizeMarkup(expanded);
+  if (lang === "plain" || expanded.length > MAX_LINE_LEN) return { tokens: [[expanded, "plain"]], state: null };
+  if (lang === "md") return tokenizeMarkdown(expanded, state);
+  if (lang === "html") return tokenizeMarkup(expanded, state);
   if (lang === "yaml") return tokenizeYaml(expanded);
-  if (lang === "css") return tokenizeCss(expanded);
-  return tokenizeCode(expanded, lang);
+  if (lang === "css") return tokenizeCss(expanded, state);
+  return tokenizeCode(expanded, lang, state);
+}
+
+/** Stateless convenience wrapper returning `[[text, kind], ...]` pairs. */
+export function tokenizeLine(text, lang = "plain") {
+  return tokenizeLineStateful(text, lang, null).tokens;
 }
 
 /**
@@ -383,7 +455,6 @@ export function lineChangeRange(a, b) {
     endB--;
   }
   const common = start + (a.length - endA);
-  // Skip word highlight when lines share almost nothing (avoids painting entire unrelated lines).
   if (common < 2) return null;
   return {
     oldRange: endA > start ? [start, endA] : null,
@@ -397,7 +468,6 @@ export function lineChangeRange(a, b) {
  * Returns `Array<[text, kind, emph]>`.
  */
 export function buildSpans(tokens, highlightRange = null) {
-  // First split tokens at highlight boundaries if present
   const split = [];
   let pos = 0;
   const hasHi = Array.isArray(highlightRange) && highlightRange[1] > highlightRange[0];
@@ -418,7 +488,6 @@ export function buildSpans(tokens, highlightRange = null) {
     pos = nextPos;
   }
 
-  // Carry trailing spaces onto the next non-emph span so GPUI draws exact widths & no stray ligatures.
   const out = [];
   let carry = "";
   for (const [text, kind, emph] of split) {
@@ -447,14 +516,13 @@ export function buildSpans(tokens, highlightRange = null) {
 }
 
 /**
- * Enrich `diffRows` output with syntax tokens (`spans`) and paired `-`/`+` intra-line highlights.
- * Automatically updates language when encountering `diff --git a/... b/...` headers (for stash diffs).
+ * Enrich `diffRows` output with stateful syntax tokens (`spans`) and paired `-`/`+` intra-line highlights.
+ * Tracks old-side and new-side multi-line comment/string state separately and resets on file/hunk boundaries.
  */
 export function colorizeDiffRows(rows, filePath = "") {
   let lang = languageFromPath(filePath);
   const ranges = new Array(rows.length).fill(null);
 
-  // Detect paired `-` ... `+` blocks for intra-line word diff highlighting
   for (let i = 0; i < rows.length;) {
     if (rows[i].kind !== "-") { i++; continue; }
     let delEnd = i;
@@ -476,15 +544,35 @@ export function colorizeDiffRows(rows, filePath = "") {
     i = addEnd;
   }
 
+  let oldState = null, newState = null;
   return rows.map((row, idx) => {
     if (row.kind === "file") {
       const m = /^diff --git a\/.+ b\/(.+)$/.exec(row.text || "");
       if (m) lang = languageFromPath(m[1]);
+      oldState = null;
+      newState = null;
       return row;
     }
-    if (row.kind === "+" || row.kind === "-" || row.kind === " ") {
-      const tokens = tokenizeLine(row.text || "", lang);
-      return { ...row, spans: buildSpans(tokens, ranges[idx]) };
+    if (row.kind === "@") {
+      oldState = null;
+      newState = null;
+      return row;
+    }
+    if (row.kind === "-") {
+      const res = tokenizeLineStateful(row.text || "", lang, oldState);
+      oldState = res.state;
+      return { ...row, spans: buildSpans(res.tokens, ranges[idx]) };
+    }
+    if (row.kind === "+") {
+      const res = tokenizeLineStateful(row.text || "", lang, newState);
+      newState = res.state;
+      return { ...row, spans: buildSpans(res.tokens, ranges[idx]) };
+    }
+    if (row.kind === " ") {
+      const res = tokenizeLineStateful(row.text || "", lang, newState ?? oldState);
+      oldState = res.state;
+      newState = res.state;
+      return { ...row, spans: buildSpans(res.tokens, ranges[idx]) };
     }
     return row;
   });

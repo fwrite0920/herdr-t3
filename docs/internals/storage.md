@@ -34,7 +34,7 @@ Apply 和 Studio 导入保存时，在独占的 `.preview/save-<unique-id>/` 写
 
 布局 mod（`mods/`）带数据的键都列在 `shared/store.js` 的 `KEY` 里，代码只写 `KEY.<名字>`，不写字面量；`extras/` 里的 mod 按同一取名规则管理自己的键（`review.shown`）。取名按写入方：
 
-- **`<mod>.<name>`**：只有一个 mod 写，其他 mod 可以读。`t3-tabs.home`、`t3-inbox.rows`。
+- **`<mod>.<name>`**：只有一个 mod 写，其他 mod 可以读。`t3-tabs.home`、`t3-inbox.rows`、`t3-changes.status`（按 space 记 `{ files, conflicts, ahead }` 供面板页签微标读取）。
 - **`t3.<name>`**：几个 mod 都写，或者属于整个布局。`t3.pins`、`t3.notice`、`t3.settings`。
 - `<name>` 用 lowerCamel：`t3.spaceIcons`、`t3.agentOrder`。
 

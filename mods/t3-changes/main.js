@@ -1,6 +1,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list } from "gpui-base";
-import { spaces, agents, panes, focused, run, exec, readTextFile, theme, settings, window, layout } from "herdr";
+import { spaces, agents, panes, focused, run, exec, readTextFile, theme, settings, window, layout, shared, setShared } from "herdr";
+import { KEY } from "./store.js";
 import {
   BRANCH_FORMAT, STASH_FORMAT,
   CHANGES_SPLIT_KEY, LOG_SPLIT_KEY,
@@ -9,9 +10,9 @@ import {
   readLogScope, writeLogScope,
   readDiffWrap, writeDiffWrap,
   readSplitHeight, writeSplitHeight,
-  parseBranchHeader, parseUnpushedShas, parseGitLog,
-  parseLogQuery, buildLogArgs, filterCommits,
-  parseCommitFiles, parseBranches, parseStashes, parseWorktrees,
+  parseBranchHeader, parseUnpushedShas, parseGitLog, assignGraphLanes,
+  detectDefaultBase, parseLogQuery, buildLogArgs, filterCommits,
+  parseCommitFiles, parseBranches, parseStashes, parseWorktrees, parseWorktreeStatus,
   buildWorkingDiffArgs, diffRows, formatAgentMention,
   buildChangeTree, orderedTreeFiles, expandAncestors,
 } from "./model.js";
@@ -95,16 +96,26 @@ export default class Changes extends View {
     this.logSplit = readSplitHeight(LOG_SPLIT_KEY, 210, SPLIT_MIN, SPLIT_MAX);
     this.dragSplit = null; // { which: "changes"|"log", y, from, height }
 
-    // Working tree state
+    // Working tree & Branch diff state
     this.repo = parseBranchHeader("", "");
     this.files = [];
-    this.open = null; // file path
+    this.open = null;
     this.openSection = "all"; // "all" | "staged" | "unstaged"
     this.rows = [];
     this.diffWidth = 300;
     this.listOpen = true;
-    // Collapsed folder keys (`${group}:${dirPath}`) for tree view; memory-only for this run.
+    // Collapsed folder keys (`${group}:${dirPath}`) for tree views; memory-only for this run.
     this.collapsed = new Set();
+
+    // Branch Diff (`base...HEAD`) state
+    this.changesMode = "working"; // "working" | "branch"
+    this.baseTarget = null; // { base, range, label }
+    this.branchFiles = [];
+    this.branchFileOpen = null;
+    this.branchDiffRows = [];
+    this.branchDiffWidth = 300;
+    this.branchLoading = false;
+    this.branchGen = 0;
 
     // Git Log state
     this.commits = [];
@@ -114,11 +125,12 @@ export default class Changes extends View {
     this.logLoading = false;
     this.logQuery = "";
     this.appliedQuery = "";
-    this.logBranch = ""; // optional branch inspected read-only from Branches tab
+    this.logBranch = "";
     this.logListOpen = true;
     this.selectedCommit = null;
     this.commitFiles = [];
     this.commitFilesOpen = true;
+    this.commitTree = this.viewMode === "tree";
     this.commitFileOpen = null;
     this.commitDiffRows = [];
     this.commitDiffWidth = 300;
@@ -139,7 +151,7 @@ export default class Changes extends View {
 
     // Shared feedback & polling state
     this.note = null;
-    this.noteKind = "error"; // "error" | "ok"
+    this.noteKind = "error";
     this.noteTimer = null;
     this.fetching = false;
     this.loading = false;
@@ -148,7 +160,6 @@ export default class Changes extends View {
 
     this.handle = cx.focus_handle();
 
-    // Log search input (live local filter + Enter for full repo backend git log query)
     this.logSearchInput = InputState.new({ placeholder: "Filter or Enter to search repo (path:file, author:name)…" });
     this.logSearchInput.on("change", (_e, cx) => {
       this.logQuery = this.logSearchInput.value();
@@ -187,6 +198,20 @@ export default class Changes extends View {
     cx?.notify?.();
   }
 
+  publishSpaceStatus(spaceId, summary) {
+    if (!spaceId) return;
+    const prevAll = shared(KEY.gitStatus) ?? {};
+    const prev = prevAll[spaceId];
+    if (prev && prev.files === summary.files && prev.conflicts === summary.conflicts && prev.ahead === summary.ahead) return;
+    const liveIds = new Set(spaces().map((s) => s.id));
+    const next = {};
+    for (const [id, val] of Object.entries(prevAll)) {
+      if (liveIds.has(id)) next[id] = val;
+    }
+    next[spaceId] = summary;
+    setShared(KEY.gitStatus, next);
+  }
+
   resetContext(nextContext) {
     this.context = nextContext;
     this.root = null;
@@ -203,6 +228,14 @@ export default class Changes extends View {
     this.limited = false;
     this.collapsed = new Set();
     this.lastHeadSig = "";
+
+    // Reset Branch diff state
+    this.changesMode = "working";
+    this.baseTarget = null;
+    this.branchFiles = [];
+    this.branchFileOpen = null;
+    this.setBranchLines([]);
+    this.branchGen++;
 
     // Reset log state
     this.commits = [];
@@ -236,6 +269,14 @@ export default class Changes extends View {
       if (next === "log" && !this.commits.length && !this.logLoading) this.loadLog(cx);
       if (next === "branches" && !this.branches.local.length && !this.metaLoading) this.loadMeta(cx);
     }
+    cx.notify();
+  }
+
+  setChangesMode(mode, cx) {
+    if (mode === this.changesMode) return;
+    if (mode === "branch" && !this.baseTarget) return;
+    this.changesMode = mode;
+    if (mode === "branch") this.loadBranchDiff(cx);
     cx.notify();
   }
 
@@ -276,6 +317,19 @@ export default class Changes extends View {
 
   mentionFile(relPath, cx) {
     this.sendToAgent(formatAgentMention("file", relPath), relPath, cx);
+  }
+
+  mentionLine(relPath, line, cx) {
+    if (!relPath || line == null) return;
+    this.sendToAgent(formatAgentMention("line", { path: relPath, line }), `${relPath}:L${line}`, cx);
+  }
+
+  mentionHunk(relPath, hunk, cx) {
+    if (!relPath || !hunk) return;
+    const start = hunk.newCount > 0 ? hunk.newStart : hunk.oldStart;
+    const end = hunk.newCount > 0 ? hunk.newEnd : hunk.oldStart + Math.max(0, hunk.oldCount - 1);
+    const label = end > start ? `${relPath}:L${start}-L${end}` : `${relPath}:L${start}`;
+    this.sendToAgent(formatAgentMention("range", { path: relPath, start, end }), label, cx);
   }
 
   mentionCommit(commit, cx) {
@@ -337,7 +391,7 @@ export default class Changes extends View {
 
   refresh(cx, opts = {}) {
     if (this.loading) return;
-    const { cwd, on } = location(), context = key();
+    const { cwd, on, spaceId } = location(), context = key();
     const contextChanged = context !== this.context;
     if (contextChanged) this.resetContext(context);
     if (!cwd) return;
@@ -354,6 +408,7 @@ export default class Changes extends View {
             this.setLines([]);
             this.open = null;
             this.error = "Not a git repository";
+            this.publishSpaceStatus(spaceId, { files: 0, conflicts: 0, ahead: 0 });
             return;
           }
           root = top.stdout.trim().replace(/\\/g, "/");
@@ -417,6 +472,14 @@ export default class Changes extends View {
         this.limited = fileEntries.length > 1000;
         this.error = null;
         this.lastHeadSig = headSig;
+        this.baseTarget = detectDefaultBase(this.branches, repoInfo);
+        if (!this.baseTarget && this.changesMode === "branch") this.changesMode = "working";
+
+        this.publishSpaceStatus(spaceId, {
+          files: files.length,
+          conflicts: files.filter((f) => f.status === "U").length,
+          ahead: repoInfo.ahead || 0,
+        });
 
         if (this.open && !files.some((f) => f.path === this.open)) {
           this.open = null;
@@ -434,7 +497,7 @@ export default class Changes extends View {
             this.openSection = "all";
           }
         }
-        if (this.open && this.activeTab === "changes") {
+        if (this.open && this.activeTab === "changes" && this.changesMode === "working") {
           try {
             await this.load(this.open, this.openSection, context);
           } catch {
@@ -446,6 +509,7 @@ export default class Changes extends View {
         if (wantFull) {
           this.loadMeta(cx);
           if (this.activeTab === "log" || opts.full) this.loadLog(cx);
+          if (this.changesMode === "branch" && this.baseTarget) this.loadBranchDiff(cx);
         }
       } catch (e) {
         if (key() === context) this.error = String(e);
@@ -492,6 +556,7 @@ export default class Changes extends View {
         if (key() !== context) return;
         if (brRes?.code === 0) {
           this.branches = parseBranches(brRes.stdout);
+          this.baseTarget = detectDefaultBase(this.branches, this.repo);
           if (this.branches.remote.length <= 12 && !this.remotesTouched) this.remotesOpen = true;
         }
         if (stRes?.code === 0) {
@@ -501,13 +566,115 @@ export default class Changes extends View {
             this.setStashLines([]);
           }
         }
-        if (wtRes?.code === 0) this.worktrees = parseWorktrees(wtRes.stdout);
+        if (wtRes?.code === 0) {
+          const wts = parseWorktrees(wtRes.stdout);
+          // For multi-worktree repos, inspect dirty/ahead status on up to 8 non-bare worktrees in parallel
+          if (wts.length > 1) {
+            const inspect = wts.slice(0, 8);
+            await Promise.all(inspect.map(async (wt) => {
+              if (wt.bare || !wt.path) return;
+              if (normKey(wt.path) === normKey(root)) {
+                wt.dirtyCount = this.files.length;
+                wt.ahead = this.repo.ahead || 0;
+                wt.behind = this.repo.behind || 0;
+                return;
+              }
+              const sr = await exec("git", [...READ, "status", "--porcelain=v1", "-b"], { cwd: wt.path, on }).catch(() => null);
+              if (sr?.code === 0) Object.assign(wt, parseWorktreeStatus(sr.stdout));
+            }));
+          }
+          if (key() !== context) return;
+          this.worktrees = wts;
+        }
       } finally {
         this.metaLoading = false;
         cx.notify();
       }
     });
   }
+
+  // ── Branch Diff (`base...HEAD`) Loader ───────────────────────────────────
+
+  loadBranchDiff(cx) {
+    if (!this.root || !this.baseTarget || !this.hasHead) return;
+    const root = this.root, on = this.on, context = this.context;
+    const range = this.baseTarget.range;
+    const gen = ++this.branchGen;
+    this.branchLoading = true;
+    cx.notify();
+    cx.spawn(async (cx) => {
+      try {
+        const git = (args) => exec("git", [...READ, ...args], { cwd: root, on });
+        const [ns, num] = await Promise.all([
+          git(["diff", "--name-status", "-z", "-M", range]),
+          git(["diff", "--numstat", "-z", "-M", range]),
+        ]);
+        if (key() !== context || this.branchGen !== gen) return;
+        const files = ns.code === 0 ? parseCommitFiles(ns.stdout, num.code === 0 ? num.stdout : "") : [];
+        this.branchFiles = files;
+        if (this.branchFileOpen && !files.some((f) => f.path === this.branchFileOpen)) {
+          this.branchFileOpen = null;
+          this.setBranchLines([]);
+        }
+        if (!this.branchFileOpen && files.length) this.branchFileOpen = files[0].path;
+        const openItem = files.find((f) => f.path === this.branchFileOpen);
+        if (openItem) await this.loadBranchFileDiff(range, openItem, context, gen);
+      } catch (e) {
+        if (key() === context && this.branchGen === gen) this.setBranchLines([`Cannot load branch diff: ${e}`]);
+      } finally {
+        if (this.branchGen === gen) this.branchLoading = false;
+        cx.notify();
+      }
+    });
+  }
+
+  async loadBranchFileDiff(range, file, context, gen) {
+    const root = this.root, on = this.on;
+    if (!root || !file) return;
+    if (file.binary) {
+      if (key() === context && this.branchGen === gen && this.branchFileOpen === file.path) {
+        this.setBranchLines(["Binary file changed · no text diff"]);
+      }
+      return;
+    }
+    const pathArgs = file.oldPath ? [file.oldPath, file.path] : [file.path];
+    const r = await exec("git", [...READ, "diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", range, "--", ...pathArgs], { cwd: root, on });
+    if (key() !== context || this.branchGen !== gen || this.branchFileOpen !== file.path) return;
+    if (r.code !== 0) {
+      this.setBranchLines([`Diff error: ${r.stderr.trim() || "unknown"}`]);
+      return;
+    }
+    const all = r.stdout.replace(/\n$/, "").split("\n");
+    const first = all.findIndex((l) => l.startsWith("@@"));
+    const lines = first < 0 ? ["No text diff available"] : all.slice(first);
+    this.setBranchLines(lines.slice(0, 1500).map((l) => (l.length > 4000 ? l.slice(0, 4000) + "… (line truncated)" : l)), file.path);
+  }
+
+  pickBranchFile(file, cx) {
+    if (!file || !this.baseTarget) return;
+    this.branchFileOpen = this.branchFileOpen === file.path ? null : file.path;
+    this.setBranchLines([]);
+    const context = this.context, gen = this.branchGen, range = this.baseTarget.range;
+    if (this.branchFileOpen) {
+      cx.spawn(async (cx) => {
+        await this.loadBranchFileDiff(range, file, context, gen);
+        cx.notify();
+      });
+    }
+    cx.notify();
+  }
+
+  stepBranchFile(dir, cx) {
+    if (!this.branchFiles.length) return;
+    const ordered = this.viewMode === "tree" ? orderedTreeFiles(this.branchFiles) : this.branchFiles;
+    const idx = ordered.findIndex((f) => f.path === this.branchFileOpen);
+    const nextIdx = idx < 0 ? (dir > 0 ? 0 : ordered.length - 1) : (idx + dir + ordered.length) % ordered.length;
+    const target = ordered[nextIdx];
+    if (this.viewMode === "tree") expandAncestors(this.collapsed, target.path, ["branch"]);
+    this.pickBranchFile(target, cx);
+  }
+
+  // ── Git Log Loader ───────────────────────────────────────────────────────
 
   loadLog(cx, limit = this.logLimit) {
     if (!this.root || this.logLoading) return;
@@ -598,8 +765,9 @@ export default class Changes extends View {
         this.commitFiles = files;
         this.commitLoading = false;
         if (files.length) {
-          this.commitFileOpen = files[0].path;
-          await this.loadCommitFileDiff(commit.sha, files[0], context, gen);
+          const ordered = this.commitTree ? orderedTreeFiles(files) : files;
+          this.commitFileOpen = ordered[0].path;
+          await this.loadCommitFileDiff(commit.sha, ordered[0], context, gen);
         }
       } catch (e) {
         if (key() === context && this.commitGen === gen) {
@@ -653,13 +821,18 @@ export default class Changes extends View {
 
   stepCommitFile(dir, cx) {
     if (!this.commitFiles.length) return;
-    const idx = this.commitFiles.findIndex((f) => f.path === this.commitFileOpen);
-    const nextIdx = idx < 0 ? 0 : (idx + dir + this.commitFiles.length) % this.commitFiles.length;
-    this.pickCommitFile(this.commitFiles[nextIdx], cx);
+    const ordered = this.commitTree ? orderedTreeFiles(this.commitFiles) : this.commitFiles;
+    const idx = ordered.findIndex((f) => f.path === this.commitFileOpen);
+    const nextIdx = idx < 0 ? 0 : (idx + dir + ordered.length) % ordered.length;
+    const target = ordered[nextIdx];
+    if (this.commitTree) expandAncestors(this.collapsed, target.path, ["commit"]);
+    this.pickCommitFile(target, cx);
   }
 
   stepCommit(dir, cx) {
-    const visible = filterCommits(this.commits, this.logQuery);
+    const visible = this.appliedQuery === this.logQuery.trim()
+      ? this.commits
+      : filterCommits(this.commits, this.logQuery);
     if (!visible.length) return;
     const idx = visible.findIndex((c) => c.sha === this.selectedCommit?.sha);
     const nextIdx = idx < 0 ? (dir > 0 ? 0 : visible.length - 1) : (idx + dir + visible.length) % visible.length;
@@ -743,6 +916,11 @@ export default class Changes extends View {
     this.diffWidth = Math.max(300, ...lines.map((line) => line.length * 7 + 96));
   }
 
+  setBranchLines(lines, filePath = "") {
+    this.branchDiffRows = colorizeDiffRows(diffRows(lines), filePath);
+    this.branchDiffWidth = Math.max(300, ...lines.map((line) => line.length * 7 + 96));
+  }
+
   setCommitLines(lines, filePath = "") {
     this.commitDiffRows = colorizeDiffRows(diffRows(lines), filePath);
     this.commitDiffWidth = Math.max(300, ...lines.map((line) => line.length * 7 + 96));
@@ -786,6 +964,7 @@ export default class Changes extends View {
   }
 
   stepFile(dir, cx) {
+    if (this.changesMode === "branch") return this.stepBranchFile(dir, cx);
     if (!this.files.length) return;
     const stagedFiles = this.files.filter((f) => f.staged);
     const unstagedFiles = this.files.filter((f) => f.unstaged);
@@ -815,10 +994,11 @@ export default class Changes extends View {
     cx.notify();
   }
 
-  // ── Shared Diff Viewer (Syntax + Word-Diff + Optional Wrap) ──────────────
+  // ── Shared Diff Viewer (Syntax + Word-Diff + Line/Hunk @ Handoff + Wrap) ─
 
-  diffRow(row, t, pal, wrapped = false) {
-    const { kind, oldNum, newNum, text, spans } = row;
+  diffRow(row, t, pal, wrapped = false, filePath = "") {
+    const { kind, oldNum, newNum, text, spans, hunk } = row;
+    const cardHover = t.foreground + "12";
     if (kind === "file") {
       return h_flex().w_full().px(10).h(20).items_center().flex_none().bg(t.raised).border_t(1).border_b(1).border_color(t.border)
         .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(t.foreground).child(text));
@@ -827,7 +1007,16 @@ export default class Changes extends View {
       const m = /^(@@[^@]+@@)\s*(.*)$/.exec(text);
       return h_flex().w_full().px(10).h(20).gap(8).items_center().flex_none().bg(t.raised).border_t(1).border_b(1).border_color(t.border)
         .child(div().flex_none().font_bold().text_color(t.accent).child(m ? m[1] : text))
-        .when(Boolean(m?.[2]), (el) => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(m[2])));
+        .when(Boolean(m?.[2]), (el) => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(m[2])))
+        .when(!m?.[2], (el) => el.child(div().flex_1()))
+        .when(Boolean(filePath && hunk), (el) => el.child(
+          h_flex().h(16).px(5).flex_none().gap(3).items_center().rounded(4).cursor_pointer()
+            .bg(t.background).text_size(9.5).text_color(t.muted)
+            .hover((s) => s.bg(cardHover).text_color(t.accent))
+            .tooltip(`Send hunk range to agent (@${filePath}:L${hunk.newStart}-L${hunk.newEnd})`)
+            .on_click((_e, cx) => { cx.stop_propagation(); this.mentionHunk(filePath, hunk, cx); })
+            .child(svg(`${MOD}/icons/at-sign.svg`).size(9).text_color(t.accent))
+            .child(`L${hunk.newStart}`)));
     }
     const isAdd = kind === "+", isDel = kind === "-";
     const sign = isAdd ? "+" : isDel ? "−" : " ";
@@ -835,6 +1024,8 @@ export default class Changes extends View {
     const emphBg = isAdd ? t.ansi2 + "3d" : isDel ? t.ansi1 + "3d" : null;
     const lineBg = isAdd ? t.ansi2 + "18" : isDel ? t.ansi1 + "18" : null;
     const barColor = isAdd ? t.ansi2 : isDel ? t.ansi1 : null;
+    const targetLine = newNum ?? oldNum;
+    const canMentionLine = Boolean(filePath && targetLine != null);
     const codeChildren = spans && spans.length
       ? spans.map(([seg, tokenKind, emph]) => div().flex_none()
           .text_color(pal[tokenKind] || pal.plain)
@@ -842,12 +1033,19 @@ export default class Changes extends View {
           .child(seg))
       : [div().flex_none().text_color(kind === "" ? t.dim : pal.plain).child(text)];
 
+    const gutter = h_flex().flex_none().items_center()
+      .when(canMentionLine, (el) => el.cursor_pointer().rounded(3)
+        .hover((s) => s.bg(cardHover))
+        .tooltip(`Mention @${filePath}:L${targetLine} in agent`)
+        .on_click((_e, cx) => { cx.stop_propagation(); this.mentionLine(filePath, targetLine, cx); }))
+      .child(div().w(30).flex_none().pr(4).text_right().text_color(isDel ? t.ansi1 + "cc" : t.dim).child(oldNum === undefined ? "" : String(oldNum)))
+      .child(div().w(30).flex_none().pr(6).text_right().text_color(isAdd ? t.ansi2 + "cc" : t.dim).child(newNum === undefined ? "" : String(newNum)));
+
     if (wrapped) {
       return h_flex().w_full().min_h(20).py(1).flex_none().items_start()
         .when(Boolean(lineBg), (e) => e.bg(lineBg))
         .child(div().w(2).h(20).flex_none().when(Boolean(barColor), (e) => e.bg(barColor)))
-        .child(div().w(30).flex_none().pr(4).text_right().text_color(isDel ? t.ansi1 + "cc" : t.dim).child(oldNum === undefined ? "" : String(oldNum)))
-        .child(div().w(30).flex_none().pr(6).text_right().text_color(isAdd ? t.ansi2 + "cc" : t.dim).child(newNum === undefined ? "" : String(newNum)))
+        .child(gutter)
         .child(div().w(14).flex_none().text_center().font_bold().text_color(signColor).child(sign))
         .child(h_flex().flex_1().min_w(0).flex_wrap().pr(8).children(codeChildren));
     }
@@ -855,78 +1053,78 @@ export default class Changes extends View {
     return h_flex().w_full().h(20).flex_none().items_center()
       .when(Boolean(lineBg), (e) => e.bg(lineBg))
       .child(div().w(2).h_full().flex_none().when(Boolean(barColor), (e) => e.bg(barColor)))
-      .child(div().w(30).flex_none().pr(4).text_right().text_color(isDel ? t.ansi1 + "cc" : t.dim).child(oldNum === undefined ? "" : String(oldNum)))
-      .child(div().w(30).flex_none().pr(6).text_right().text_color(isAdd ? t.ansi2 + "cc" : t.dim).child(newNum === undefined ? "" : String(newNum)))
+      .child(gutter)
       .child(div().w(14).flex_none().text_center().font_bold().text_color(signColor).child(sign))
       .child(h_flex().flex_1().min_w(0).h_full().items_center().whitespace_nowrap().children(codeChildren));
   }
 
-  diffViewport(id, rows, width, emptyText, t) {
+  diffViewport(id, rows, width, emptyText, t, filePath = "") {
     const pal = syntaxPalette(t);
     const mono = settings().font_family ?? "JetBrains Mono";
     if (this.diffWrap && rows.length > 0) {
       const capped = rows.slice(0, WRAP_ROW_CAP);
       return v_flex().id(`${id}-wrap`).flex_1().min_h(0).overflow_y_scrollbar().font_family(mono).text_size(11.5)
-        .children(capped.map((row) => this.diffRow(row, t, pal, true)))
+        .children(capped.map((row) => this.diffRow(row, t, pal, true, filePath)))
         .when(rows.length > WRAP_ROW_CAP, (el) => el.child(
           div().px(12).py(6).text_size(11).text_color(t.dim).child(`Showing first ${WRAP_ROW_CAP} wrapped lines — toggle Wrap off for full virtualized scroll.`)));
     }
     return div().flex_1().min_h(0).relative().font_family(mono).text_size(11.5)
       .child(div().id(`${id}-x`).size_full().overflow_x_scrollbar()
         .child(div().w_full().min_w(width).h_full().child(v_virtual_list(id, rows.length, 20, (i) => String(i),
-          (range) => rows.slice(range.start, range.end).map((row) => this.diffRow(row, t, pal, false))).size_full())))
+          (range) => rows.slice(range.start, range.end).map((row) => this.diffRow(row, t, pal, false, filePath))).size_full())))
       .child(Scrollbar.vertical(id).viewport_from_layout().absolute().inset_0())
       .when(!rows.length && Boolean(emptyText), (e) => e.child(div().absolute().top(8).px(12).text_size(11.5).text_color(t.dim).child(emptyText)));
   }
 
-  // ── Working Tree Rows (Read-Only + History & Agent Handoff) ──────────────
+  // ── Shared Directory & File Rows ─────────────────────────────────────────
 
   dirRow(row, t) {
     const cardHover = t.foreground + "12";
-    return h_flex().id(`change-dir-${row.group}-${row.path}`).h(26).flex_none().pl(6 + row.depth * 14).pr(8).gap(6).items_center().rounded(6).cursor_pointer()
+    return h_flex().id(`change-dir-${row.group}-${row.path}`).h(25).flex_none().pl(6 + row.depth * 14).pr(8).gap(6).items_center().rounded(6).cursor_pointer()
       .hover((s) => s.bg(cardHover))
       .on_click((_e, cx) => this.toggleDir(row.collapsedKey, cx))
       .child(div().w(14).flex_none().flex().items_center().justify_center()
         .child(svg(row.open ? `${MOD}/icons/chevron-down.svg` : `${MOD}/icons/chevron-right.svg`).size(12).text_color(t.dim)))
       .child(svg(row.open ? `${MOD}/icons/folder-open.svg` : `${MOD}/icons/folder.svg`).size(13).flex_none().text_color(t.muted))
       .child(h_flex().flex_1().min_w(0).gap(5).items_center()
-        .child(div().min_w(0).truncate().text_size(12).font_medium().text_color(t.foreground).child(row.name))
-        .child(div().flex_none().text_size(10.5).text_color(t.dim).child(String(row.count))))
+        .child(div().min_w(0).truncate().text_size(11.5).font_medium().text_color(t.foreground).child(row.name))
+        .child(div().flex_none().text_size(10).text_color(t.dim).child(String(row.count))))
       .when(row.add > 0, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.ansi2).child(`+${row.add}`)))
       .when(row.del > 0, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.ansi1).child(`−${row.del}`)));
   }
 
-  fileRow(f, t, group = "all", treeDepth = null) {
+  fileRow(f, t, group = "all", treeDepth = null, onSelect = null, isSelected = null) {
     const parts = f.path.split("/"), name = parts.pop();
     const inTree = treeDepth !== null;
-    const isSel = this.open === f.path && this.openSection === group;
+    const isSel = isSelected !== null ? isSelected : (this.open === f.path && this.openSection === group);
     const statusColor = statusColorFor(f.status, t);
     const cardHover = t.foreground + "12", cardOn = t.foreground + "1f";
-    return h_flex().id(`change-${group}-${f.path}`).h(26).flex_none()
+    return h_flex().id(`change-${group}-${f.path}`).h(25).flex_none()
       .when(inTree, (e) => e.pl(6 + treeDepth * 14).pr(6))
       .when(!inTree, (e) => e.px(6))
       .gap(6).items_center().rounded(6).cursor_pointer()
       .when(isSel, (e) => e.bg(cardOn))
       .when(!isSel, (e) => e.hover((s) => s.bg(cardHover)))
-      .on_click((_e, cx) => this.pick(f.path, group, cx))
+      .on_click((_e, cx) => (onSelect ? onSelect(f, cx) : this.pick(f.path, group, cx)))
       .child(div().w(14).flex_none().text_size(11).font_bold().text_color(statusColor).child(f.status))
-      .when(inTree, (e) => e.child(div().flex_1().min_w(0).truncate().text_size(12).font_medium().child(name)))
+      .when(inTree, (e) => e.child(div().flex_1().min_w(0).truncate().text_size(11.5).font_medium().child(name)))
       .when(!inTree, (e) => e.child(h_flex().flex_1().min_w(0).gap(5).items_center()
-        .child(div().flex_none().max_w(170).truncate().text_size(12).font_medium().child(name))
-        .when(parts.length > 0, (el) => el.child(div().flex_1().min_w(0).text_size(11).text_color(t.dim).truncate().child(parts.join("/"))))))
-      .when(f.staged && group === "all", (el) => el.child(div().px(4).py(0.5).rounded(4).bg(t.ansi2 + "22").text_size(9.5).font_bold().text_color(t.ansi2).child("S")))
-      .when(f.add > 0, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.ansi2).child(`+${f.add}`)))
-      .when(f.del > 0, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.ansi1).child(`−${f.del}`)))
-      .child(div().id(`hist-${group}-${f.path}`).size(20).flex_none().flex().items_center().justify_center().rounded(4).cursor_pointer()
+        .child(div().flex_none().max_w(170).truncate().text_size(11.5).font_medium().child(name))
+        .when(Boolean(f.oldPath || parts.length > 0), (el) => el.child(div().flex_1().min_w(0).text_size(10.5).text_color(t.dim).truncate().child(f.oldPath ? `${f.oldPath} → ${f.path}` : parts.join("/"))))))
+      .when(Boolean(f.staged) && group === "all", (el) => el.child(div().px(4).py(0.5).rounded(4).bg(t.ansi2 + "22").text_size(9.5).font_bold().text_color(t.ansi2).child("S")))
+      .when(Boolean(f.binary), (e) => e.child(div().flex_none().text_size(10).text_color(t.dim).child("bin")))
+      .when(!f.binary && f.add > 0, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.ansi2).child(`+${f.add}`)))
+      .when(!f.binary && f.del > 0, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.ansi1).child(`−${f.del}`)))
+      .child(div().id(`hist-${group}-${f.path}`).size(19).flex_none().flex().items_center().justify_center().rounded(4).cursor_pointer()
         .hover((s) => s.bg(cardHover))
         .tooltip("View file history in Log")
         .on_click((_e, cx) => { cx.stop_propagation(); this.inspectFileHistory(f.path, cx); })
-        .child(svg(`${MOD}/icons/clock.svg`).size(11).text_color(t.dim)))
-      .child(div().id(`mention-${group}-${f.path}`).size(20).flex_none().flex().items_center().justify_center().rounded(4).cursor_pointer()
+        .child(svg(`${MOD}/icons/clock.svg`).size(10.5).text_color(t.dim)))
+      .child(div().id(`mention-${group}-${f.path}`).size(19).flex_none().flex().items_center().justify_center().rounded(4).cursor_pointer()
         .hover((s) => s.bg(cardHover))
         .tooltip("Mention in agent")
         .on_click((_e, cx) => { cx.stop_propagation(); this.mentionFile(f.path, cx); })
-        .child(svg(`${MOD}/icons/at-sign.svg`).size(11).text_color(t.muted)));
+        .child(svg(`${MOD}/icons/at-sign.svg`).size(10.5).text_color(t.muted)));
   }
 
   // ── Top 40px Repo Radar Header & Sub-tab Bar ─────────────────────────────
@@ -1011,6 +1209,7 @@ export default class Changes extends View {
 
     const logCount = this.commits.length ? (this.logHasMore ? `${this.commits.length}+` : String(this.commits.length)) : null;
     const brBadge = this.branches.local.length ? String(this.branches.local.length) : null;
+    const activeFilesCount = this.changesMode === "branch" ? this.branchFiles.length : this.files.length;
 
     return h_flex().id("git-subtabs").h(34).flex_none().px(10).gap(4).items_center().border_b(1).border_color(t.border)
       .child(tabBtn("changes", "Changes", "git-commit", this.files.length > 0 ? this.files.length : null))
@@ -1018,7 +1217,22 @@ export default class Changes extends View {
       .child(tabBtn("branches", "Branches", "git-branch", brBadge))
       .child(div().flex_1())
       .when(this.activeTab === "changes", (el) => el
-        .when(stagedCount > 0, (sEl) => sEl.child(
+        .when(Boolean(this.baseTarget), (mEl) => mEl.child(
+          h_flex().id("changes-mode-group").h(22).p(1).flex_none().gap(1).items_center().rounded(6).bg(t.raised).border_1().border_color(t.border)
+            .child(div().id("mode-working").h(18).px(6).flex().items_center().rounded(4).cursor_pointer().text_size(10.5)
+              .bg(this.changesMode === "working" ? t.background : t.raised)
+              .text_color(this.changesMode === "working" ? t.foreground : t.dim)
+              .when(this.changesMode === "working", (a) => a.font_medium())
+              .on_click((_e, cx) => this.setChangesMode("working", cx))
+              .child("Working"))
+            .child(div().id("mode-branch").h(18).px(6).flex().items_center().rounded(4).cursor_pointer().text_size(10.5)
+              .bg(this.changesMode === "branch" ? t.background : t.raised)
+              .text_color(this.changesMode === "branch" ? t.accent : t.dim)
+              .when(this.changesMode === "branch", (a) => a.font_medium())
+              .tooltip(`Compare ${this.baseTarget.range}`)
+              .on_click((_e, cx) => this.setChangesMode("branch", cx))
+              .child(this.baseTarget.label))))
+        .when(this.changesMode === "working" && stagedCount > 0, (sEl) => sEl.child(
           div().px(5).py(1).flex_none().rounded(4).bg(t.ansi2 + "20").text_size(10.5).font_medium().text_color(t.ansi2).child(`${stagedCount} staged`)))
         .child(div().id("changes-view-mode").size(24).flex_none().flex().items_center().justify_center().rounded(6).cursor_pointer()
           .when(isTree, (tEl) => tEl.bg(cardOn))
@@ -1026,7 +1240,7 @@ export default class Changes extends View {
           .tooltip(isTree ? "Switch to list view" : "Switch to tree view")
           .on_click((_e, cx) => this.toggleViewMode(cx))
           .child(svg(`${MOD}/icons/folder-tree.svg`).size(13).text_color(isTree ? t.foreground : t.muted)))
-        .when(this.files.length > 0, (cEl) => cEl.child(
+        .when(activeFilesCount > 0, (cEl) => cEl.child(
           div().id("changes-list-toggle").h(22).px(5).flex_none().flex().items_center().rounded(6).cursor_pointer().text_size(11).text_color(t.dim)
             .hover((s) => s.bg(cardHover).text_color(t.foreground))
             .tooltip(this.listOpen ? "Collapse file list" : "Expand file list")
@@ -1060,9 +1274,81 @@ export default class Changes extends View {
           `${this.branches.local.length} local · ${this.branches.remote.length} remote${this.stashes.length ? ` · ${this.stashes.length} stash` : ""}`)));
   }
 
-  // ── View 1: Changes (Read-First Review + Agent Handoff) ──────────────────
+  // ── View 1: Changes (Working Tree OR Branch Diff `base...HEAD`) ──────────
+
+  renderBranchDiffBody(t) {
+    const cardHover = t.foreground + "12", cardOn = t.foreground + "1f";
+    const isTree = this.viewMode === "tree";
+    const openFile = this.branchFiles.find((f) => f.path === this.branchFileOpen);
+    const hasOpen = Boolean(openFile);
+    const hunkCount = this.branchDiffRows.filter((r) => r.kind === "@").length;
+    const totalAdd = this.branchFiles.reduce((n, f) => n + f.add, 0);
+    const totalDel = this.branchFiles.reduce((n, f) => n + f.del, 0);
+    const dragging = this.dragSplit?.which === "changes";
+    const listH = dragging ? Math.max(SPLIT_MIN, Math.min(SPLIT_MAX, this.dragSplit.height)) : this.changesSplit;
+
+    const items = isTree
+      ? buildChangeTree(this.branchFiles, this.collapsed, "branch").map((row) =>
+          row.kind === "dir"
+            ? this.dirRow(row, t)
+            : this.fileRow(row.file, t, "branch", row.depth, (f, cx) => this.pickBranchFile(f, cx), this.branchFileOpen === row.file.path))
+      : this.branchFiles.map((f) =>
+          this.fileRow(f, t, "branch", null, (item, cx) => this.pickBranchFile(item, cx), this.branchFileOpen === f.path));
+
+    return v_flex().flex_1().min_h(0)
+      .child(h_flex().h(26).flex_none().px(10).gap(6).items_center().bg(t.raised).border_b(1).border_color(t.border).text_size(10.5)
+        .child(div().text_color(t.dim).child("Range:"))
+        .child(div().font_medium().text_color(t.accent).child(this.baseTarget?.range || ""))
+        .child(div().text_color(t.dim).child(`· ${this.branchFiles.length} file${this.branchFiles.length === 1 ? "" : "s"}`))
+        .when(totalAdd > 0, (e) => e.child(div().text_color(t.ansi2).child(`+${totalAdd}`)))
+        .when(totalDel > 0, (e) => e.child(div().text_color(t.ansi1).child(`−${totalDel}`))))
+      .when(this.listOpen, (el) => el.child(
+        v_flex().id("branch-diff-list-box").relative()
+          .when(hasOpen, (e) => e.flex_none().h(listH).border_b(1).border_color(t.border))
+          .when(!hasOpen, (e) => e.flex_1().min_h(0))
+          .child(v_flex().id("branch-diff-list").flex_1().min_h(0).overflow_y_scrollbar().p(6).gap(1)
+            .when(items.length > 0, (g) => g.children(items))
+            .when(!items.length, (g) => g.child(
+              v_flex().flex_1().items_center().justify_center().p(24).gap(6)
+                .child(svg(`${MOD}/icons/check.svg`).size(20).text_color(t.ansi2))
+                .child(div().text_size(12).text_color(t.dim).child(this.branchLoading ? "Comparing branch…" : `No committed diff in ${this.baseTarget?.range || "range"}`)))))
+          .when(hasOpen, (d) => d.child(
+            div().id("branch-split-edge").absolute().left(0).right(0).bottom(-3).h(6).cursor_row_resize()
+              .on_mouse_down("left", (e, cx) => {
+                cx.stop_propagation();
+                this.dragSplit = { which: "changes", y: e.position.y, from: listH, height: listH };
+                cx.notify();
+              })))))
+      .when(hasOpen, (el) => el.child(
+        h_flex().h(30).flex_none().px(10).gap(6).items_center().bg(t.raised).border_b(1).border_color(t.border).text_size(11)
+          .child(div().flex_none().px(5).py(0.5).rounded(4).bg(t.accent + "22").text_size(9.5).font_bold().text_color(t.accent).child("BRANCH"))
+          .child(div().flex_1().min_w(0).truncate().font_medium().text_color(t.foreground).child(openFile.path))
+          .when(hunkCount > 0, (hEl) => hEl.child(div().flex_none().text_size(10).text_color(t.dim).child(`${hunkCount} hunks`)))
+          .child(div().id("bdiff-wrap-btn").size(22).flex_none().flex().items_center().justify_center().rounded(5).cursor_pointer()
+            .when(this.diffWrap, (w) => w.bg(cardOn))
+            .hover((s) => s.bg(cardHover))
+            .tooltip(this.diffWrap ? "Disable line wrap" : "Wrap long diff lines")
+            .on_click((_e, cx) => this.toggleDiffWrap(cx))
+            .child(svg(`${MOD}/icons/text-wrap.svg`).size(12).text_color(this.diffWrap ? t.foreground : t.muted)))
+          .child(div().id("bdiff-hist-btn").size(22).flex_none().flex().items_center().justify_center().rounded(5).cursor_pointer()
+            .hover((s) => s.bg(cardHover))
+            .tooltip("View file history in Log")
+            .on_click((_e, cx) => this.inspectFileHistory(openFile.path, cx))
+            .child(svg(`${MOD}/icons/clock.svg`).size(12).text_color(t.muted)))
+          .child(div().id("bdiff-at-btn").size(22).flex_none().flex().items_center().justify_center().rounded(5).cursor_pointer()
+            .hover((s) => s.bg(cardHover))
+            .tooltip("Mention file in agent")
+            .on_click((_e, cx) => this.mentionFile(openFile.path, cx))
+            .child(svg(`${MOD}/icons/at-sign.svg`).size(12).text_color(t.accent)))
+          .child(div().px(5).py(1).rounded(4).bg(t.background).text_color(t.muted).cursor_pointer().hover((s) => s.text_color(t.foreground))
+            .on_click((_e, cx) => this.stepBranchFile(-1, cx)).child("‹"))
+          .child(div().px(5).py(1).rounded(4).bg(t.background).text_color(t.muted).cursor_pointer().hover((s) => s.text_color(t.foreground))
+            .on_click((_e, cx) => this.stepBranchFile(1, cx)).child("›"))))
+      .when(hasOpen, (el) => el.child(this.diffViewport("branch-diff", this.branchDiffRows, this.branchDiffWidth, "", t, openFile.path)));
+  }
 
   renderChangesBody(t) {
+    if (this.changesMode === "branch" && this.baseTarget) return this.renderBranchDiffBody(t);
     const cardHover = t.foreground + "12", cardOn = t.foreground + "1f";
     const stagedFiles = this.files.filter((f) => f.staged);
     const unstagedFiles = this.files.filter((f) => f.unstaged);
@@ -1111,8 +1397,7 @@ export default class Changes extends View {
                 .child(svg(`${MOD}/icons/check.svg`).size(22).text_color(this.error ? t.ansi1 : t.ansi2))
                 .child(div().text_size(12.5).font_medium().text_color(t.foreground).child(this.error || (this.loading ? "Scanning working tree…" : this.root ? "Working tree clean" : "No folder")))
                 .when(Boolean(this.root && !this.error && !this.loading), (hint) => hint.child(
-                  div().text_size(11.5).text_color(t.dim).child("Switch to Log to explore commit history or Branches for repo overview."))))))
-          // 6px draggable horizontal divider when diff preview is visible below
+                  div().text_size(11.5).text_color(t.dim).child(this.baseTarget ? `Try ${this.baseTarget.label}, Log, or Branches above.` : "Switch to Log to explore commit history or Branches for repo overview."))))))
           .when(hasOpen, (d) => d.child(
             div().id("changes-split-edge").absolute().left(0).right(0).bottom(-3).h(6).cursor_row_resize()
               .on_mouse_down("left", (e, cx) => {
@@ -1153,10 +1438,10 @@ export default class Changes extends View {
           .child(div().px(5).py(1).rounded(4).bg(t.background).text_color(t.muted).cursor_pointer().hover((s) => s.text_color(t.foreground))
             .tooltip("Next file (j / ↓)")
             .on_click((_e, cx) => this.stepFile(1, cx)).child("›"))))
-      .when(hasOpen, (el) => el.child(this.diffViewport("changes-diff", this.rows, this.diffWidth, "", t)));
+      .when(hasOpen, (el) => el.child(this.diffViewport("changes-diff", this.rows, this.diffWidth, "", t, openFile.path)));
   }
 
-  // ── View 2: Git Log & Read-Only Commit Inspector ─────────────────────────
+  // ── View 2: Git Log (Multi-Lane Graph + Read-Only Commit Inspector) ──────
 
   refPill(ref, t) {
     const bg = ref.kind === "head" ? t.accent + "24"
@@ -1173,23 +1458,54 @@ export default class Changes extends View {
       .child(ref.label);
   }
 
-  commitRow(c, i, total, t) {
+  graphCell(c, lane, i, total, t) {
+    const laneColors = [t.accent, t.ansi2, t.ansi12 || t.ansi4, t.ansi5, t.ansi3];
+    const colW = 10;
+    const width = Math.max(12, lane.maxCols * colW + 4);
+    const isHead = c.refs.some((r) => r.kind === "head");
+    const nodeColor = isHead ? t.accent : laneColors[lane.col % laneColors.length];
+    const cxPos = lane.col * colW + 5;
+
+    const topSet = new Set(lane.lanesTop);
+    const botSet = new Set(lane.lanesBottom);
+    const allCols = new Set([...lane.lanesTop, ...lane.lanesBottom, lane.col]);
+
+    const els = [];
+    for (const col of allCols) {
+      const x = col * colW + 5;
+      const color = col === 0 ? t.border : (laneColors[col % laneColors.length] + "88");
+      if (i > 0 && topSet.has(col)) {
+        els.push(div().absolute().left(x).top(0).w(1.5).h(22).bg(color));
+      }
+      if (i < total - 1 && botSet.has(col)) {
+        els.push(div().absolute().left(x).top(22).w(1.5).h(22).bg(color));
+      }
+    }
+    // Horizontal connector for merge commits joining another lane
+    for (const mc of lane.mergeCols) {
+      if (mc === lane.col) continue;
+      const x0 = Math.min(lane.col, mc) * colW + 5;
+      const w = Math.abs(mc - lane.col) * colW;
+      els.push(div().absolute().left(x0).top(22).w(w).h(1.5).bg(laneColors[mc % laneColors.length] + "99"));
+    }
+    // Commit node dot
+    const dotSize = c.isMerge ? 8 : 7;
+    els.push(div().absolute().left(cxPos - Math.floor(dotSize / 2)).top(22 - Math.floor(dotSize / 2)).size(dotSize).rounded_full()
+      .when(c.isMerge, (el) => el.border_1().border_color(nodeColor).bg(t.background))
+      .when(!c.isMerge, (el) => el.bg(nodeColor)));
+
+    return div().relative().w(width).h_full().flex_none().children(els);
+  }
+
+  commitRow(c, lane, i, total, t) {
     const selected = this.selectedCommit?.sha === c.sha;
     const cardHover = t.foreground + "12", cardOn = t.foreground + "1f";
-    const isHead = c.refs.some((r) => r.kind === "head");
-    const hasLocal = c.refs.some((r) => r.kind === "local");
-    const dotColor = isHead ? t.accent : (c.unpushed || hasLocal) ? t.ansi2 : t.dim;
     const mono = settings().font_family ?? "JetBrains Mono";
-    return h_flex().id(`commit-row-${c.shortSha}-${i}`).h(44).flex_none().px(8).gap(8).items_center().rounded(6).cursor_pointer()
+    return h_flex().id(`commit-row-${c.shortSha}-${i}`).h(44).flex_none().px(8).gap(6).items_center().rounded(6).cursor_pointer()
       .when(selected, (el) => el.bg(cardOn))
       .when(!selected, (el) => el.hover((s) => s.bg(cardHover)))
       .on_click((_e, cx) => this.selectCommit(c, cx))
-      .child(v_flex().w(12).h_full().flex_none().items_center().justify_center()
-        .child(div().w(1).flex_1().bg(i === 0 ? t.background : t.border))
-        .child(div().size(c.isMerge ? 8 : 7).flex_none().rounded_full()
-          .when(c.isMerge, (el) => el.border_1().border_color(dotColor).bg(t.background))
-          .when(!c.isMerge, (el) => el.bg(dotColor)))
-        .child(div().w(1).flex_1().bg(i === total - 1 ? t.background : t.border)))
+      .child(this.graphCell(c, lane, i, total, t))
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(h_flex().w_full().min_w(0).gap(5).items_center()
           .child(div().flex_1().min_w(0).truncate().text_size(12).font_medium().text_color(t.foreground).child(c.subject || "(no message)"))
@@ -1222,6 +1538,14 @@ export default class Changes extends View {
     const totalAdd = this.commitFiles.reduce((n, f) => n + f.add, 0);
     const totalDel = this.commitFiles.reduce((n, f) => n + f.del, 0);
     const openFile = this.commitFiles.find((f) => f.path === this.commitFileOpen);
+
+    const fileItems = this.commitTree
+      ? buildChangeTree(this.commitFiles, this.collapsed, "commit").map((row) =>
+          row.kind === "dir"
+            ? this.dirRow(row, t)
+            : this.fileRow(row.file, t, "commit", row.depth, (f, cx) => this.pickCommitFile(f, cx), this.commitFileOpen === row.file.path))
+      : this.commitFiles.map((f) =>
+          this.fileRow(f, t, "commit", null, (item, cx) => this.pickCommitFile(item, cx), this.commitFileOpen === f.path));
 
     return v_flex().id("commit-inspector").flex_1().min_h(0)
       .child(v_flex().flex_none().px(10).py(8).gap(5).bg(t.raised).border_b(1).border_color(t.border)
@@ -1262,6 +1586,12 @@ export default class Changes extends View {
         .when(totalAdd > 0, (el) => el.child(div().text_size(10.5).text_color(t.ansi2).child(`+${totalAdd}`)))
         .when(totalDel > 0, (el) => el.child(div().text_size(10.5).text_color(t.ansi1).child(`−${totalDel}`)))
         .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(openFile ? openFile.path : ""))
+        .child(div().id("commit-files-tree").size(22).flex_none().flex().items_center().justify_center().rounded(5).cursor_pointer()
+          .when(this.commitTree, (w) => w.bg(cardOn))
+          .hover((s) => s.bg(cardHover))
+          .tooltip(this.commitTree ? "Switch commit files to list view" : "Switch commit files to tree view")
+          .on_click((_e, cx) => { this.commitTree = !this.commitTree; cx.notify(); })
+          .child(svg(`${MOD}/icons/folder-tree.svg`).size(12).text_color(this.commitTree ? t.foreground : t.muted)))
         .child(div().id("commit-diff-wrap").size(22).flex_none().flex().items_center().justify_center().rounded(5).cursor_pointer()
           .when(this.diffWrap, (w) => w.bg(cardOn))
           .hover((s) => s.bg(cardHover))
@@ -1273,33 +1603,10 @@ export default class Changes extends View {
             .on_click((_e, cx) => this.stepCommitFile(-1, cx)).child("‹"))
           .child(div().px(5).py(1).rounded(4).bg(t.raised).text_color(t.muted).cursor_pointer().hover((s) => s.text_color(t.foreground))
             .on_click((_e, cx) => this.stepCommitFile(1, cx)).child("›"))))
-      .when(this.commitFilesOpen && this.commitFiles.length > 0, (el) => el.child(
-        v_flex().id("commit-files-list").flex_none().h(Math.min(120, Math.max(32, this.commitFiles.length * 26 + 8))).overflow_y_scrollbar().p(4).gap(1).border_b(1).border_color(t.border)
-          .children(this.commitFiles.map((f, idx) => {
-            const parts = f.path.split("/"), name = parts.pop();
-            const isSel = this.commitFileOpen === f.path;
-            return h_flex().id(`cfile-${idx}`).h(24).flex_none().px(6).gap(6).items_center().rounded(5).cursor_pointer()
-              .when(isSel, (e) => e.bg(cardOn))
-              .when(!isSel, (e) => e.hover((s) => s.bg(cardHover)))
-              .on_click((_e, cx) => this.pickCommitFile(f, cx))
-              .child(div().w(12).flex_none().text_size(10.5).font_bold().text_color(statusColorFor(f.status, t)).child(f.status))
-              .child(div().flex_none().max_w(160).truncate().text_size(11.5).font_medium().text_color(t.foreground).child(name))
-              .child(div().flex_1().min_w(0).truncate().text_size(10.5).text_color(t.dim).child(f.oldPath ? `${f.oldPath} → ${f.path}` : parts.join("/")))
-              .when(f.binary, (e) => e.child(div().flex_none().text_size(10).text_color(t.dim).child("bin")))
-              .when(!f.binary && f.add > 0, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.ansi2).child(`+${f.add}`)))
-              .when(!f.binary && f.del > 0, (e) => e.child(div().flex_none().text_size(10.5).text_color(t.ansi1).child(`−${f.del}`)))
-              .child(div().id(`cfile-hist-${idx}`).size(18).flex_none().flex().items_center().justify_center().rounded(4).cursor_pointer()
-                .hover((s) => s.bg(cardHover))
-                .tooltip("View file history")
-                .on_click((_e, cx) => { cx.stop_propagation(); this.inspectFileHistory(f.path, cx); })
-                .child(svg(`${MOD}/icons/clock.svg`).size(10).text_color(t.dim)))
-              .child(div().id(`cfile-at-${idx}`).size(18).flex_none().flex().items_center().justify_center().rounded(4).cursor_pointer()
-                .hover((s) => s.bg(cardHover))
-                .tooltip("Mention file in agent")
-                .on_click((_e, cx) => { cx.stop_propagation(); this.mentionFile(f.path, cx); })
-                .child(svg(`${MOD}/icons/at-sign.svg`).size(10).text_color(t.muted)));
-          }))))
-      .child(this.diffViewport("commit-diff", this.commitDiffRows, this.commitDiffWidth, this.commitLoading ? "Loading commit diff…" : "Select a changed file to view diff", t));
+      .when(this.commitFilesOpen && fileItems.length > 0, (el) => el.child(
+        v_flex().id("commit-files-list").flex_none().h(Math.min(130, Math.max(32, fileItems.length * 26 + 8))).overflow_y_scrollbar().p(4).gap(1).border_b(1).border_color(t.border)
+          .children(fileItems)))
+      .child(this.diffViewport("commit-diff", this.commitDiffRows, this.commitDiffWidth, this.commitLoading ? "Loading commit diff…" : "Select a changed file to view diff", t, openFile?.path || ""));
   }
 
   renderLogBody(t) {
@@ -1307,6 +1614,7 @@ export default class Changes extends View {
     const visible = this.appliedQuery === this.logQuery.trim()
       ? this.commits
       : filterCommits(this.commits, this.logQuery);
+    const lanes = assignGraphLanes(visible);
     const hasDetail = Boolean(this.selectedCommit);
     const dragging = this.dragSplit?.which === "log";
     const listH = dragging ? Math.max(SPLIT_MIN, Math.min(SPLIT_MAX, this.dragSplit.height)) : this.logSplit;
@@ -1346,7 +1654,7 @@ export default class Changes extends View {
           .when(hasDetail, (e) => e.flex_none().h(listH).border_b(1).border_color(t.border))
           .when(!hasDetail, (e) => e.flex_1().min_h(0))
           .child(v_flex().id("git-log-list").flex_1().min_h(0).overflow_y_scrollbar().p(6).gap(1)
-            .when(visible.length > 0, (g) => g.children(visible.map((c, i) => this.commitRow(c, i, visible.length, t))))
+            .when(visible.length > 0, (g) => g.children(visible.map((c, i) => this.commitRow(c, lanes[i], i, visible.length, t))))
             .when(this.logHasMore && visible.length > 0, (g) => g.child(
               h_flex().id("log-load-more").h(28).mt(4).flex_none().items_center().justify_center().rounded(6).cursor_pointer()
                 .bg(t.raised).text_size(11.5).text_color(t.muted)
@@ -1368,7 +1676,7 @@ export default class Changes extends View {
       .when(hasDetail, (el) => el.child(this.commitDetailView(t)));
   }
 
-  // ── View 3: Branches, Worktrees & Stashes (Read-Only Project Radar) ──────
+  // ── View 3: Branches, Worktrees (with Dirty/Ahead Radar) & Stashes ───────
 
   renderBranchesBody(t) {
     const cardHover = t.foreground + "12", cardOn = t.foreground + "1f";
@@ -1424,33 +1732,32 @@ export default class Changes extends View {
         .when(hasStashDiff, (e) => e.flex_none().h(240).border_b(1).border_color(t.border))
         .when(!hasStashDiff, (e) => e.flex_1().min_h(0))
         .overflow_y_scrollbar().p(8).gap(2)
-        // Worktrees first when multiple worktrees exist (1-click space switch)
         .when(this.worktrees.length > 1, (g) => g
           .child(div().px(6).py(3).text_size(10).font_bold().text_color(t.dim).child(`WORKTREES (${this.worktrees.length})`))
           .children(this.worktrees.map((wt, idx) => {
             const isCurrent = Boolean(this.root && normKey(wt.path) === normKey(this.root));
-            return h_flex().id(`wt-${idx}`).h(38).flex_none().px(8).gap(8).items_center().rounded(6)
+            return h_flex().id(`wt-${idx}`).h(40).flex_none().px(8).gap(8).items_center().rounded(6)
               .bg(isCurrent ? t.foreground + "14" : t.background)
               .when(!isCurrent && !wt.bare, (el) => el.cursor_pointer().hover((s) => s.bg(cardHover))
                 .tooltip("Open or switch to this worktree space")
                 .on_click((_e, cx) => this.openWorktreeSpace(wt, cx)))
               .child(svg(`${MOD}/icons/folder.svg`).size(13).flex_none().text_color(isCurrent ? t.accent : t.muted))
               .child(v_flex().flex_1().min_w(0).gap(1)
-                .child(h_flex().gap(6).items_center()
-                  .child(div().text_size(12).font_medium().text_color(t.foreground).child(wt.bare ? "(bare)" : wt.branch || `HEAD@${wt.shortHead}`))
-                  .when(isCurrent, (c) => c.child(div().px(5).py(0.5).rounded(4).bg(t.accent + "24").text_size(9.5).font_bold().text_color(t.accent).child("current"))))
+                .child(h_flex().gap(5).items_center()
+                  .child(div().min_w(0).truncate().text_size(12).font_medium().text_color(t.foreground).child(wt.bare ? "(bare)" : wt.branch || `HEAD@${wt.shortHead}`))
+                  .when(isCurrent, (c) => c.child(div().flex_none().px(5).py(0.5).rounded(4).bg(t.accent + "24").text_size(9.5).font_bold().text_color(t.accent).child("current")))
+                  .when(wt.dirtyCount > 0, (d) => d.child(div().flex_none().px(4).py(0.5).rounded(4).bg(t.blocked + "22").text_size(9.5).font_medium().text_color(t.blocked).child(`${wt.dirtyCount} dirty`)))
+                  .when(wt.ahead > 0, (a) => a.child(div().flex_none().text_size(10).text_color(t.ansi2).child(`↑${wt.ahead}`)))
+                  .when(wt.behind > 0, (b) => b.child(div().flex_none().text_size(10).text_color(t.blocked).child(`↓${wt.behind}`))))
                 .child(div().w_full().truncate().text_size(10.5).text_color(t.dim).child(wt.path)))
               .when(!isCurrent && !wt.bare, (el) => el.child(svg(`${MOD}/icons/external-link.svg`).size(11).flex_none().text_color(t.dim)));
           })))
-        // Local branches
         .child(div().px(6).pt(this.worktrees.length > 1 ? 10 : 3).pb(3).text_size(10).font_bold().text_color(t.dim).child(`LOCAL BRANCHES (${local.length})`))
         .when(local.length > 0, (g) => g.children(local.map((b, i) => branchRow(b, i, false))))
         .when(!local.length, (g) => g.child(div().px(8).py(6).text_size(12).text_color(t.dim).child(this.error || (this.metaLoading ? "Loading branches…" : "No local branches"))))
-        // Stashes (read-only diff preview)
         .child(div().px(6).pt(10).pb(3).text_size(10).font_bold().text_color(t.dim).child(`STASHES (${this.stashes.length})`))
         .when(this.stashes.length > 0, (g) => g.children(this.stashes.map((st, i) => stashRow(st, i))))
         .when(!this.stashes.length, (g) => g.child(div().px(8).py(4).text_size(11.5).text_color(t.dim).child("No stashed changes")))
-        // Remote branches
         .when(remote.length > 0, (g) => g
           .child(h_flex().id("remotes-section-toggle").px(6).pt(10).pb(3).gap(4).items_center().cursor_pointer()
             .text_size(10).font_bold().text_color(t.dim)
@@ -1524,10 +1831,10 @@ export default class Changes extends View {
         }
         if (this.typing) return;
         if (e.key === "j" || e.key === "down") {
-          if (this.activeTab === "changes" && this.files.length) { this.stepFile(1, cx); cx.stop_propagation(); }
+          if (this.activeTab === "changes") { this.stepFile(1, cx); cx.stop_propagation(); }
           else if (this.activeTab === "log" && this.commits.length) { this.stepCommit(1, cx); cx.stop_propagation(); }
         } else if (e.key === "k" || e.key === "up") {
-          if (this.activeTab === "changes" && this.files.length) { this.stepFile(-1, cx); cx.stop_propagation(); }
+          if (this.activeTab === "changes") { this.stepFile(-1, cx); cx.stop_propagation(); }
           else if (this.activeTab === "log" && this.commits.length) { this.stepCommit(-1, cx); cx.stop_propagation(); }
         }
       })
