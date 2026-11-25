@@ -16,12 +16,15 @@ import {
   buildWorkingDiffArgs, diffRows, formatAgentMention,
   buildChangeTree, orderedTreeFiles, expandAncestors,
 } from "./model.js";
-import { colorizeDiffRows, syntaxPalette } from "./highlight.js";
+import { colorizeDiffRows, syntaxPalette, wrapRowLines } from "./highlight.js";
 
 const MOD = "mods/t3-changes";
 const LOG_PAGE = 80;
 const SPLIT_MIN = 90, SPLIT_MAX = 440;
-const WRAP_ROW_CAP = 600;
+const ROW_H = 20;
+const DIFF_GUTTER_W = 76; // 2px bar + 30px oldNum + 30px newNum + 14px sign
+const MEASURED_NARROW = "0".repeat(100);
+const MEASURED_WIDE = "中".repeat(100);
 
 const findNode = (node, id) => (node?.id === id ? node : (node?.children ?? []).reduce((hit, c) => hit ?? findNode(c, id), null));
 
@@ -95,6 +98,12 @@ export default class Changes extends View {
     this.changesSplit = readSplitHeight(CHANGES_SPLIT_KEY, 200, SPLIT_MIN, SPLIT_MAX);
     this.logSplit = readSplitHeight(LOG_SPLIT_KEY, 210, SPLIT_MIN, SPLIT_MAX);
     this.dragSplit = null; // { which: "changes"|"log", y, from, height }
+    this.diffViewWidth = 420;
+    this.diffPressX = 0;
+    this.charWidth = null;
+    this.wideWidth = null;
+    this.charFont = "";
+    this.wideFont = "";
 
     // Working tree & Branch diff state
     this.repo = parseBranchHeader("", "");
@@ -996,27 +1005,38 @@ export default class Changes extends View {
 
   // ── Shared Diff Viewer (Syntax + Word-Diff + Line/Hunk @ Handoff + Wrap) ─
 
-  diffRow(row, t, pal, wrapped = false, filePath = "") {
+  handleDiffRowClick(rows, key, filePath, cx) {
+    const row = rows[Number(key)];
+    if (!row || !filePath) return;
+    if (row.kind === "@" && row.hunk) {
+      this.mentionHunk(filePath, row.hunk, cx);
+      return;
+    }
+    const targetLine = row.newNum ?? row.oldNum;
+    if (targetLine != null && this.diffPressX <= DIFF_GUTTER_W + 4) {
+      this.mentionLine(filePath, targetLine, cx);
+    }
+  }
+
+  // Must stay handler-free (no on_click / tooltip) because v_virtual_list throws on per-row handlers.
+  diffRow(row, t, pal, wrappedLines = null, filePath = "") {
     const { kind, oldNum, newNum, text, spans, hunk } = row;
     const cardHover = t.foreground + "12";
     if (kind === "file") {
-      return h_flex().w_full().px(10).h(20).items_center().flex_none().bg(t.raised).border_t(1).border_b(1).border_color(t.border)
+      return h_flex().w_full().px(10).h(ROW_H).items_center().flex_none().bg(t.raised).border_t(1).border_b(1).border_color(t.border)
         .child(div().flex_1().min_w(0).truncate().font_semibold().text_color(t.foreground).child(text));
     }
     if (kind === "@") {
       const m = /^(@@[^@]+@@)\s*(.*)$/.exec(text);
-      return h_flex().w_full().px(10).h(20).gap(8).items_center().flex_none().bg(t.raised).border_t(1).border_b(1).border_color(t.border)
+      return h_flex().w_full().px(10).h(ROW_H).gap(8).items_center().flex_none().bg(t.raised).border_t(1).border_b(1).border_color(t.border)
+        .when(Boolean(filePath && hunk), (el) => el.cursor_pointer().hover((s) => s.bg(t.foreground + "14")))
         .child(div().flex_none().font_bold().text_color(t.accent).child(m ? m[1] : text))
-        .when(Boolean(m?.[2]), (el) => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(m[2])))
-        .when(!m?.[2], (el) => el.child(div().flex_1()))
         .when(Boolean(filePath && hunk), (el) => el.child(
-          h_flex().h(16).px(5).flex_none().gap(3).items_center().rounded(4).cursor_pointer()
+          h_flex().h(16).px(5).flex_none().gap(3).items_center().rounded(4)
             .bg(t.background).text_size(9.5).text_color(t.muted)
-            .hover((s) => s.bg(cardHover).text_color(t.accent))
-            .tooltip(`Send hunk range to agent (@${filePath}:L${hunk.newStart}-L${hunk.newEnd})`)
-            .on_click((_e, cx) => { cx.stop_propagation(); this.mentionHunk(filePath, hunk, cx); })
             .child(svg(`${MOD}/icons/at-sign.svg`).size(9).text_color(t.accent))
-            .child(`L${hunk.newStart}`)));
+            .child(`L${hunk.newStart}`)))
+        .when(Boolean(m?.[2]), (el) => el.child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(m[2])));
     }
     const isAdd = kind === "+", isDel = kind === "-";
     const sign = isAdd ? "+" : isDel ? "−" : " ";
@@ -1026,52 +1046,103 @@ export default class Changes extends View {
     const barColor = isAdd ? t.ansi2 : isDel ? t.ansi1 : null;
     const targetLine = newNum ?? oldNum;
     const canMentionLine = Boolean(filePath && targetLine != null);
-    const codeChildren = spans && spans.length
-      ? spans.map(([seg, tokenKind, emph]) => div().flex_none()
+    const renderSpans = (list) => (list && list.length
+      ? list.map(([seg, tokenKind, emph]) => div().flex_none()
           .text_color(pal[tokenKind] || pal.plain)
           .when(Boolean(emph && emphBg), (el) => el.bg(emphBg).rounded(2))
           .child(seg))
-      : [div().flex_none().text_color(kind === "" ? t.dim : pal.plain).child(text)];
+      : [div().flex_none().text_color(kind === "" ? t.dim : pal.plain).child(text)]);
 
-    const gutter = h_flex().flex_none().items_center()
-      .when(canMentionLine, (el) => el.cursor_pointer().rounded(3)
-        .hover((s) => s.bg(cardHover))
-        .tooltip(`Mention @${filePath}:L${targetLine} in agent`)
-        .on_click((_e, cx) => { cx.stop_propagation(); this.mentionLine(filePath, targetLine, cx); }))
+    const gutter = h_flex().flex_none().h(ROW_H).items_center()
+      .when(canMentionLine, (el) => el.cursor_pointer().rounded(3).hover((s) => s.bg(cardHover)))
       .child(div().w(30).flex_none().pr(4).text_right().text_color(isDel ? t.ansi1 + "cc" : t.dim).child(oldNum === undefined ? "" : String(oldNum)))
       .child(div().w(30).flex_none().pr(6).text_right().text_color(isAdd ? t.ansi2 + "cc" : t.dim).child(newNum === undefined ? "" : String(newNum)));
 
-    if (wrapped) {
-      return h_flex().w_full().min_h(20).py(1).flex_none().items_start()
+    if (wrappedLines) {
+      const h = wrappedLines.length * ROW_H;
+      return h_flex().w_full().h(h).flex_none().items_start()
         .when(Boolean(lineBg), (e) => e.bg(lineBg))
-        .child(div().w(2).h(20).flex_none().when(Boolean(barColor), (e) => e.bg(barColor)))
+        .child(div().w(2).h_full().flex_none().when(Boolean(barColor), (e) => e.bg(barColor)))
         .child(gutter)
-        .child(div().w(14).flex_none().text_center().font_bold().text_color(signColor).child(sign))
-        .child(h_flex().flex_1().min_w(0).flex_wrap().pr(8).children(codeChildren));
+        .child(div().w(14).h(ROW_H).flex_none().flex().items_center().justify_center().font_bold().text_color(signColor).child(sign))
+        .child(v_flex().flex_1().min_w(0).overflow_hidden().pr(10).children(
+          wrappedLines.map((lineSpans) => h_flex().h(ROW_H).flex_none().items_center().whitespace_nowrap().children(renderSpans(lineSpans)))));
     }
 
-    return h_flex().w_full().h(20).flex_none().items_center()
+    return h_flex().w_full().h(ROW_H).flex_none().items_center()
       .when(Boolean(lineBg), (e) => e.bg(lineBg))
       .child(div().w(2).h_full().flex_none().when(Boolean(barColor), (e) => e.bg(barColor)))
       .child(gutter)
       .child(div().w(14).flex_none().text_center().font_bold().text_color(signColor).child(sign))
-      .child(h_flex().flex_1().min_w(0).h_full().items_center().whitespace_nowrap().children(codeChildren));
+      .child(h_flex().flex_1().min_w(0).h_full().items_center().whitespace_nowrap().children(renderSpans(spans)));
   }
 
   diffViewport(id, rows, width, emptyText, t, filePath = "") {
     const pal = syntaxPalette(t);
     const mono = settings().font_family ?? "JetBrains Mono";
+    const z = Number(settings()?.zoom) || 1;
+    const attachMeasure = (el) => el
+      .when(!this.charWidth || this.charFont !== mono, (m) => m.child(
+        div().id(`${id}-char-m`).absolute().top(0).left(0).opacity(0).whitespace_nowrap()
+          .on_size_change((size, cx) => {
+            if (size.width > 0) {
+              this.charWidth = size.width / z / MEASURED_NARROW.length;
+              this.charFont = mono;
+              cx.notify();
+            }
+          })
+          .child(MEASURED_NARROW)))
+      .when(!this.wideWidth || this.wideFont !== mono, (m) => m.child(
+        div().id(`${id}-wide-m`).absolute().top(0).left(0).opacity(0).whitespace_nowrap()
+          .on_size_change((size, cx) => {
+            if (size.width > 0) {
+              this.wideWidth = size.width / z / MEASURED_WIDE.length;
+              this.wideFont = mono;
+              cx.notify();
+            }
+          })
+          .child(MEASURED_WIDE)));
+
     if (this.diffWrap && rows.length > 0) {
-      const capped = rows.slice(0, WRAP_ROW_CAP);
-      return v_flex().id(`${id}-wrap`).flex_1().min_h(0).overflow_y_scrollbar().font_family(mono).text_size(11.5)
-        .children(capped.map((row) => this.diffRow(row, t, pal, true, filePath)))
-        .when(rows.length > WRAP_ROW_CAP, (el) => el.child(
-          div().px(12).py(6).text_size(11).text_color(t.dim).child(`Showing first ${WRAP_ROW_CAP} wrapped lines — toggle Wrap off for full virtualized scroll.`)));
+      const charW = this.charWidth || 7.0;
+      const wideCols = this.wideWidth && this.charWidth ? (this.wideWidth / this.charWidth) : 2;
+      const cols = Math.max(16, Math.floor((this.diffViewWidth - DIFF_GUTTER_W - 22) / charW));
+      const wrapId = `${id}-wrap`;
+      const itemSizes = rows.map((row) => (row.kind === "@" || row.kind === "file" ? ROW_H : wrapRowLines(row, cols, wideCols).length * ROW_H));
+      return div().id(`${wrapId}-box`).flex_1().min_h(0).relative().overflow_hidden().font_family(mono).text_size(11.5)
+        .on_size_change((size, cx) => {
+          const w = Math.floor(size.width / z);
+          if (w > 60 && Math.abs(w - this.diffViewWidth) >= 2) {
+            this.diffViewWidth = w;
+            cx.notify();
+          }
+        })
+        .on_mouse_down("left", (e) => { this.diffPressX = (e.local_position?.x ?? 0) / z; })
+        .when(true, attachMeasure)
+        .child(v_virtual_list(wrapId, rows.length, itemSizes, (i) => String(i),
+          (range) => rows.slice(range.start, range.end).map((row) =>
+            this.diffRow(row, t, pal, row.kind === "@" || row.kind === "file" ? null : wrapRowLines(row, cols, wideCols), filePath)))
+          .size_full()
+          .on_item_click((key, cx) => this.handleDiffRowClick(rows, key, filePath, cx)))
+        .child(Scrollbar.vertical(wrapId).viewport_from_layout().absolute().inset_0());
     }
-    return div().flex_1().min_h(0).relative().font_family(mono).text_size(11.5)
+
+    return div().id(`${id}-box`).flex_1().min_h(0).relative().font_family(mono).text_size(11.5)
+      .on_size_change((size, cx) => {
+        const w = Math.floor(size.width / z);
+        if (w > 60 && Math.abs(w - this.diffViewWidth) >= 2) {
+          this.diffViewWidth = w;
+          cx.notify();
+        }
+      })
+      .when(true, attachMeasure)
       .child(div().id(`${id}-x`).size_full().overflow_x_scrollbar()
-        .child(div().w_full().min_w(width).h_full().child(v_virtual_list(id, rows.length, 20, (i) => String(i),
-          (range) => rows.slice(range.start, range.end).map((row) => this.diffRow(row, t, pal, false, filePath))).size_full())))
+        .child(div().id(`${id}-inner`).w_full().min_w(width).h_full()
+          .on_mouse_down("left", (e) => { this.diffPressX = (e.local_position?.x ?? 0) / z; })
+          .child(v_virtual_list(id, rows.length, ROW_H, (i) => String(i),
+            (range) => rows.slice(range.start, range.end).map((row) => this.diffRow(row, t, pal, null, filePath)))
+            .size_full()
+            .on_item_click((key, cx) => this.handleDiffRowClick(rows, key, filePath, cx)))))
       .child(Scrollbar.vertical(id).viewport_from_layout().absolute().inset_0())
       .when(!rows.length && Boolean(emptyText), (e) => e.child(div().absolute().top(8).px(12).text_size(11.5).text_color(t.dim).child(emptyText)));
   }
@@ -1559,7 +1630,7 @@ export default class Changes extends View {
             .on_click((_e, cx) => { this.selectedCommit = null; this.commitFiles = []; this.commitFileOpen = null; this.setCommitLines([]); cx.notify(); })
             .child(svg(`${MOD}/icons/x.svg`).size(12).text_color(t.muted))))
         .when(Boolean(c.body), (el) => el.child(
-          div().max_h(56).overflow_y_scrollbar().text_size(11).text_color(t.muted).child(c.body)))
+          div().id("commit-body-scroll").max_h(56).overflow_y_scrollbar().text_size(11).text_color(t.muted).child(c.body)))
         .child(h_flex().w_full().min_w(0).gap(8).items_center().text_size(11).text_color(t.dim)
           .child(div().flex_none().font_family(mono).text_color(t.accent).child(c.shortSha))
           .child(div().flex_1().min_w(0).truncate().child(c.email ? `${c.author} <${c.email}>` : c.author))

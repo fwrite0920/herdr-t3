@@ -173,6 +173,31 @@ async function main() {
   assert.ok(paired[1].spans.some(([t, k, emph]) => t.includes("list") && k === "string" && emph === true));
   assert.ok(paired[2].spans.some(([t, k, emph]) => t.includes("tree") && k === "string" && emph === true));
 
+  // 10. CJK-aware span wrapping & memoization for virtualized wrapped diffs
+  const longComment = hl.colorizeDiffRows(
+    diffRows(["@@ -1,1 +1,1 @@", '+// Ack.ack 是"自上次 ACK 以来 sink 已处理的帧数"，需要累加。']),
+    "ALVideoSource.java"
+  )[1];
+  const wrapped = hl.wrapRowLines(longComment, 24, 2);
+  assert.ok(wrapped.length >= 3, "long CJK comment wraps across multiple visual lines");
+  assert.equal(wrapped.flat().map(([t]) => t).join(""), '// Ack.ack 是"自上次 ACK 以来 sink 已处理的帧数"，需要累加。');
+  assert.equal(hl.wrapRowLines(longComment, 24, 2), wrapped, "memoizes wrapped lines for same column width");
+  const wider = hl.wrapRowLines(longComment, 80, 2);
+  assert.equal(wider.length, 1, "re-wraps when viewport width increases");
+
+  // Preserves word-diff emphasis across line wrap boundary
+  const empWrapped = hl.wrapSpans([["const ", "keyword", false], ["superLongIdentifierName", "plain", true]], 12, 2);
+  assert.ok(empWrapped.length >= 2);
+  assert.ok(empWrapped[1].every(([, , emph]) => emph === true), "preserves emph flag on continuation lines");
+
+  // 11. Regression guard: diffRow must never attach per-row event handlers inside v_virtual_list
+  const fs = require("node:fs");
+  const mainSrc = fs.readFileSync(path.join(__dirname, "main.js"), "utf8");
+  const diffRowBlock = mainSrc.slice(mainSrc.indexOf("diffRow("), mainSrc.indexOf("diffViewport("));
+  assert.ok(diffRowBlock.length > 100, "located diffRow implementation");
+  assert.ok(!/\.on_click\s*\(/.test(diffRowBlock), "diffRow must not call .on_click() inside v_virtual_list");
+  assert.ok(!/\.tooltip\s*\(/.test(diffRowBlock), "diffRow must not call .tooltip() inside v_virtual_list");
+
   console.log("check-changes passed");
 }
 

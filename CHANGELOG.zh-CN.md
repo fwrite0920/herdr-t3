@@ -2,6 +2,10 @@
 
 [English](CHANGELOG.md) · 中文
 
+## 2026-11-25
+
+- 修复 **Git**（`mods/t3-changes`）在关闭自动换行时 Diff 内容区完全空白的问题（将行号与 Hunk 的 `@` 递交点击从 `v_virtual_list` 行渲染回调迁移至列表级 `on_item_click` + 点击横坐标判定，并将 Hunk 的 `@L<n>` 徽标紧贴 `@@` 头部以便长行时始终可见）；同时将**自动换行**（`diff.wrap`）升级为支持中文宽字符与实测等宽字体的虚拟化按列折行（`wrapRowLines`），消除长注释/长表达式右侧截断与 600 行上限。
+
 ## 2026-11-24
 
 - 彻底移除 **Favorites（收藏夹）**（`mods/t3-favorites`）及其 Space 面板页签、布局块、设置开关、`keys.json` 快捷键、Files 目录右键「Add to favorites」菜单项（`shared/file-menu.js`）与 Windows 安装脚本遗留清理。

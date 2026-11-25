@@ -577,3 +577,89 @@ export function colorizeDiffRows(rows, filePath = "") {
     return row;
   });
 }
+
+/** Return true for East Asian Wide / Fullwidth / Emoji code points that occupy ~2 monospace columns. */
+export function isWideCodePoint(cp) {
+  if (cp < 0x1100) return false;
+  return (
+    (cp >= 0x1100 && cp <= 0x115f)
+    || cp === 0x2329 || cp === 0x232a
+    || (cp >= 0x2e80 && cp <= 0x303e)
+    || (cp >= 0x3040 && cp <= 0x33ff)
+    || (cp >= 0x3400 && cp <= 0x4dbf)
+    || (cp >= 0x4e00 && cp <= 0xa4cf)
+    || (cp >= 0xac00 && cp <= 0xd7a3)
+    || (cp >= 0xf900 && cp <= 0xfaff)
+    || (cp >= 0xfe10 && cp <= 0xfe19)
+    || (cp >= 0xfe30 && cp <= 0xfe6f)
+    || (cp >= 0xff01 && cp <= 0xff60)
+    || (cp >= 0xffe0 && cp <= 0xffe6)
+    || cp >= 0x1f300
+  );
+}
+
+function charDisplayCols(cp, wideCols) {
+  if ((cp >= 0x0300 && cp <= 0x036f) || cp === 0x200d || (cp >= 0xfe00 && cp <= 0xfe0f)) return 0;
+  return isWideCodePoint(cp) ? wideCols : 1;
+}
+
+/**
+ * Wrap syntax-highlighted spans (`Array<[text, kind, emph]>`) into visual lines of at most `maxCols` columns,
+ * preserving syntax token kinds and intra-line word-diff emphasis across line breaks (CJK-aware).
+ */
+export function wrapSpans(spans, maxCols, wideCols = 2) {
+  const limit = Math.max(8, Number(maxCols) || 8);
+  const wide = Number.isFinite(wideCols) && wideCols > 0 ? wideCols : 2;
+  if (!Array.isArray(spans) || !spans.length) return [[[" ", "plain", false]]];
+
+  // Fast path: check if entire line already fits in a single visual row
+  let total = 0;
+  for (let s = 0; s < spans.length; s++) {
+    const seg = spans[s][0];
+    for (let i = 0; i < seg.length;) {
+      const c = seg.charCodeAt(i);
+      const cp = c < 0xd800 ? c : seg.codePointAt(i);
+      total += charDisplayCols(cp, wide);
+      i += cp > 0xffff ? 2 : 1;
+    }
+    if (total > limit) break;
+  }
+  if (total <= limit) return [spans];
+
+  const lines = [[]];
+  let col = 0;
+  for (let s = 0; s < spans.length; s++) {
+    const [seg, kind, emph] = spans[s];
+    if (!seg) continue;
+    let start = 0;
+    for (let i = 0; i < seg.length;) {
+      const c = seg.charCodeAt(i);
+      const cp = c < 0xd800 ? c : seg.codePointAt(i);
+      const w = charDisplayCols(cp, wide);
+      if (col > 0 && col + w > limit) {
+        if (i > start) lines[lines.length - 1].push([seg.slice(start, i), kind, Boolean(emph)]);
+        lines.push([]);
+        start = i;
+        col = 0;
+      }
+      col += w;
+      i += cp > 0xffff ? 2 : 1;
+    }
+    if (seg.length > start) lines[lines.length - 1].push([seg.slice(start), kind, Boolean(emph)]);
+  }
+  if (!lines[lines.length - 1].length && lines.length > 1) lines.pop();
+  return lines;
+}
+
+/** Memoized row wrapper for `v_virtual_list` wrapped diff rendering. */
+export function wrapRowLines(row, maxCols, wideCols = 2) {
+  const key = `${maxCols}:${Math.round(wideCols * 100)}`;
+  if (row._wrapKey === key && row._wrappedLines) return row._wrappedLines;
+  const baseSpans = row.spans && row.spans.length
+    ? row.spans
+    : [[(row.text || " ").replaceAll("\t", "    "), "plain", false]];
+  const wrapped = wrapSpans(baseSpans, maxCols, wideCols);
+  row._wrapKey = key;
+  row._wrappedLines = wrapped;
+  return wrapped;
+}

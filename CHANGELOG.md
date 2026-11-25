@@ -2,6 +2,10 @@
 
 English · [中文](CHANGELOG.zh-CN.md)
 
+## 2026-11-25
+
+- Fixed blank diff viewport in **Git** (`mods/t3-changes`) when line wrap was off (moved line/hunk `@` Agent handoff clicks out of `v_virtual_list`'s item renderer onto `on_item_click` + pointer `x` hit-testing, and placed hunk `@L<n>` chips next to `@@` so they stay visible on wide lines), and upgraded **line wrap** (`diff.wrap`) to CJK-aware, character-level virtualized wrapping (`wrapRowLines` + measured font widths) so long comments and strings wrap cleanly without clipping or the 600-line cap.
+
 ## 2026-11-24
 
 - Removed **Favorites** (`mods/t3-favorites`) completely, along with its Space Panel tab, layout block, settings toggle, `keys.json` bindings, Files folder right-click item (`shared/file-menu.js`), and Windows installer cleanup hook.
