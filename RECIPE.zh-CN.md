@@ -17,10 +17,10 @@ Herdr App 的一个安静、近似 T3 Code 的窗口，在 agent 越开越多时
 | 侧栏底栏 | 高 44 |
 | Lists 的 Spaces／Agents | 等分，各至少 90 |
 | 工作区 | `chrome`，包括窗格背后；左右内缩 8，窗格间距和底部留白 8 |
-| 窗格 | `background`，圆角 8，2px 同色边框；单个也带框 |
+| 窗格 | `background`，圆角 8，`main` 非聚焦分屏 `veil: 0.18`，边框加聚焦环；单个也带框 |
 | 窗格标题 | 除 Home 外常显，高 28，在框内 |
 | space 面板 | 最右全高列；初始隐藏，与工作区同权重、最小 480；外部分隔线可拖，左右和底部内缩 8 |
-| 分隔线 | 1px `border` |
+| 分隔线 | 1px `border`，`hover: "accent"` |
 
 无标题栏，terminal opacity 0、padding `[8, 0]`。窗格聚焦边框也是 2px `background`，默认不可见且聚焦不改变终端尺寸；把布局的 `focus.color` 改成 `accent` 即可显示。分屏时非聚焦窗格的图标、名字、目录降为 50%，悬停恢复，状态和按钮不变。布局保留但隐藏自带 `workspace-status`。
 
@@ -40,9 +40,9 @@ macOS 窗口按钮初值 `[16, 12]`，与品牌栏中线对齐，距标记 16 �
 
 Pinned、Active 卡片在上，Working、Snoozed、Settled 有内容时是贴底的折叠收纳区；空间不够时跟在卡片后，共用滚动列表。标题高 32，比行内缩 2、内边距 8，12px 淡色名称、常规字重数量、12px 箭头。折叠仍露出当前查看的行，隐藏数量不计它。Settled 分页 Show more，有可关闭终端时有 Clear；Clear 先确认，保留当前标签。
 
-卡片圆角 6、横竖内边距 10/8，三行高 20、20、16，间隔 4、2，齐全时高 78，卡片间隔 5。首行 space 标记／名字与状态／时间（Working 加时长、Needs you、Done，否则经过多久），第二行 agent 标题，可选第三行分支、中间截断。60% 程序图标和远程机器标记在分支行末尾，没有则在标题末尾。正在看、需要人、done 的标题为 medium `foreground`，其余 normal `muted`；悬停只提亮、不移动。工作中卡片平时 70%，悬停或正在看时恢复。置顶卡片在 space 头像后带 pin。
+卡片采用 Orca 风格三行排布：圆角 8、横竖内边距 10/7、静止无框（仅当前查看或需要人时浮现细边与底色），三行高 20、18、16，间隔 3、2，卡片间隔 5，左侧共用 14px 槽位让三行文字垂直齐头。首行左侧状态轨（Working 转圈、Needs you 琥珀点／Error 红点、Done 绿点、Woke 闹钟、Idle 淡灰点）、可选 pin、agent 标题（自动去掉 Pi 重复前导 `π ` / `π > `）及右侧无框轻量状态／时长文字；第二行 13px 程序图标（无则文件夹图标）与实时 `pane.cwd` 末级目录名（无则回退程序名或 space 名）；可选第三行分支、中间截断。远程机器标记在分支行末尾，无分支时落在第二行目录末尾，不挤占首行标题。正在看、需要人、done 的标题为 medium `foreground`，其余 normal `muted`；悬停只提亮、不移动。工作中卡片平时 70%，悬停或正在看时恢复。
 
-Settled、Snoozed 是 36px 窄行，圆角 6、行间隔 1：16px space 标记（未亮时 40%）、标题和已经过／剩余时间。悬停把时间换成 Un-settle 或 Wake。Snoozed 带 `accent` 闹钟；Woke 是 `blocked` 文字，悬停后仍留在控件旁。控件和状态在角落交叉淡变，不重新排版。
+Settled、Snoozed 是 36px 窄行，圆角 6、行间隔 1：16px 槽内 14px 程序图标（未亮时 40%，悬停提示目录／程序名）、标题和已经过／剩余时间。悬停把时间换成 Un-settle 或 Wake。Snoozed 带 `accent` 闹钟；Woke 是 `blocked` 文字，悬停后仍留在控件旁。控件和状态在角落交叉淡变，不重新排版。
 
 悬停详情：标题、space、远程机器、分支、程序，12px、最宽 320、实色加 `shadow_xl`，挂在行右侧 4、顶部对齐。首次等 150ms，另一张刚关不到 400ms 时立即出现。第一张／最后一张 150ms 淡变并滑动 4px，立即替换不重叠。控件所在角落整体抑制详情；点击收起，拖动隐藏。程序、pin、机器标记没有单独提示。
 
@@ -86,7 +86,7 @@ Files 只读，根是 space 所在机器的 `folder`，不跟终端 cwd。工具
 
 共用树：行高 24、12px 界面字、圆角 6、内缩 2、每层 27.2、12px 箭头、16px Catppuccin 图标；悬停文字色 7%、选中 12%。单目录链压成 `a / b`。先目录后文件，不分大小写自然排序（`file2` 在 `file10` 前）；省略 `.git`、忽略项变暗。改动用 Review 色标 A／M／D／R，删除划线，含改动的折叠目录带点。虚拟列表只画可见行，不截前 N 个。方向键（←／→ 收起／到父级、展开／进入）、Home／End、Enter 移动 1px 环并打开所在行。
 
-搜索要求空格分开的每个词都在路径中，不分大小写。最多显示 200 行并提示超出数量。在 Git 内搜索引和未跟踪非忽略文件，外部最多 20 万路径；远程过滤最多回传 1,000。不超过 1,000 候选时用 uFuzzy 排序高亮；↑／↓、Enter、Esc 同其他搜索列表。
+搜索支持 `Files` 与 `Text` 两种模式。`Files` 按空格分词匹配路径（不分大小写，支持尾部 `:line[:col]` 或单独 `:line` 跳行），最多 200 行，≤1,000 候选时 uFuzzy 排序高亮（Git 路径或外部最多 20 万路径、远程最多 1,000）。`Text` 通过防抖只读 `rg --json` 搜本地／远程内容，带 `Aa`/`.*` 开关、片段高亮、点击／回车跳匹配位及 `@path:L<line>` 递交。终端路径点击处理器（`t3-links`，根 `link_handlers`）将项目内本地／远程路径（`:line[:col]`、`(line,col)`、`#L<n>`）经 `t3.filesOpen` 直接在 Files 打开并高亮目标行，二进制／目录／根外路径回退默认。↑／↓、Enter、Esc 同其他搜索列表。
 
 仅本页、space、窗口都可见才刷新：回来立即读，通常本机每 5s、远程每 10s，慢读取延长。文本只在变化时重读，图片重新点选才刷新。图片（`png`/`jpg`/`jpeg`/`gif`/`webp`/`svg`/`bmp`/`ico`/`avif`，远程上限 4 MB）顶部提供 32px 控制条（格式／尺寸／大小、`Fit`/`Width`/`100%`/`−`/`+` 缩放，长截屏自动按 `Width` 滚动浏览，`Auto`/`Light`/`Dark` 画布背景）与双轴滚动视口。超过 1 MB 的文本展示前 256 KB 截断预览；二进制或超限文件展示带图标、类型、大小与外部打开／定位／复制路径的卡片；Markdown／HTML 相对链接可在页内跳转，压缩 JSON 自动美化并支持 `Pretty`/`Raw` 切换。真正的读取／列目录失败用 Retry。完整内容和 Editor 只保留最近显示的三个 space，更早只留轻量阅读选择，回来重读。
 
@@ -266,6 +266,7 @@ macOS 用 `osascript`、Linux `zenity` 选择，等待显示 Opening…；图片
 | `cmd-alt-]`／`[`、`ctrl-alt-shift-]`／`[` | `t3-tabs.space-next/space-prev` |
 | `cmd-1…9`、`ctrl-alt-1…9` | `t3-tabs.tab:<n>`，显示的标签 |
 | `cmd-shift-]`／`[`、`ctrl-tab/ctrl-shift-tab`、`ctrl-alt-]`／`[` | `t3-tabs.tab-next/tab-prev`，循环 |
+| `cmd-ctrl-left`／`right`、`ctrl-alt-left`／`right`、`Alt + 鼠标侧键` | `t3-tabs.back/forward`，跨 space 访问历史后退／前进（最多 100 步，跳过 Home 与已关标签） |
 
 按 Herdr 平台显示键名并优先匹配本平台绑定（macOS 选 `cmd-`，Windows/Linux 选终端安全的 `ctrl-shift-*`）。`cmd-d` 留给 Herdr 分屏，不是 Review。键盘在任意 Space 面板页时，关闭键只关面板（`t3-files.close`／`review.close`／`t3-tabs.panel-close`）不关背后标签；面板放大模式在 `panel-head` 补出侧栏开关与原生窗口按钮。popup/dialog 持键盘时，全部标签／pane 关闭键只关 overlay。浮动 `tabs-keys` 在侧栏隐藏、面板放大时也处理布局命令。
 
@@ -276,7 +277,7 @@ macOS 用 `osascript`、Linux `zenity` 选择，等待显示 Opening…；图片
 创建 `layouts/herdr-t3.json`、预览 `layouts/herdr-t3.svg`、`mods/t3-*`、`keys.json`。节点 id 唯一，下面结构 id 保持稳定，布局代码靠它们查找：
 
 ```text
-root: row, terminal_menu=t3-menu
+root: row, terminal_menu=t3-menu, link_handlers=[t3-links]
 ├─ sidebar: column [256,min208,max480], chrome
 │  ├─ brand: t3-chrome [40]
 │  ├─ sidebar-lists: stack, active=inbox
@@ -305,7 +306,7 @@ floating root: tabs-keys:t3-tabs {part:"keys"}, bottom/end, 不画内容
 
 sidebar/work/panel 列 `resizable:false` 固定内部边界，外分隔线仍可拖。Spaces 传 `{newMenu:"t3-new-menu"}`；Inbox 传 `{newMenu:"t3-new-menu",picker:"t3-picker",home:"t3-tabs.home",menu:"t3-menu"}`。main/home-main 共用前述 background/border/focus/radius/gap/lone。浮动 keys 副本负责命令、Home、space 面板同步；其他 tab 副本共用导航，不各开一份确认。
 
-必需 mod：`t3-chrome`、`t3-spaces`、`t3-agents`、`t3-inbox`、`t3-tabs`、`t3-pane`、`t3-home`、`t3-files`、`t3-new-menu`、`t3-picker`、`t3-actions`、`t3-menu`、`better-search`。有对应的从官方 mod 改，Inbox/Home/Files 新建。保留官方 workspace-status/转圈/程序素材；UI 自带目录 Lucide 24网格/1.75px，文件用 vendored Catppuccin。mod 不能越目录 import，改 `shared/` 源后由 `scripts/sync.sh` 分发，复用命名/状态/pin/labels、焦点/菜单/动画/按钮、侧栏/面板/存储、文件树/菜单/状态模块。
+必需 mod：`t3-chrome`、`t3-spaces`、`t3-agents`、`t3-inbox`、`t3-tabs`、`t3-pane`、`t3-home`、`t3-files`、`t3-links`、`t3-sessions`、`t3-changes`、`t3-tools`、`t3-new-menu`、`t3-picker`、`t3-actions`、`t3-menu`、`better-search`。有对应的从官方 mod 改，Inbox/Home/Files/Links 新建。保留官方 workspace-status/转圈/程序素材；UI 自带目录 Lucide 24网格/1.75px，文件用 vendored Catppuccin。mod 不能越目录 import，改 `shared/` 源后由 `scripts/sync.sh` 分发，复用命名/状态/pin/labels、焦点/菜单/动画/按钮、侧栏/面板/存储、文件树/菜单/状态模块。
 
 必需 mod 要真实文件（SVG 软链不加载），布局/SVG、按 context 合并 keys 放 `HERDR_APP_HOME` 或 `~/.config/herdr-app`，`layout.switch {"name":"herdr-t3"}` 选中。`scripts/update.sh` 要 `jq/rsync`，先验证旧 layout/keys，再 `rsync --delete` 自己 mod；保留主题/focus/stack 选择、支持的 extra 块、Review `config.json`，只更新已装 extras/主题，repo 键优先、报告替换。设置/pins/用户画不在替换目录。`scripts/sync.sh` 还写安装目录和同级独立仓库，不是只读检查。
 
@@ -319,10 +320,10 @@ Herdr API：`spaces/panes/agents/terminals/focused/layout/settings/window/keys`�
 | --- | --- |
 | Spaces | 只读 `git status/rev-parse`、`hc machine ls --json`；重建机器 Connect：`hc machine rm` 再 `hc machine add` |
 | Inbox／tab 命令／Agents pin | `hc label <address> settled=<ms>:<turn>`、`snoozed=<wake-ms>` 或清空；恢复未读时写 `herdr.seen` |
-| 关闭／导航 | `hc get <terminal> --json`；原生 space/tab/pane 新建/选择/移动/改名/关闭，`agent.focus`、`pane.focus`、`terminal.peek`、split/zoom/`terminal.park` |
+| 关闭／导航 | `hc get <terminal> --json`；原生 space/tab/pane 新建/选择/移动/改名/关闭，`agent.focus`、`pane.focus`、`terminal.peek`、split/zoom/`terminal.park`；存活本机 Antigravity 时只读 Node（`resolve-agy-titles.cjs`）解析会话标题至 `t3.agentTitles` |
 | 布局 chrome | `layout.select/show/hide/resize`；安装布局仅 `traffic_lights` 字段，不整份 `layout.set` |
 | Space 图标 | space 机器上 `git rev-parse --show-toplevel`、`sh -c` 检查、`base64`；app `cache/t3-icons/`，共享图标/颜色信息 |
-| Files | `sh` 列目录、`git check-ignore --stdin`、`git status --porcelain=v2 -z --untracked-files=all`、`git ls-files -co --exclude-standard -z`、后备 `find`、远程 `awk`；文本和 app `cache/t3-files/` 图片（远程 base64），close/下次启动清理 |
+| Files 与 Links | `sh` 列目录、`git check-ignore --stdin`、`git status --porcelain=v2 -z --untracked-files=all`、`git ls-files -co --exclude-standard -z`、后备 `find`、远程 `awk`、只读 `rg --json` 全文检索、`t3-links` `fs.stat`/远程 `test -f`；文本和 app `cache/t3-files/` 图片（远程 base64），close/下次启动清理 |
 | 文件菜单 | 剪贴板保存/粘贴/恢复、`pane.focus`、`terminal.paste`，支持的平台本机 `open -R`／默认程序打开 |
 | Actions | `terminal.open` 执行 `sh -c`、可选目录，全局列表/上次选择 |
 | Review | `jin.review`、共用只读 Git scope/base/ref helpers，本地 daemon/Review 配置，无远程 |

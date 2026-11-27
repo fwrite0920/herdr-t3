@@ -11,7 +11,7 @@ const load = (file) => fs.readFileSync(path.join(__dirname, file), "utf8")
   .replace(/^import [^;]*;\r?\n/gm, "").replace(/^export (async function|function|const) /gm, "$1 ").replace(/^export \{[\s\S]*?\};?\s*$/m, "");
 const context = vm.createContext({});
 vm.runInContext([load("vendor/ufuzzy.js"), load("file-icons-data.js"), load("file-icons.js"), load("file-tree.js"), load("model.js"),
-  "globalThis.m = { join, placeOf, resolveRoot, uFuzzy, fileIcon, folderIcon, FILE_NAMES, FILE_EXTENSIONS, FOLDER_NAMES, LIST, IGNORED, PROBE, REMOTE_SEARCH, RANKED, ancestors, parseListing, parseStatus, parseIgnored, markIgnored, folderEntries, treeRows, terms, narrows, filterPaths, rank, extOf, kindOf, isSvg, isJson, isHtml, formatBytes, imageDimensions, svgDimensions, ZOOM_STEPS, defaultImageMode, computeImageLayout, stepImageZoom, formatJsonPreview, resolveRelPath, describeFileKind, languageOf, readProblem, failedRead, ticket };"].join("\n"), context);
+  "globalThis.m = { join, placeOf, resolveRoot, uFuzzy, fileIcon, folderIcon, FILE_NAMES, FILE_EXTENSIONS, FOLDER_NAMES, LIST, IGNORED, PROBE, REMOTE_SEARCH, RANKED, ancestors, parseListing, parseStatus, parseIgnored, markIgnored, folderEntries, treeRows, terms, narrows, filterPaths, rank, extOf, kindOf, isSvg, isJson, isHtml, formatBytes, imageDimensions, svgDimensions, ZOOM_STEPS, defaultImageMode, computeImageLayout, stepImageZoom, formatJsonPreview, resolveRelPath, describeFileKind, languageOf, readProblem, failedRead, ticket, parseQueryLocation, lineRange, parseRgJson };"].join("\n"), context);
 const m = context.m;
 const plain = (v) => JSON.parse(JSON.stringify(v));
 
@@ -87,7 +87,7 @@ function makePage({ page = "files", spaces = [space("s1", "/r", true)], zeroWrit
     View: class {}, div: element, svg: element, image: element, h_flex: element, v_flex: element,
     Input: { new: element }, Editor: { new: element }, TextView: { markdown: element, html: element },
     InputState: { new: () => { let v = ""; return { on() {}, value: () => v, set_value(x) { v = x; } }; } },
-    EditorState: { new: (o) => { const e = { wrap: o.soft_wrap, text: o.value, released: false, release() { this.released = true; return true; } }; w.made.push(e); return e; } },
+    EditorState: { new: (o) => { const e = { wrap: o.soft_wrap, text: o.value, released: false, selected: null, focused: false, set_selected_range(r) { this.selected = r; }, focus() { this.focused = true; }, release() { this.released = true; return true; } }; w.made.push(e); return e; } },
     spaces: () => w.spaces, panes: () => [], focused: () => null, agents: () => [], layout: () => layout,
     theme: () => ({}), settings: () => ({ zoom: 1, font_family: "mono" }), window: () => ({ active: w.windowActive, platform }), home: () => "/Users/test", appHome: () => "/tmp/none",
     shared: (k) => shared[k], setShared: (k, v) => { wrote.push(k); shared[k] = v; },
@@ -657,4 +657,37 @@ async function previews() {
   find(root, "t3-files-html-preview").handlers.on_click({}, cx);
   root = view.render(cx);
   assert.ok(find(root, "t3-files-html"), "HTML Preview mode renders TextView.html");
+
+  // Line/column query parsing, UTF-16 lineRange, and rg --json parsing (including CJK byte->UTF-16 offsets)
+  assert.deepEqual(plain(m.parseQueryLocation("src/main.js:42:7")), { query: "src/main.js", line: 42, col: 7 });
+  assert.deepEqual(plain(m.parseQueryLocation(":15")), { query: "", line: 15, col: null });
+  assert.deepEqual(plain(m.parseQueryLocation("plain.js")), { query: "plain.js", line: null, col: null });
+  const lr = m.lineRange("first\nsecond line\nthird", 2, 8, 4);
+  assert.equal(lr.line, 2);
+  assert.equal("first\nsecond line\nthird".slice(lr.start, lr.end), "line");
+  const cjkLine = "  // 你好 target here\n";
+  const byteStart = Buffer.byteLength("  // 你好 ", "utf8");
+  const byteEnd = byteStart + Buffer.byteLength("target", "utf8");
+  const rgCjk = JSON.stringify({
+    type: "match",
+    data: { path: { text: ".\\src\\hi.js" }, lines: { text: cjkLine }, line_number: 12, submatches: [{ start: byteStart, end: byteEnd }] },
+  });
+  const parsedRg = m.parseRgJson(rgCjk + "\n", 10);
+  assert.equal(parsedRg.matches.length, 1);
+  assert.equal(parsedRg.matches[0].path, "src/hi.js");
+  assert.equal(parsedRg.matches[0].line, 12);
+  const [r0, r1] = parsedRg.matches[0].ranges[0];
+  assert.equal(parsedRg.matches[0].snippet.slice(r0, r1), "target", "CJK UTF-8 byte offsets map to exact UTF-16 snippet range");
+
+  // Page integration: opening with :line jumps & highlights in EditorState, and `t3.filesOpen` shared request works outside render().
+  const jumpPage = makePage({ spaces: [space("j1", "/j", true)] });
+  jumpPage.w.texts["/j/a.js"] = "line one\nline two target\nline three\n";
+  jumpPage.view.render(jumpPage.cx);
+  await jumpPage.settle();
+  jumpPage.send("open:a.js:2");
+  await jumpPage.settle();
+  await jumpPage.fire(16);
+  const ed = jumpPage.view.current().view.code;
+  assert.equal(jumpPage.view.current().jumpLine, 2);
+  assert.equal(ed.text.slice(ed.selected.start, ed.selected.end), "line two target", "open:file:line selects target line");
 }

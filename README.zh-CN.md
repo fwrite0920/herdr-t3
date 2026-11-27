@@ -24,7 +24,7 @@
 - **动作**：类似 T3 Code 的运行按钮，运行你自己的命令，在新标签或分屏里。
 - **窄标签、带框窗格**，照 T3 Code 的外观。
 - **其他机器**：它们的 space 按机器分组，Inbox 卡片带机器标记；Lists 中悬停 Agents 行查看机器名。
-- **Files**：在窗口右侧面板中以**上下分栏**只读浏览 space 文件夹：上方全宽文件树与搜索（可拖拽分隔线调高、未打开文件时自动撑满整高、打开文件后可一键收起实现全高阅读），下方全宽代码 / Markdown / 图片预览；打开多个文件时自动出现最近文件快捷切换标签，并在顶栏提供一键 Mention 给 Agent、复制相对路径、VS Code 打开、换行与关闭按钮。切换标签时面板不动，换到别的 space 时跟着换；隐藏时停止刷新，每页只缓存最近三个 space 的完整数据。
+- **Files 与终端路径直达**：在窗口右侧面板中以**上下分栏**只读浏览 space 文件夹：上方全宽文件树与 `Files | Text` 搜索（支持路径模糊搜索 + `:line[:col]` 行号定位，以及基于 ripgrep 的只读全文检索、区分大小写/正则开关和 `@path:L<line>` 一键递交 Agent；可拖拽分隔线调高、未打开文件时自动撑满整高、打开文件后可一键收起实现全高阅读），下方全宽代码 / Markdown / 图片预览；打开多个文件时自动出现最近文件快捷切换标签，并在顶栏提供一键 Mention、复制路径、VS Code 打开、换行与关闭按钮。在终端中 Cmd/Ctrl-Click 任意项目内文件路径（如 `src/app.ts:42:7`、`src/app.ts#L42`）可直接在此打开并定位到该行（`t3-links`）。切换标签时面板不动，换到别的 space 时跟着换；隐藏时停止刷新，每页只缓存最近三个 space 的完整数据。
 - **Sessions（巡检与会话）**：右侧面板内置的实时 Agent 遥测与历史浏览器。支持 Google Antigravity、OpenAI Codex、Oh-My-Prompt、Pi 等多 Agent 协议；呈现 2x2 HUD 仪表盘（上下文余量/告警、缓存命中率、累计/当轮费用、速度与延迟）、Token 四色动态构成、实时调用动态流；展开工具库时高亮已调用的工具（翡翠绿 `ACTIVE` 徽标与独立“已调用”过滤）；自动识别当前主机（LOCAL / WSL / 远端 SSH），切端连续累计运行时长不归零；全新的历史会话浏览器支持多 Agent 分类切换、时间段分组与一键终端恢复。
 - **Git 雷达（`t3-changes`）**：面向多 Agent 工作流的只读项目追踪与一键 Agent 交接视图。顶栏展示当前分支、上游 `↑`/`↓`/`synced` 状态、冲突提示与只读 Fetch；下方切换 **Changes**（严格分离暂存与未暂存的语法着色/行内词对比 Diff、可拖拽上下分栏、列表/树状视图、自动换行、`j/k` 翻看、单文件历史跳转与 `@` 递交 Agent）、**Log**（标记 `↑ local` 未推送提交、回车全库检索 `path:`/`author:`/关键词/SHA、可拖拽分栏与提交 Diff 检视）以及 **Branches**（点击 Worktree 直切 Space、点击任意本地/远程分支只读查看该分支 Log 而不改动工作区、只读查看 Stash 着色 Diff）。
 - **Review**（可选）：同一个面板的另一页，看当前 worktree 待评审的内容。Files 和 Review 各记文件、阅读位置、换行和树宽，切页恢复各自的状态。
@@ -101,6 +101,7 @@ cd herdr-t3
 | `cmd-shift-b` / `ctrl-shift-b` | 侧栏在 Inbox 和 Lists 之间切换 |
 | `cmd-shift-s` / `ctrl-shift-s` | Settle 当前查看的 agent 并回到 Home，已 Settle 的则取回 |
 | `cmd-]` / `ctrl-shift-]`、`cmd-[` / `ctrl-shift-[` | 按侧栏的顺序到下一个或上一个 agent |
+| `cmd-ctrl-left` / `ctrl-alt-left`、`cmd-ctrl-right` / `ctrl-alt-right` | 跨 space 在最近访问过的标签与窗格间后退／前进（亦支持 `Alt + 鼠标侧键`） |
 | `cmd-p` / `ctrl-shift-p` | 跳到任一窗格 |
 | `cmd-alt-p` / `ctrl-alt-p` | Better Search 全局搜索（标签、Agent、命令、文件、Space、输出） |
 | `cmd-shift-h` / `ctrl-shift-h` | 回到 Home |

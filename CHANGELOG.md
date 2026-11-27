@@ -2,6 +2,19 @@
 
 English · [中文](CHANGELOG.zh-CN.md)
 
+## 2026-11-27
+
+- Added automatic **Antigravity conversation title resolution** (`mods/t3-tabs/resolve-agy-titles.cjs`, `shared/name.js`, `shared/store.js`): since `agy` does not emit OSC terminal titles, `t3-tabs` resolves real conversation titles read-only from `~/.gemini/antigravity-cli/conversation_summaries.db` (with `history.jsonl` fallback) into `t3.agentTitles` only while local Antigravity agents are live, surfacing them consistently across Inbox, Lists, tabs, pane headers, and Go to; also extended `shared/name.js` and `mods/t3-inbox/row-view.js` to strip redundant leading `π ` / `π > ` marks for both `pi` and `omp`.
+- Redesigned **Inbox cards & settled/snoozed rows** (`mods/t3-inbox/row-view.js`) with an Orca-inspired 3-line hierarchy: borderless `rounded-lg` cards at rest (framed only when active or needing attention), a unified 14px left lane aligning status dot/spinner → program icon → git-branch icon across all three lines, task title leading on line 1 (stripping duplicate leading `π ` / `π > ` from Pi titles) with lightweight borderless right state/duration text, live working directory name (`pane.cwd`) on line 2 instead of generic space names like `wsl2`, and remote machine marks placed on line 3 (or line 2 when there is no branch) so titles stay clear; slim Settled/Snoozed rows match the program icon with folder tooltip.
+- Added **Terminal File Link Handler** (`mods/t3-links`, wired via `link_handlers` in `layouts/herdr-t3.json`): Cmd-click / Ctrl-click a file path in any local or remote terminal (including `path:42`, `path:42:7`, `path(42,7)`, `path:5-12`, `path#L42`) to open it directly in the Space Panel's `Files` page and highlight the target line; archives, PDFs, folders, missing files, and paths outside the space root pass through to Herdr's default opener.
+- Upgraded **Files** (`mods/t3-files`) with **`:line[:col]` jump** and **read-only ripgrep full-text content search**:
+  - Typing `file.js:42` or `:42` (or opening via `t3-links` / `t3-files.open:path:line`) jumps directly to and highlights that line in the code viewer, switching Markdown/SVG/HTML to Code view when a line is requested, and displays `L<n>` in the toolbar meta badge.
+  - Added a `Files | Text` mode switch in the search bar with Match Case (`Aa`) and Regex (`.*`) toggles, debounced read-only `rg --json` search (local and remote), CJK-accurate snippet highlighting, click/Enter jump to the exact match, and 1-click `@path:L<line>` handoff to the active agent.
+  - Added `t3.filesOpen` shared handoff (`shared/store.js`, `mods/better-search/main.js`) so file-open requests from `t3-links` and `better-search` work reliably even before `t3-files` has mounted once.
+- Added **Cross-Space Back & Forward History** (`mods/t3-tabs`): remembers up to 100 `(space, tab, pane)` visits in memory (skipping Home and closed tabs, updating focused pane within a tab), accessible via `t3-tabs.back` / `t3-tabs.forward` (`cmd-ctrl-left` / `cmd-ctrl-right`, `ctrl-alt-left` / `ctrl-alt-right`, command palette, and `Alt + mouse Back/Forward` side buttons).
+- Polished **Layout visuals** (`layouts/herdr-t3.json`): added `divider.hover: "accent"` for clearer resize feedback and subtle `veil: 0.18` on unfocused split panes in `main`.
+- Fixed `scripts/check-windows.ps1` handling of `herdr-app check` output under Windows PowerShell 5.1.
+
 ## 2026-11-25
 
 - Fixed blank diff viewport in **Git** (`mods/t3-changes`) when line wrap was off (moved line/hunk `@` Agent handoff clicks out of `v_virtual_list`'s item renderer onto `on_item_click` + pointer `x` hit-testing, and placed hunk `@L<n>` chips next to `@@` so they stay visible on wide lines), and upgraded **line wrap** (`diff.wrap`) to CJK-aware, character-level virtualized wrapping (`wrapRowLines` + measured font widths) so long comments and strings wrap cleanly without clipping or the 600-line cap.

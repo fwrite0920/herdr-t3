@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, Popup } from "gpui-base";
-import { spaces, panes, agents, terminals, run, openOverlay, focused, notify, theme, window, layout, settings, props, shared, setShared, nextCommand, exec } from "herdr";
+import { spaces, panes, agents, terminals, run, openOverlay, focused, notify, theme, window, layout, settings, props, shared, setShared, nextCommand, exec, home, appHome } from "herdr";
 import { modStatus, namer, programOf } from "./name.js";
 import { notNews, ownStatus, stillSettled, subAgents, treeStatus } from "./tree.js";
 import { tip, glow } from "./tip.js";
@@ -111,6 +111,9 @@ export default class Tabs extends View {
     });
     if (part !== "keys") return;
     nav().arrive = (space) => { this.fitRow(window()); restorePanel(this, space); };
+    this.agySig = ""; this.agyAt = 0; this.agyBusy = false;
+    cx.timer.every(3000, (cx) => this.syncAgyTitles(cx));
+    cx.timer.after(400, (cx) => this.syncAgyTitles(cx));
     // Only this copy answers: every other copy would open its own dialog.
     cx.spawn(async (cx) => {
       for (;;) {
@@ -136,6 +139,47 @@ export default class Tabs extends View {
   }
 
   get navigation() { return nav(); }
+
+  // Resolves real conversation titles for local Antigravity (`agy`) agents that do not emit OSC terminal titles.
+  // Runs only when at least one local Antigravity agent is live and its fingerprint changed (or it still lacks a title).
+  syncAgyTitles(cx) {
+    if (window()?.active === false || this.agyBusy || typeof appHome !== "function" || typeof home !== "function") return;
+    const all = terminals(), ps = panes();
+    const liveSet = new Set(all.map((k) => k.address));
+    const current = shared(KEY.agentTitles) ?? {};
+    const agys = agents().filter((a) => !a.address.includes("/") && /^(antigravity|agy)$/i.test(String(a.program?.key ?? "")));
+    if (!agys.length) {
+      const pruned = Object.fromEntries(Object.entries(current).filter(([addr]) => liveSet.has(addr)));
+      if (Object.keys(pruned).length !== Object.keys(current).length) setShared(KEY.agentTitles, pruned);
+      this.agySig = "";
+      return;
+    }
+    const targets = agys.map((a) => {
+      const k = all.find((x) => x.address === a.address);
+      const p = ps.find((x) => x.pane === a.pane || x.terminal === a.address);
+      return { address: a.address, cwd: p?.cwd || k?.cwd || "", status: a.status, turn: k?.turn ?? 0 };
+    });
+    const sig = JSON.stringify(targets);
+    const missing = targets.some((t) => !current[t.address]);
+    if (sig === this.agySig && (!missing || Date.now() - this.agyAt < 5000)) return;
+    this.agySig = sig;
+    this.agyAt = Date.now();
+    this.agyBusy = true;
+    cx.spawn(async () => {
+      try {
+        const script = `${appHome()}/mods/t3-tabs/resolve-agy-titles.cjs`;
+        const r = await exec("node", [script, home(), JSON.stringify(targets)], { timeout: 4000 }).catch(() => null);
+        if (r?.code !== 0 || !r.stdout) return;
+        const found = JSON.parse(r.stdout);
+        const nowLive = new Set(terminals().map((k) => k.address));
+        const prev = shared(KEY.agentTitles) ?? {};
+        const next = Object.fromEntries(Object.entries({ ...prev, ...found }).filter(([addr, val]) => nowLive.has(addr) && Boolean(val)));
+        if (JSON.stringify(next) !== JSON.stringify(prev)) setShared(KEY.agentTitles, next);
+      } catch {} finally {
+        this.agyBusy = false;
+      }
+    });
+  }
 
   // `given`: an agent's menu names it; the key takes the agent in view.
   async settle(cx, given = null) {
@@ -335,7 +379,14 @@ export default class Tabs extends View {
       keepRecent();
       this.navigation.frame();
       this.fitRow(w);
-      return div();
+      const mouseHistory = (e, cx) => {
+        const m = e.modifiers;
+        if (!m?.alt || m.shift || m.control || m.platform || m.function) return;
+        if (e.button !== "back" && e.button !== "forward") return;
+        cx.stop_propagation();
+        run(e.button === "back" ? "t3-tabs.back" : "t3-tabs.forward");
+      };
+      return div().on_mouse_down_out(mouseHistory).on_mouse_down("back", mouseHistory).on_mouse_down("forward", mouseHistory);
     }
     const stopPress = (_e, cx) => cx.stop_propagation();
     // 24 as T3's tab bar +; the window's own buttons 28, as its titlebar controls.

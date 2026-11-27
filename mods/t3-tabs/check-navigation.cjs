@@ -834,6 +834,51 @@ async function check() {
     f.state["t3-inbox.rows"] = { order: ["A", "S"], view: "A", cards: 1 };
     assert.deepEqual([view.nextCard("A"), f.calls], [false, []], "a settled row isn't a card");
   }
+
+  // Cross-space Back and Forward history: records visits, updates pane within a tab, skips closed tabs,
+  // lands back from Home, ignores intermediate arrival frames, and truncates forward stack on new branch.
+  {
+    const f = fixture(), list = f.spaces(), ps = f.panes(), view = f.navigation();
+    list.push({ id: "h", name: "Home\u200b", named: true, machine: null, active: false, tabs: [{ id: "ht", active: true }] });
+    f.state["t3-tabs.home"] = "h";
+    ps.push({ pane: "p0b", tab: "b0", terminal: "t0b" });
+    const show = (si, tabId, paneId) => {
+      list.forEach((s, idx) => { s.active = idx === si; s.tabs.forEach((c) => { c.active = c.id === tabId; }); });
+      Object.assign(f.shown, { space: list[si].id, tab: tabId, pane: paneId });
+      view.frame();
+    };
+    show(0, "b0", "p0");
+    // Switching pane inside b0 updates the pane without duplicating the visit.
+    show(0, "b0", "p0b");
+    show(1, "b1", null);
+    show(2, "b2", "p2");
+
+    // Back from s2/b2 -> s1/b1
+    f.calls.length = 0;
+    await view.handle("back", f.cx);
+    assert.deepEqual(plain(f.calls), [["tab.select", { id: "b1" }]], "back steps to previous tab across spaces");
+    show(1, "b1", null);
+
+    // Back from s1/b1 -> s0/b0 with its last focused split pane p0b
+    f.calls.length = 0;
+    await view.handle("back", f.cx);
+    assert.deepEqual(plain(f.calls), [["tab.select", { id: "b0" }], ["pane.focus", { pane: "p0b" }]], "back restores last focused pane in tab");
+    show(0, "b0", "p0b");
+
+    // Forward skips closed b1 and lands on s2/b2
+    list[1].tabs = [];
+    f.calls.length = 0;
+    await view.handle("forward", f.cx);
+    assert.deepEqual(plain(f.calls), [["tab.select", { id: "b2" }], ["pane.focus", { pane: "p2" }]], "forward skips closed tab");
+    show(2, "b2", "p2");
+
+    // Going to Home isn't pushed; pressing Back from Home returns to the last real tab (b2).
+    show(3, "ht", null);
+    f.calls.length = 0;
+    await view.handle("back", f.cx);
+    assert.deepEqual(plain(f.calls), [["tab.select", { id: "b2" }], ["pane.focus", { pane: "p2" }]], "back from Home returns to last real tab");
+    show(2, "b2", "p2");
+  }
 }
 
 (async () => {

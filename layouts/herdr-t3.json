@@ -6,8 +6,9 @@
   },
   "type": "row",
   "preview": "layouts/herdr-t3.svg",
-  "divider": { "width": 1, "color": "border" },
+  "divider": { "width": 1, "color": "border", "hover": "accent" },
   "terminal_menu": "t3-menu",
+  "link_handlers": ["t3-links"],
   "floating": [
     { "id": "tabs-keys", "content": { "mod": "t3-tabs", "props": { "part": "keys" } }, "edge": "bottom", "align": "end" }
   ],
@@ -120,6 +121,7 @@
                         "position": "top"
                       },
                       "background": "background",
+                      "veil": 0.18,
                       "border": {
                         "width": 1,
                         "color": "border"

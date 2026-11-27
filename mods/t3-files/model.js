@@ -397,3 +397,84 @@ export function ticket(st, kind) {
   const n = st.tickets[kind] = (st.tickets[kind] ?? 0) + 1;
   return () => st.tickets[kind] === n;
 }
+
+// Parse optional trailing `:line` or `:line:col` from a file search query or `t3-files.open:` argument.
+// Supports `src/app.js:42`, `src/app.js:42:7`, or `:42` alone (for jumping in the currently open file).
+export function parseQueryLocation(raw) {
+  const text = String(raw ?? "").trim();
+  const m = /^(.*?):(\d+)(?::(\d+))?$/.exec(text);
+  if (!m) return { query: text, line: null, col: null };
+  const line = Number(m[2]), col = m[3] ? Number(m[3]) : null;
+  if (!(line > 0)) return { query: text, line: null, col: null };
+  return { query: m[1].trim(), line, col: col && col > 0 ? col : null };
+}
+
+// Convert a 1-based line (and optional 1-based column + match length) into UTF-16 selection offsets for EditorState.
+export function lineRange(text, line, col = null, length = 0) {
+  const src = String(text ?? "");
+  const want = Math.max(1, Number(line) || 1);
+  const starts = [0];
+  for (let i = 0; i < src.length; i++) if (src.charCodeAt(i) === 10) starts.push(i + 1);
+  const clamped = Math.min(want, starts.length);
+  const lineStart = starts[clamped - 1];
+  const rawEnd = clamped < starts.length ? starts[clamped] - 1 : src.length;
+  const lineEnd = rawEnd > lineStart && src.charCodeAt(rawEnd - 1) === 13 ? rawEnd - 1 : rawEnd;
+  const ctxLine = Math.min(starts.length, clamped + 4);
+  const contextAfter = starts[ctxLine - 1];
+  if (length > 0 && col != null && col > 0) {
+    const start = Math.min(lineEnd, lineStart + col - 1);
+    const end = Math.min(lineEnd, start + length);
+    return { line: clamped, start, end, contextAfter };
+  }
+  return { line: clamped, start: lineStart, end: lineEnd, contextAfter };
+}
+
+// Convert a UTF-8 byte offset within a single JS string line to its UTF-16 code-unit index (handles CJK/emoji accurately).
+function utf8ByteToUtf16(str, byteOffset) {
+  let bytes = 0, i = 0;
+  while (i < str.length && bytes < byteOffset) {
+    const cp = str.codePointAt(i);
+    bytes += cp <= 0x7f ? 1 : cp <= 0x7ff ? 2 : cp <= 0xffff ? 3 : 4;
+    i += cp > 0xffff ? 2 : 1;
+  }
+  return i;
+}
+
+// Parse `rg --json` stdout into flat content-search matches, capped at `limit`.
+export function parseRgJson(stdout, limit = 200) {
+  const matches = [];
+  let truncated = false;
+  for (const rawLine of String(stdout ?? "").split(/\r?\n/)) {
+    if (!rawLine) continue;
+    let ev;
+    try { ev = JSON.parse(rawLine); } catch { continue; }
+    if (ev?.type !== "match") continue;
+    const d = ev.data;
+    const rawPath = d?.path?.text;
+    const lineText = d?.lines?.text;
+    const line = Number(d?.line_number);
+    if (!rawPath || typeof lineText !== "string" || !(line > 0)) continue;
+    if (matches.length >= limit) { truncated = true; break; }
+    const path = rawPath.replace(/\\/g, "/").replace(/^\.\//, "");
+    const clean = lineText.replace(/\r?\n$/, "");
+    const subs = Array.isArray(d.submatches) ? d.submatches : [];
+    const ranges = [];
+    for (const s of subs) {
+      if (typeof s?.start !== "number" || typeof s?.end !== "number" || s.end <= s.start) continue;
+      const start = utf8ByteToUtf16(clean, s.start);
+      const end = utf8ByteToUtf16(clean, s.end);
+      if (end > start) ranges.push([start, end]);
+    }
+    const first = ranges[0];
+    const col = first ? first[0] + 1 : 1;
+    const length = first ? first[1] - first[0] : 0;
+    const leadWs = clean.length - clean.trimStart().length;
+    const snippet = clean.slice(leadWs);
+    const clip = snippet.length > 180 ? snippet.slice(0, 180) : snippet;
+    const snipRanges = ranges
+      .map(([a, b]) => [Math.max(0, a - leadWs), Math.min(clip.length, b - leadWs)])
+      .filter(([a, b]) => b > a);
+    matches.push({ path, line, col, length, snippet: clip, ranges: snipRanges });
+  }
+  return { matches, truncated };
+}

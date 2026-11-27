@@ -3,15 +3,21 @@
 // A tab's name is its one agent's: with two in the tab, or for a sub-agent, it would name them alike, as Herdr's agents list stopped doing.
 // A terminal with no title of its own reports its address (t9) as one: that tells nothing.
 import { terminals, spaces, shared, agents } from "herdr";
+import { KEY } from "./store.js";
 
 const clean = (s) => (s ?? "").replace(/^[^\p{L}\p{N}]+/u, "").trim();
 // Windows consoles/ConPTY prepend "Administrator: " / "管理员: " (sometimes repeated) to the executable path or title.
 const WIN_ADMIN = /^(?:(?:Administrator|管理员):\s*)+/i;
-// Agents' own title marks, by program (the key their status report names): Pi's "π - <session> - <folder>",
+// Agents' own title marks, by program (the key their status report names): Pi/OMP's "π - <session> - <folder>" / "π > <session>" / "π <session>",
 // OpenCode's "OC | <session>". Only theirs come off: another agent's title that happens to look alike stays.
-const MARK = { pi: /^π - /u, opencode: /^OC \| / };
+const MARK = { pi: /^π\s*(?:-\s*|>\s*)?/u, omp: /^π\s*(?:-\s*|>\s*)?/u, opencode: /^OC \| / };
+const stripPi = (s, folder) => {
+  s = s.replace(MARK.pi, "").trim();
+  return folder && s.endsWith(` - ${folder}`) ? s.slice(0, -folder.length - 3) : s;
+};
 const OWN = {
-  pi: (s, folder) => { s = s.replace(MARK.pi, ""); return folder && s.endsWith(` - ${folder}`) ? s.slice(0, -folder.length - 3) : s; },
+  pi: stripPi,
+  omp: stripPi,
   opencode: (s) => s.replace(MARK.opencode, ""),
   codex: (s) => s.replace(/\s+\|\s+[^|]+$/, ""),
 };
@@ -49,7 +55,8 @@ export function namer() {
     const telling = live && live !== x.program?.name && live.toLowerCase() !== x.program?.key
       && !/^[~/]|^[A-Za-z]:[\\/]/.test(live) && !/^\S+@\S+/.test(live) && live !== address
       && live !== folder && live !== (x.space_name ?? tab?.space);
+    const resolved = shared(KEY.agentTitles)?.[address];
     return (x.program?.key === "pi" && term.get(address)?.labels?.["pi.session"]) || (x.status != null && tab?.named && !sub(address) && (leads.get(x.tab) ?? 0) < 2 && tab.name)
-      || (telling && live) || x.program?.name || address || "shell";
+      || (telling && live) || resolved || x.program?.name || address || "shell";
   };
 }

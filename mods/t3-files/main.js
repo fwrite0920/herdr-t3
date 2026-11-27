@@ -14,11 +14,11 @@ import { TREE_ROW, treeRows, rowAt, treeKey, treeList, treeRow, revealRow, sortE
 import { withTopNav, navToggle, foldAllButton, ghostButton, navOpen, setNavOpen, holdWidth } from "./nav-column.js";
 import { fileMenuItems, fileMenuView, agentFor, runCommon, mention } from "./file-menu.js";
 import { button as drawButton } from "./button.js";
-import { migratePagePrefs, wrapLines, setWrapLines } from "./store.js";
+import { KEY, migratePagePrefs, wrapLines, setWrapLines } from "./store.js";
 import { loadingState, emptyState, errorBar } from "./panel-states.js";
 import { LIST, IGNORED, PROBE, REMOTE_SEARCH, RANKED, join, parentOf, nameOf, ancestors, parseListing, parseStatus, parseIgnored, markIgnored, folderEntries, terms, narrows,
   filterPaths, rank, extOf, kindOf, isSvg, isJson, isHtml, formatBytes, imageDimensions, svgDimensions, defaultImageMode, computeImageLayout, stepImageZoom, formatJsonPreview,
-  resolveRelPath, describeFileKind, languageOf, readProblem, failedRead, ticket, resolveRoot } from "./model.js";
+  resolveRelPath, describeFileKind, languageOf, readProblem, failedRead, ticket, resolveRoot, parseQueryLocation, lineRange, parseRgJson } from "./model.js";
 
 const MOD = "mods/t3-files";
 const RESULTS = 200, REMOTE_IMAGE = 4 * 1024 * 1024, TEXT_MAX = 1024 * 1024, HEAD_PREVIEW = 256 * 1024;
@@ -64,7 +64,9 @@ const trimHeadPreview = (text) => {
 // What one space's page knows and shows.
 function blank(sp, root = sp.folder ?? "") {
   return { id: sp.id, root, on: sp.machine ?? null, git: undefined, entries: new Map(), expanded: new Set(), ignored: new Set(),
-    marks: new Map(), dirs: new Set(), version: 0, file: null, recent: [], view: null, lit: null, focus: null, query: "", at: -1, results: null, total: 0, paths: null };
+    marks: new Map(), dirs: new Set(), version: 0, file: null, recent: [], view: null, lit: null, focus: null, query: "", at: -1,
+    results: null, total: 0, paths: null, searchMode: "files", matchCase: false, useRegex: false,
+    textResults: null, textLoading: false, textError: null, textTruncated: false, jumpLine: null };
 }
 
 export default class Files extends View {
@@ -73,9 +75,25 @@ export default class Files extends View {
     this.states = new Map();
     this.uf = new (/** @type {any} */ (uFuzzy))();
     this.treeHandle = cx.focus_handle();
-    this.search = InputState.new({ placeholder: "Search files" });
-    this.search.on("change", (_e, cx) => { const st = this.current(); if (st && this.search.value() !== st.query) this.find(st, this.search.value(), cx); });
-    this.search.on("submit", (_e, cx) => { const st = this.current(); const r = st?.results?.[st.at]; if (r) this.pick(st, r.path, cx); });
+    this.search = InputState.new({ placeholder: "Search files or text" });
+    this.search.on("change", (_e, cx) => { const st = this.current(); if (st && this.search.value() !== st.query) this.runSearch(st, this.search.value(), cx); });
+    this.search.on("submit", (_e, cx) => {
+      const st = this.current();
+      if (!st) return;
+      if (st.searchMode === "text") {
+        const m = st.textResults?.[st.at];
+        if (m) this.pickMatch(st, m, cx);
+        return;
+      }
+      const loc = parseQueryLocation(st.query);
+      if (!loc.query && loc.line && st.file) {
+        st.query = ""; st.results = null; st.at = -1; this.search.set_value("");
+        this.open(st, st.file, cx, false, { line: loc.line, col: loc.col });
+        return;
+      }
+      const r = st.results?.[st.at];
+      if (r) this.pick(st, r.path, cx, loc.line ? { line: loc.line, col: loc.col } : null);
+    });
     this.handle = cx.focus_handle();
     this.navOpen = navOpen();
     // The width the code is laid out at, behind its room while that moves (codeView, nav-column.js holdWidth).
@@ -86,6 +104,9 @@ export default class Files extends View {
     this.imgBox = null;
     this.imgBg = "auto";
     this.cached = new Set();
+    // Last consumed `t3.filesOpen` timestamp, kept in memory for this run only (只记本次运行).
+    this.lastOpenAt = 0;
+    this.openQueuedAt = 0;
     // The state being worked for, and a count that moves each time that changes (going).
     this.awake = null; this.gen = 0;
     cx.spawn(async () => {
@@ -95,7 +116,7 @@ export default class Files extends View {
     });
     // A hidden copy isn't drawn, so this is what sees it go out of view.
     cx.timer.every(1000, (cx) => { this.sync(cx); this.poll(cx); });
-    // `t3-files.open:<path from the space's folder>` and `t3-files.search:<words>`, for keys and scripts (the demo's);
+    // `t3-files.open:<path from the space's folder>[:line[:col]]` and `t3-files.search:<words>`, for keys and scripts (the demo's);
     // `t3-files.close`, cmd-w while it has the keyboard, closes the panel as T3's does.
     cx.spawn(async (cx) => {
       for (;;) {
@@ -106,17 +127,29 @@ export default class Files extends View {
           const sp = spaces().find((s) => s.active);
           const target = st ?? (sp ? this.stateFor(sp) : null);
           if (!target) continue;
+          const loc = parseQueryLocation(arg);
+          const rel = loc.query || arg;
+          const jump = loc.line ? { line: loc.line, col: loc.col } : null;
           if (this.awake === target && this.shown()) {
-            this.open(target, arg, cx);
-            this.reveal(target, arg, cx);
+            this.open(target, rel, cx, false, jump);
+            this.reveal(target, rel, cx);
           } else {
-            target.file = arg;
-            for (const a of ancestors(arg)) target.expanded.add(a);
-            this.pendingOpen = { id: target.id, path: arg };
+            target.file = rel;
+            for (const a of ancestors(rel)) target.expanded.add(a);
+            this.pendingOpen = { id: target.id, path: rel, target: jump };
             this.sync(cx);
           }
         }
-        else if (st && what === "search") { this.search.set_value(arg); this.find(st, arg, cx); }
+        else if (st && what === "search") {
+          st.searchMode = "files";
+          this.search.set_value(arg);
+          this.find(st, arg, cx);
+        }
+        else if (st && what === "search-text") {
+          st.searchMode = "text";
+          this.search.set_value(arg);
+          this.findText(st, arg, cx);
+        }
       }
     });
   }
@@ -180,13 +213,34 @@ export default class Files extends View {
   drop(st) {
     st.view?.code?.release();
     if (st.view?.image) this.uncache(st.view.image);
-    Object.assign(st, { view: null, entries: new Map(), ignored: new Set(), marks: new Map(), dirs: new Set(), rows: null, paths: null, lower: null, last: null, results: null });
+    Object.assign(st, { view: null, entries: new Map(), ignored: new Set(), marks: new Map(), dirs: new Set(), rows: null, paths: null, lower: null, last: null, results: null, textResults: null, textLoading: false, textError: null, textTruncated: false });
   }
 
   // A space let go of, keeping its file, recent list, open folders and search's words.
   slim(st) {
     this.drop(st);
-    return Object.assign(blank({ id: st.id, folder: st.root, machine: st.on }, st.root), { file: st.file, recent: [...(st.recent ?? [])], expanded: new Set(st.expanded), focus: st.focus, query: st.query });
+    return Object.assign(blank({ id: st.id, folder: st.root, machine: st.on }, st.root), { file: st.file, recent: [...(st.recent ?? [])], expanded: new Set(st.expanded), focus: st.focus, query: st.query, searchMode: st.searchMode });
+  }
+
+  // Consumes a cross-mod open request (`t3.filesOpen` from t3-links or better-search) outside render().
+  consumeOpenRequest(cx) {
+    const req = shared(KEY.filesOpen);
+    if (!req?.path || !(req.at > this.lastOpenAt)) return;
+    const sp = spaces().find((s) => s.active);
+    if (!sp || (req.space && req.space !== sp.id)) return;
+    this.lastOpenAt = req.at;
+    setShared(KEY.filesOpen, null);
+    const st = this.stateFor(sp);
+    const jump = req.line ? { line: req.line, col: req.col ?? null, length: req.length ?? 0 } : null;
+    if (this.awake === st && this.shown()) {
+      this.open(st, req.path, cx, false, jump);
+      this.reveal(st, req.path, cx);
+    } else {
+      st.file = req.path;
+      for (const a of ancestors(req.path)) st.expanded.add(a);
+      this.pendingOpen = { id: st.id, path: req.path, target: jump };
+      this.sync(cx);
+    }
   }
 
   // It works only while it shows: the page in the open panel, the window in front, for the active space. Shown, it reads at
@@ -201,9 +255,9 @@ export default class Files extends View {
     this.watchLocal(st, cx);
     if (st.git === undefined) this.load(st, cx); else this.recheck(st, cx);
     if (this.pendingOpen?.id === st.id) {
-      const p = this.pendingOpen.path;
+      const { path: p, target } = this.pendingOpen;
       this.pendingOpen = null;
-      this.open(st, p, cx);
+      this.open(st, p, cx, false, target ?? null);
       this.reveal(st, p, cx);
     }
   }
@@ -355,7 +409,7 @@ export default class Files extends View {
     cx.spawn(async (cx) => {
       await this.refresh(st, cx);
       // A search showing, found again, the lit result kept lit; each asks only while it shows.
-      if (st.query) this.find(st, st.query, cx, st.results?.[st.at]?.path ?? null);
+      if (st.query && st.searchMode !== "text") this.find(st, st.query, cx, st.results?.[st.at]?.path ?? null);
       if (st.file && !st.view?.image) this.open(st, st.file, cx, true);
     });
   }
@@ -401,11 +455,16 @@ export default class Files extends View {
   }
 
   // A search result: the file opens, and the tree shows where it is.
-  pick(st, path, cx) {
+  pick(st, path, cx, target = null) {
     st.query = ""; st.results = null; st.at = -1;
     this.search.set_value("");
-    this.open(st, path, cx);
+    this.open(st, path, cx, false, target);
     this.reveal(st, path, cx);
+  }
+
+  // A text-search match: keeps the match list open so you can walk hits, opens the file at the exact match.
+  pickMatch(st, m, cx) {
+    this.open(st, m.path, cx, false, { line: m.line, col: m.col, length: m.length });
   }
 
   // Closes an opened file tab: switches to the previous recent file if any, or returns to full-height tree browsing.
@@ -420,17 +479,46 @@ export default class Files extends View {
     if (st.view?.image) this.uncache(st.view.image);
     st.file = null;
     st.view = null;
+    st.jumpLine = null;
     if (!this.navOpen) { this.navOpen = true; setNavOpen(true); }
     this.changed(st);
     cx.notify();
   }
 
+  // Scrolls and highlights a 1-based line (or exact match) inside the readonly code editor.
+  applyJump(st, view, target, cx) {
+    if (!view?.code || !target?.line) return;
+    const text = view.jsonMode === "pretty" && view.prettyText ? view.prettyText : view.text;
+    if (typeof text !== "string") return;
+    const r = lineRange(text, target.line, target.col, target.length);
+    st.jumpLine = r.line;
+    view.code.set_selected_range?.({ start: r.contextAfter, end: r.contextAfter });
+    const code = view.code;
+    cx.timer.after(16, (cx) => {
+      if (st.view?.code !== code) return;
+      code.set_selected_range?.({ start: r.start, end: r.end });
+      code.focus?.();
+      cx.notify();
+    });
+  }
+
   // Shows a file; `again` reads it again where it may have changed, and leaves it as it was if it hasn't.
-  open(st, rel, cx, again = false) {
+  open(st, rel, cx, again = false, target = null) {
+    if (!again && target?.line && st.file === rel && st.view && !st.view.loading && !st.view.problem && st.view.text !== undefined) {
+      const v = st.view;
+      if (kindOf(rel) === "markdown" && shared(MARKDOWN) !== "code") setShared(MARKDOWN, "code");
+      if (isSvg(rel)) v.svgMode = "code";
+      if (isHtml(rel)) v.htmlMode = "code";
+      if (!v.code) this.editor(v, rel);
+      this.applyJump(st, v, target, cx);
+      cx.notify();
+      return;
+    }
     if (!again) {
       if (st.view?.code) st.view.code.release();
       if (st.view?.image) this.uncache(st.view.image);
       st.file = rel; st.lit = null; st.view = { loading: true };
+      st.jumpLine = target?.line ?? null;
       st.recent = [rel, ...(st.recent ?? []).filter((p) => p !== rel)].slice(0, RECENT_MAX);
       this.changed(st);
       cx.notify();
@@ -452,23 +540,26 @@ export default class Files extends View {
         view.imgManual = again ? Boolean(old?.imgManual) : false;
         view.imgScale = again && old?.imgScale ? old.imgScale : 1;
       }
-      if (isSvg(rel)) view.svgMode = again && old?.svgMode ? old.svgMode : "preview";
-      if (isHtml(rel)) view.htmlMode = again && old?.htmlMode ? old.htmlMode : "code";
+      if (isSvg(rel)) view.svgMode = target?.line ? "code" : (again && old?.svgMode ? old.svgMode : "preview");
+      if (isHtml(rel)) view.htmlMode = target?.line ? "code" : (again && old?.htmlMode ? old.htmlMode : "code");
+      if (kind === "markdown" && target?.line && shared(MARKDOWN) !== "code") setShared(MARKDOWN, "code");
       if (isJson(rel) && view.text !== undefined && !view.truncated) {
         const fmt = formatJsonPreview(view.text);
         if (fmt) {
           view.prettyText = fmt.pretty;
-          view.jsonMode = again && old?.jsonMode ? old.jsonMode : fmt.minified ? "pretty" : "raw";
+          view.jsonMode = target?.line ? "raw" : (again && old?.jsonMode ? old.jsonMode : fmt.minified ? "pretty" : "raw");
         }
       }
       const needsCode = view.text !== undefined && (
-        (kind === "text" && (!isHtml(rel) || view.htmlMode === "code"))
+        Boolean(target?.line)
+        || (kind === "text" && (!isHtml(rel) || view.htmlMode === "code"))
         || (kind === "markdown" && shared(MARKDOWN) === "code")
         || (isSvg(rel) && view.svgMode === "code")
       );
       if (needsCode) this.editor(view, rel);
       if (old?.code) old.code.release();
       st.view = view;
+      if (target?.line && view.code) this.applyJump(st, view, target, cx);
       cx.notify();
     });
   }
@@ -666,12 +757,19 @@ export default class Files extends View {
     runCommon("open", { abs, rel, agent: null, platform }, cx);
   }
 
-  // Every term in the path, case aside. Here, over the folder's whole list, kept until the next refresh; elsewhere, there.
+  runSearch(st, query, cx) {
+    if (st.searchMode === "text") this.findText(st, query, cx);
+    else this.find(st, query, cx);
+  }
+
+  // Every term in the path, case aside (stripping an optional trailing `:line[:col]`).
   // `keep`: the path to keep lit, if it's still found.
   find(st, query, cx, keep = null) {
     st.query = query;
+    st.textResults = null; st.textLoading = false; st.textError = null;
     if (!keep) st.at = 0;
-    const words = terms(query), fresh = this.fresh(st, "search");
+    const cleanQuery = parseQueryLocation(query).query;
+    const words = terms(cleanQuery), fresh = this.fresh(st, "search");
     if (!words.length) { st.results = null; cx.notify(); return; }
     if (!fresh()) return;
     cx.spawn(async (cx) => {
@@ -679,7 +777,7 @@ export default class Files extends View {
       if (st.on) {
         await cx.sleep(200);
         if (!fresh()) return;
-        const r = await exec("sh", ["-c", REMOTE_SEARCH, "search", query], { cwd: st.root, on: st.on }).catch(() => null);
+        const r = await exec("sh", ["-c", REMOTE_SEARCH, "search", cleanQuery], { cwd: st.root, on: st.on }).catch(() => null);
         if (!fresh()) return;
         found = (r?.stdout ?? "").split("\n").filter(Boolean);
         total = found.length;
@@ -705,18 +803,76 @@ export default class Files extends View {
           st.lower = st.paths.map((p) => p.toLowerCase());
           st.last = null;
         }
-        const from = narrows(query, st.last?.query) ? st.last.idx : null;
+        const from = narrows(cleanQuery, st.last?.query) ? st.last.idx : null;
         const idx = await filterPaths(st.lower, words, from, () => cx.sleep(0), fresh);
         if (!idx) return;
-        st.last = { query, idx };
+        st.last = { query: cleanQuery, idx };
         total = idx.length;
         found = idx.slice(0, total <= RANKED ? RANKED : RESULTS).map((i) => st.paths[i]);
         st.more = false;
       }
-      st.results = found.length <= RANKED ? rank(this.uf, found, query, RESULTS) : found.slice(0, RESULTS).map((path) => ({ path, ranges: [] }));
+      st.results = found.length <= RANKED ? rank(this.uf, found, cleanQuery, RESULTS) : found.slice(0, RESULTS).map((path) => ({ path, ranges: [] }));
       st.total = total;
       const kept = keep ? st.results.findIndex((r) => r.path === keep) : -1;
       st.at = kept >= 0 ? kept : Math.min(Math.max(keep ? 0 : st.at, 0), st.results.length - 1);
+      cx.notify();
+    });
+    cx.notify();
+  }
+
+  // Read-only full-text search across the space using ripgrep (`rg --json`), local or remote.
+  findText(st, query, cx) {
+    st.query = query;
+    st.results = null;
+    st.at = 0;
+    const trimmed = query.trim();
+    const fresh = this.fresh(st, "text");
+    if (!trimmed) {
+      st.textResults = null; st.textLoading = false; st.textError = null; st.textTruncated = false;
+      cx.notify();
+      return;
+    }
+    if (!st.root || !fresh()) return;
+    st.textLoading = true;
+    st.textError = null;
+    cx.spawn(async (cx) => {
+      await cx.sleep(180);
+      if (!fresh()) return;
+      const args = ["--json", "--max-count", "40", "--max-columns", "300", "--max-filesize", "1M", "--no-messages"];
+      if (!st.matchCase) args.push("-i");
+      if (!st.useRegex) args.push("-F");
+      args.push("--", trimmed, ".");
+      const r = await exec("rg", args, { cwd: st.root, on: st.on, timeout: 10000 }).catch(() => null);
+      if (!fresh()) return;
+      st.textLoading = false;
+      if (!r) {
+        st.textResults = [];
+        st.textTruncated = false;
+        st.textError = "ripgrep (rg) is required for text search.";
+        cx.notify();
+        return;
+      }
+      if (r.code === 1) {
+        st.textResults = [];
+        st.textTruncated = false;
+        st.textError = null;
+        st.at = -1;
+        cx.notify();
+        return;
+      }
+      if (r.code !== 0 && !r.stdout) {
+        st.textResults = [];
+        st.textTruncated = false;
+        const msg = String(r.stderr || "").trim().split(/\r?\n/)[0];
+        st.textError = msg || "ripgrep (rg) is required for text search.";
+        cx.notify();
+        return;
+      }
+      const parsed = parseRgJson(r.stdout, RESULTS);
+      st.textResults = parsed.matches;
+      st.textTruncated = parsed.truncated;
+      st.textError = null;
+      st.at = parsed.matches.length ? 0 : -1;
       cx.notify();
     });
     cx.notify();
@@ -760,6 +916,12 @@ export default class Files extends View {
       old.release();
       cx.notify();
     });
+    // A cross-mod open request (`t3.filesOpen` from t3-links or better-search) is consumed right after render().
+    const openReq = shared(KEY.filesOpen);
+    if (openReq?.path && openReq.at > this.lastOpenAt && openReq.at !== this.openQueuedAt && (!openReq.space || openReq.space === sp.id)) {
+      this.openQueuedAt = openReq.at;
+      cx.timer.after(0, (cx) => this.consumeOpenRequest(cx));
+    }
     // The search field shows this space's words.
     if (this.searchFor !== st.id) { this.searchFor = st.id; if (this.search.value() !== st.query) this.search.set_value(st.query); }
     const bodyHeight = Math.max(240, (this.size?.height ?? 720) - 40);
@@ -779,7 +941,7 @@ export default class Files extends View {
       .child(div().flex_1().min_h(0).child(withTopNav(t, "t3-files", bodyHeight, {
         content: this.content(st, t),
         head: this.searchHead(st, t),
-        list: st.results ? this.found(st, t) : this.tree(st, t),
+        list: st.searchMode === "text" && st.query.trim() ? this.foundText(st, t) : st.results ? this.found(st, t) : this.tree(st, t),
         open: this.navOpen,
         fullNav: !st.file,
       })))
@@ -799,7 +961,9 @@ export default class Files extends View {
     const shownText = v?.jsonMode === "pretty" && v?.prettyText ? v.prettyText : v?.text;
     const lines = shownText !== undefined && !v?.image ? lineCount(shownText) : 0;
     const sizeText = v?.bytes != null && !v?.image ? formatBytes(v.bytes) : "";
-    const metaLabel = lines > 0 ? (sizeText ? `${count(lines)}L · ${sizeText}` : `${count(lines)}L`) : sizeText;
+    const lineTag = st.jumpLine && !v?.image ? `L${st.jumpLine}` : "";
+    const metaParts = [lineTag, lines > 0 ? `${count(lines)}L` : "", sizeText].filter(Boolean);
+    const metaLabel = metaParts.join(" · ");
     const codeActive = Boolean(v?.code && (
       (!md && !svgFile && !htmlFile)
       || (md && code)
@@ -1013,24 +1177,56 @@ export default class Files extends View {
       .child(Editor.new(code).h_full().when(hold.at != null, (el) => el.w(hold.at)).when(hold.at == null, (el) => el.w_full()));
   }
 
-  // The top pane's head: the search, match count, refresh, and Collapse all / Expand all. Its keys are the results'.
+  // The top pane's head: file/text mode toggle, search input, regex/case pills (text mode), match count, refresh, and fold all.
   searchHead(st, t) {
-    const results = st.results;
-    const matchLabel = results ? `${count(st.total)}${st.more ? "+" : ""}` : null;
+    const isText = st.searchMode === "text";
+    const list = isText ? st.textResults : st.results;
+    const matchLabel = isText
+      ? (st.textLoading ? "…" : st.textResults ? `${count(st.textResults.length)}${st.textTruncated ? "+" : ""}` : null)
+      : (st.results ? `${count(st.total)}${st.more ? "+" : ""}` : null);
+    const chip = (id, label, on, title, click) => div().id(id).h(20).px(6).flex().items_center().flex_none().rounded(4).text_size(11)
+      .role("button").accessibility_label(title)
+      .text_color(on ? t.foreground : t.muted)
+      .when(on, (el) => el.bg(t.selected).font_medium())
+      .when(!on, (el) => el.cursor_pointer().hover((s) => s.bg(t.foreground + "12").text_color(t.foreground)))
+      .on_click((_e, cx) => click(cx))
+      .child(label);
+    const setMode = (mode, cx) => {
+      if (st.searchMode === mode) return;
+      st.searchMode = mode;
+      st.at = -1;
+      if (st.query) this.runSearch(st, st.query, cx);
+      else { st.results = null; st.textResults = null; st.textError = null; cx.notify(); }
+    };
+    const clearSearch = (cx) => {
+      st.query = ""; st.results = null; st.textResults = null; st.textLoading = false; st.textError = null; st.at = -1;
+      this.search.set_value("");
+      cx.notify();
+    };
     return h_flex().id("t3-files-search").flex_1().min_w(0).h_full().gap(4).items_center()
       .on_key_down((e, cx) => {
-        if (e.key === "escape" && st.query) { st.query = ""; st.results = null; st.at = -1; this.search.set_value(""); }
-        else if (results?.length) { const to = step(e, st.at, results.length); if (to < 0) return; st.at = to; }
+        if (e.key === "escape" && st.query) { clearSearch(cx); cx.stop_propagation(); return; }
+        else if (list?.length) { const to = step(e, st.at, list.length); if (to < 0) return; st.at = to; }
         else return;
         cx.stop_propagation();
         cx.notify();
       })
       .child(svg(`${MOD}/icons/search.svg`).size(15).flex_none().text_color(t.dim))
       .child(Input.new(this.search).flex_1().h(26).text_size(12).text_color(t.foreground))
-      .when(Boolean(matchLabel), (el) => el.child(div().flex_none().px(4).text_size(11).text_color(t.dim).child(matchLabel)))
-      .when(Boolean(st.query), (el) => el.child(ghostButton(t, MOD, "t3-files-clear-search", "x", "Clear search", (cx) => {
-        st.query = ""; st.results = null; st.at = -1; this.search.set_value(""); cx.notify();
-      }, { view: this })))
+      .when(Boolean(matchLabel), (el) => el.child(div().flex_none().px(3).text_size(11).text_color(t.dim).child(matchLabel)))
+      .when(Boolean(st.query), (el) => el.child(ghostButton(t, MOD, "t3-files-clear-search", "x", "Clear search", (cx) => clearSearch(cx), { view: this })))
+      .when(isText, (el) => el.child(h_flex().flex_none().gap(2).items_center()
+        .child(chip("t3-files-match-case", "Aa", st.matchCase, "Match case", (cx) => {
+          st.matchCase = !st.matchCase;
+          if (st.query) this.findText(st, st.query, cx); else cx.notify();
+        }))
+        .child(chip("t3-files-use-regex", ".*", st.useRegex, "Use regular expression", (cx) => {
+          st.useRegex = !st.useRegex;
+          if (st.query) this.findText(st, st.query, cx); else cx.notify();
+        }))))
+      .child(h_flex().id("t3-files-search-mode").flex_none().gap(1).p(2).rounded(6).bg(t.raised).items_center()
+        .child(chip("t3-files-mode-files", "Files", !isText, "Search file names", (cx) => setMode("files", cx)))
+        .child(chip("t3-files-mode-text", "Text", isText, "Search file contents (ripgrep)", (cx) => setMode("text", cx))))
       .child(ghostButton(t, MOD, "t3-files-refresh", "rotate-cw", "Refresh files", (cx) => this.recheck(st, cx), { view: this }))
       .child(foldAllButton(t, MOD, "t3-files-fold-all", st.expanded.size === 0, (cx) => this.foldAll(st, cx), this));
   }
@@ -1102,10 +1298,12 @@ export default class Files extends View {
     };
     const draw = (i) => {
       const r = results[i], cut = r.path.lastIndexOf("/") + 1, dir = r.path.slice(0, Math.max(0, cut - 1));
+      const loc = parseQueryLocation(st.query);
+      const jump = loc.line ? { line: loc.line, col: loc.col } : null;
       return h_flex().id(`found-${i}`).h(TREE_ROW).mx(2).px(6.4).gap(4.8).items_center().rounded(6).text_size(12).overflow_hidden().whitespace_nowrap()
         .when(i === st.at, (el) => el.bg(t.foreground + "1f"))
         .on_hover((on, cx) => { if (on && st.at !== i) { st.at = i; cx.notify(); } })
-        .on_click((_e, cx) => this.pick(st, r.path, cx))
+        .on_click((_e, cx) => this.pick(st, r.path, cx, jump))
         .on_mouse_down("right", () => { this.menuFor = r.path; })
         .child(image(`${MOD}/${fileIcon(r.path)}`).size(16).flex_none())
         .child(h_flex().flex_none().children(pieces(r.path.slice(cut), cut, r.ranges, t.foreground)))
@@ -1116,6 +1314,50 @@ export default class Files extends View {
       .child(div().flex_1().min_h(0).child(scrollList(this, "t3-files-found", { count: results.length, row: TREE_ROW, at: st.at, draw, wheeled: (keep) => { st.at = keep; } }).size_full()))
       .when(!shownAll, (el) => el.child(div().flex_none().px(8).py(6).text_size(11).text_color(t.dim).truncate()
         .child(`${results.length} of ${count(st.total)}${st.more ? "+" : ""} matches · type more to narrow`)));
+  }
+
+  // Full-text ripgrep results: two-line rows with file:line, 1-click @ handoff, and highlighted snippet.
+  foundText(st, t) {
+    if (st.textLoading && !st.textResults?.length) return loadingState(t, "t3-files-text-loading", "Searching contents…");
+    if (st.textError) return div().id("t3-files-text-error").p(10).text_size(12).text_color(t.ansi1).child(st.textError);
+    const list = st.textResults ?? [];
+    if (!list.length) return div().id("t3-files-text-empty").p(10).text_size(12).text_color(t.dim).child("No matching text.");
+    const agent = agentFor(st.id);
+    const pieces = (text, ranges) => {
+      const out = [];
+      let at = 0;
+      for (const [a, b] of ranges) {
+        const s = Math.max(a, at), e = Math.min(b, text.length);
+        if (e <= s) continue;
+        if (s > at) out.push(div().flex_none().text_color(t.muted).child(text.slice(at, s)));
+        out.push(div().flex_none().text_color(t.foreground).font_semibold().bg(t.accent + "26").rounded(2).child(text.slice(s, e)));
+        at = e;
+      }
+      if (at < text.length) out.push(div().flex_none().text_color(t.muted).child(text.slice(at)));
+      return out;
+    };
+    const TEXT_ROW = 40;
+    const draw = (i) => {
+      const m = list[i], active = i === st.at;
+      return v_flex().id(`text-found-${i}`).h(TEXT_ROW).mx(2).px(8).py(4).gap(2).justify_center().rounded(6).overflow_hidden().cursor_pointer()
+        .when(active, (el) => el.bg(t.foreground + "18"))
+        .on_hover((on, cx) => { if (on && st.at !== i) { st.at = i; cx.notify(); } })
+        .on_click((_e, cx) => this.pickMatch(st, m, cx))
+        .on_mouse_down("right", () => { this.menuFor = m.path; })
+        .child(h_flex().w_full().min_w(0).gap(5).items_center().text_size(11.5)
+          .child(image(`${MOD}/${fileIcon(m.path)}`).size(14).flex_none())
+          .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(`${m.path}:${m.line}`))
+          .when(Boolean(active && agent), (el) => el.child(div().id(`text-mention-${i}`).h(16).px(4).flex().items_center().flex_none().rounded(4)
+            .text_size(10.5).text_color(t.dim).hover((s) => s.bg(t.foreground + "18").text_color(t.foreground))
+            .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+            .on_click((_e, cx) => { cx.stop_propagation(); mention(`${m.path}:L${m.line}`, agent.address, cx); })
+            .child("@"))))
+        .child(h_flex().w_full().min_w(0).pl(19).overflow_hidden().whitespace_nowrap().text_size(11.5).children(pieces(m.snippet, m.ranges)));
+    };
+    return v_flex().id("t3-files-text-results").size_full().min_h(0)
+      .child(div().flex_1().min_h(0).child(scrollList(this, "t3-files-text-found", { count: list.length, row: TEXT_ROW, at: st.at, draw, wheeled: (keep) => { st.at = keep; } }).size_full()))
+      .when(Boolean(st.textTruncated), (el) => el.child(div().flex_none().px(8).py(5).text_size(11).text_color(t.dim).truncate()
+        .child(`Showing first ${count(list.length)} matches · refine query to narrow`)));
   }
 
 }

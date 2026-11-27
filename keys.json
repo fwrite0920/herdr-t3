@@ -85,7 +85,11 @@
     "alt-8": "t3-tabs.space:8",
     "alt-9": "t3-tabs.space:9",
     "alt-]": "t3-tabs.space-next",
-    "alt-[": "t3-tabs.space-prev"
+    "alt-[": "t3-tabs.space-prev",
+    "cmd-ctrl-left": "t3-tabs.back",
+    "cmd-ctrl-right": "t3-tabs.forward",
+    "ctrl-alt-left": "t3-tabs.back",
+    "ctrl-alt-right": "t3-tabs.forward"
   },
   "mod:t3-picker": {
     "cmd-w": "overlay.close",

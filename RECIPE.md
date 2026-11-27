@@ -17,10 +17,10 @@ Use Herdr layout JSON/mod API and T3 Code proportions. Keep the person's theme, 
 | Sidebar footer | 44px |
 | Spaces / Agents in Lists | Equal share, each at least 90px |
 | Work area | `chrome`, including the gaps behind panes; 8px horizontal inset, 8px pane gaps and bottom inset |
-| Pane | `background`, radius 8, 2px border also in `background`; framed even alone |
+| Pane | `background`, radius 8, `veil: 0.18` on unfocused splits in `main`, border + focus ring; framed even alone |
 | Pane header | Always present outside Home, 28px, inside the pane |
 | Space panel | Rightmost full-height column; initially hidden, initially equal weight to work, min 480px; draggable outside divider, 8px horizontal/bottom inset |
-| Dividers | 1px `border` |
+| Dividers | 1px `border`, `hover: "accent"` |
 
 No title bar, terminal opacity 0, terminal padding `[8, 0]`. A pane's 2px focus border defaults to `background`, so it is invisible without changing the terminal's size; setting its layout `focus.color` to `accent` makes it visible. In a split, unfocused headers' icon, name and folder fade to 50%, returning on hover; status and controls keep their opacity. The shipped `workspace-status` bar exists but is hidden.
 
@@ -40,9 +40,9 @@ Inbox is selected initially. Its 32px top row is inset 8px: a Search button draw
 
 Pinned and Active cards occupy the top. Working, Snoozed and Settled are bottom-anchored, folded shelves when they have entries; when space runs out they follow the cards in the same scrollable list. Headers are 32px, inset 2px beyond the rows, padded 8, with a dim 12px label, normal-weight count and 12px chevron. A folded shelf still exposes its row in view, excluded from the hidden count. Settled has Show more pagination and Clear when there are terminals it can close; Clear leaves the tab in view alone and asks first.
 
-Cards: radius 6, padding 10/8, lines 20/20/16 with gaps 4/2, 78px with all three, 5px apart. First line: space mark/name and state/time (Working + duration, Needs you, Done, otherwise age); second: agent title; optional third: branch, middle-truncated. Program icon at 60% and remote-machine mark end branch or title line. Viewed/needs-you/done titles are medium `foreground`, otherwise normal `muted`, brightened on hover. Working cards are 70% until hovered/viewed. Pin follows space avatar.
+Cards: Orca-inspired 3-line layout, radius 8, padding 10/7, borderless at rest (framed only when active or blocked), lines 20/18/16 with gaps 3/2, 5px apart, sharing a 14px left icon lane so all three lines align vertically. First line: status lane (working spinner, amber/red dot for needs-you/error, emerald dot for done, alarm clock for woke, subtle dim dot for idle), optional pin, agent title (stripping redundant leading `π ` / `π > ` for Pi), and borderless right state/duration text; second: 13px program icon (folder fallback) and live `pane.cwd` folder name (falling back to program/space name); optional third: branch, middle-truncated. Remote-machine mark ends the branch line, or the folder line when there is no branch, leaving the title unobstructed. Viewed/needs-you/done titles are medium `foreground`, otherwise normal `muted`, brightened on hover. Working cards are 70% until hovered/viewed.
 
-Settled and Snoozed use slim 36px rows, radius 6, 1px apart: 16px space mark (40% until lit), title and elapsed/remaining time. Hover replaces time with Un-settle or Wake. Snoozed shows an `accent` alarm clock; Woke is `blocked` text and remains beside hover controls. Controls replace the card's status corner by a cross-fade, not a reflow.
+Settled and Snoozed use slim 36px rows, radius 6, 1px apart: 14px program icon in a 16px slot (40% until lit, tooltip shows folder/program name), title and elapsed/remaining time. Hover replaces time with Un-settle or Wake. Snoozed shows an `accent` alarm clock; Woke is `blocked` text and remains beside hover controls. Controls replace the card's status corner by a cross-fade, not a reflow.
 
 Hover details: title, space, remote machine, branch and program; 12px, max 320px, solid/`shadow_xl`, 4px right, tops aligned. First waits 150ms; within 400ms opens instantly. First/last fade/slide 4px over 150ms, instant replacements never overlap. Controls suppress details across their corner; click dismisses, drag hides. Program/pin/machine marks have no separate tooltip.
 
@@ -86,7 +86,7 @@ Files is read-only at space `folder`/machine, not terminal cwd. Toolbar breadcru
 
 Shared tree: 24px rows, 12px UI text, radius 6, inset 2px, depth 27.2px, chevron 12px, Catppuccin icon 16px; hover foreground 7%, selection 12%. Compact single-folder chains to `a / b`. Folders first, case-insensitive natural order (`file2` before `file10`), omit `.git`, dim ignored entries. Changes show A/M/D/R in Review colors, deletions struck through, folded changed folders dotted. Virtualize visible rows without a first-N cap. Arrows (←/→ close/up, open/in), Home/End and Enter move a 1px ring/open rows.
 
-Search matches every space-separated word in the path, ignoring case. Show at most 200 results and an overflow note. Search indexed/untracked nonignored Git paths, or at most 200,000 filesystem paths outside Git; remote filtering returns at most 1,000. Rank/highlight with uFuzzy for 1,000 or fewer candidates. ↑/↓, Enter and Esc work as in other searchable lists.
+Search supports `Files` and `Text` modes. `Files` matches every space-separated word in the path ignoring case (stripping optional `:line[:col]` for line jumps, or `:line` alone in the open file), up to 200 results with uFuzzy ranking (≤1,000 candidates) over Git paths or ≤200,000 filesystem paths (remote ≤1,000). `Text` runs debounced read-only `rg --json` (local/remote) with `Aa`/`.*` toggles, highlighted snippets, click/Enter jump to the match, and 1-click `@path:L<line>` handoff. Terminal file link clicks (`t3-links`, root `link_handlers`) open local/remote project paths (`:line[:col]`, `(line,col)`, `#L<n>`) directly here via `t3.filesOpen` and highlight the target line; binaries/folders/out-of-root paths pass through. ↑/↓, Enter and Esc work as in other searchable lists.
 
 Files refreshes only when page/space/window visible: immediately on return, normally 5s local/10s remote, slower for expensive reads. Text reloads on change, image on reselect. Images (`png`/`jpg`/`jpeg`/`gif`/`webp`/`svg`/`bmp`/`ico`/`avif`; remote ≤4 MB) show a 32px control bar with format, dimensions, file size, `Fit`/`Width`/`100%`/`−`/`+` zoom (tall screenshots auto-default to `Width`) and `Auto`/`Light`/`Dark` canvas backdrop over a scrollable viewport. Text files over 1 MB show a 256 KB head preview with a truncation banner; binary/oversized files show a typed info card with size and Open/Reveal/Copy actions. Markdown/HTML preview links open external URLs or relative repo files in place; minified JSON auto-prettifies with a `Pretty`/`Raw` toggle. Read/list failure uses Retry. Full content/Editors for last three shown spaces only; older lightweight reading choices reload.
 
@@ -258,6 +258,7 @@ Popup lists wrap arrows, scroll highlight into view except a pointer-held row (w
 | `cmd-alt-]` / `[`, `ctrl-alt-shift-]` / `[` | `t3-tabs.space-next` / `space-prev` |
 | `cmd-1…9`, `ctrl-alt-1…9` | `t3-tabs.tab:<n>`, displayed tabs |
 | `cmd-shift-]` / `[`, `ctrl-tab` / `ctrl-shift-tab`, `ctrl-alt-]` / `[` | `t3-tabs.tab-next` / `tab-prev`, wrap |
+| `cmd-ctrl-left` / `right`, `ctrl-alt-left` / `right`, `Alt + mouse Back/Forward` | `t3-tabs.back` / `forward`, cross-space visit history (up to 100 tabs/panes, skips Home and closed tabs) |
 
 Use Herdr's platform key labels, preferring platform-matching bindings (`cmd-` on macOS, non-`cmd-` elsewhere; Windows/Linux use terminal-safe `ctrl-shift-*` chords). `cmd-d` remains Herdr's split, not Review. With keyboard in any Space Panel page, close keys close the panel (`t3-files.close`, `review.close`, `t3-tabs.panel-close`), not the tab behind; in Wide Panel mode, `panel-head` surfaces native window buttons and the sidebar toggle. With a popup/dialog owning keyboard, all tab/pane close keys close the overlay instead. The floating `tabs-keys` copy handles layout commands even with sidebar hidden or panel maximized.
 
@@ -268,7 +269,7 @@ Use Herdr's platform key labels, preferring platform-matching bindings (`cmd-` o
 Create `layouts/herdr-t3.json`, its preview `layouts/herdr-t3.svg`, `mods/t3-*`, and `keys.json`. Keep node ids unique and these structural ids stable; layout code locates them:
 
 ```text
-root: row, terminal_menu=t3-menu
+root: row, terminal_menu=t3-menu, link_handlers=[t3-links]
 ├─ sidebar: column [256, min208, max480], chrome
 │  ├─ brand: t3-chrome [40]
 │  ├─ sidebar-lists: stack, active=inbox
@@ -297,7 +298,7 @@ floating root: tabs-keys:t3-tabs {part:"keys"}, bottom/end, visually empty
 
 Sidebar/work/panel columns have `resizable:false` to fix internal boundaries, retaining outside divider resize. `spaces` gets `{newMenu:"t3-new-menu"}`; Inbox gets `{newMenu:"t3-new-menu",picker:"t3-picker",home:"t3-tabs.home",menu:"t3-menu"}`. Main/home-main pane frames share background/border/focus/radius/gap/lone settings above. The floating keys copy owns commands, Home and per-space panel synchronization; other tab copies share navigation rather than each opening dialogs.
 
-Required mods: `t3-chrome`, `t3-spaces`, `t3-agents`, `t3-inbox`, `t3-tabs`, `t3-pane`, `t3-home`, `t3-files`, `t3-sessions`, `t3-changes`, `t3-tools`, `t3-new-menu`, `t3-picker`, `t3-actions`, `t3-menu`, `better-search`. Adapt shipped mods where available; keep shipped workspace-status/spinner/program artwork, own-folder Lucide 24-grid icons and vendored Catppuccin file icons. Mods cannot import outside their folder: edit `shared/` sources, then sync via `scripts/sync.sh` (POSIX) or `scripts/check-windows.ps1` (Windows).
+Required mods: `t3-chrome`, `t3-spaces`, `t3-agents`, `t3-inbox`, `t3-tabs`, `t3-pane`, `t3-home`, `t3-files`, `t3-links`, `t3-sessions`, `t3-changes`, `t3-tools`, `t3-new-menu`, `t3-picker`, `t3-actions`, `t3-menu`, `better-search`. Adapt shipped mods where available; keep shipped workspace-status/spinner/program artwork, own-folder Lucide 24-grid icons and vendored Catppuccin file icons. Mods cannot import outside their folder: edit `shared/` sources, then sync via `scripts/sync.sh` (POSIX) or `scripts/check-windows.ps1` (Windows).
 
 Install real files (SVG symlinks fail), layout/SVG and merged `keys.json` under `HERDR_APP_HOME` or `~/.config/herdr-app`; run `layout.switch {"name":"herdr-t3"}`. `scripts/update.sh` (`jq`/`rsync`) and `scripts/install-windows.ps1` validate/update owned mods, preserve theme/focus/stack/settings/pins/wallpapers and merge keys with repo precedence. `scripts/sync.sh` also updates installed home and sibling standalone repos.
 
@@ -311,10 +312,10 @@ Herdr APIs: `spaces/panes/agents/terminals/focused/layout/settings/window/keys`,
 | --- | --- |
 | Spaces | Read-only `git status/rev-parse`, `hc machine ls --json`; rebuilt-machine Connect: `hc machine rm`, then `hc machine add` |
 | Inbox / tab commands / Agents pin | `hc label <address> settled=<ms>:<turn>`, `snoozed=<wake-ms>` or clear; tab navigation also writes `herdr.seen` when restoring unread |
-| Close / navigation | `hc get <terminal> --json`; native space/tab/pane create/select/move/rename/close, `agent.focus`, `pane.focus`, `terminal.peek`, split/zoom/`terminal.park` |
+| Close / navigation | `hc get <terminal> --json`; native space/tab/pane create/select/move/rename/close, `agent.focus`, `pane.focus`, `terminal.peek`, split/zoom/`terminal.park`; read-only Node lookup (`resolve-agy-titles.cjs`) for local Antigravity titles into `t3.agentTitles` when active |
 | Layout chrome | `layout.select/show/hide/resize`; installed layout's `traffic_lights` field only, not a whole `layout.set` |
 | Space icons | On space's machine: `git rev-parse --show-toplevel`, `sh -c` file tests, `base64`; copies under app `cache/t3-icons/`, shared icon/color metadata |
-| Files | `sh` directory reads, `git check-ignore --stdin`, `git status --porcelain=v2 -z --untracked-files=all`, `git ls-files -co --exclude-standard -z`, fallback `find`, remote `awk`; text reads and app `cache/t3-files/` images (remote via base64), cleared at close/next start |
+| Files & Links | `sh` directory reads, `git check-ignore --stdin`, `git status --porcelain=v2 -z --untracked-files=all`, `git ls-files -co --exclude-standard -z`, fallback `find`, remote `awk`, read-only `rg --json` content search, `t3-links` `fs.stat`/remote `test -f`; text reads and app `cache/t3-files/` images (remote via base64), cleared at close/next start |
 | File menus | Clipboard save/paste/restore, `pane.focus`, `terminal.paste`; local `open -R` / default-app open where supported |
 | Actions | `terminal.open` with `sh -c`, optional folder; global action list/last selection |
 | Review extras | `jin.review` and shared read-only Git scope/base/ref helpers; local daemon and Review configuration, no remote Review |

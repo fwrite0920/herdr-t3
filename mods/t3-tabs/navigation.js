@@ -13,7 +13,10 @@ export function navigation(beforeAsk = (_cx) => {}, core = { spaces, panes, agen
   const { spaces, panes, agents, terminals, machines, run, openOverlay, closeOverlay, focused, hc, notify, layout, shared, setShared, home, window, namer, programOf, focusAgent, focusPane, writeLabel } = core;
   // lastIn: each tab's agent last in view, which the Inbox's bar holds while a program there has the focus.
   // fresh: spaces where the person started something new (the breadcrumb's space, cmd-t) since last looking at an agent there.
+  // history: cross-space Back/Forward visit stack (in memory, only this run / 只记本次运行).
   const trail = {}, lastIn = {}, fresh = new Set(), owed = new Map(), waking = new Map();
+  const MAX_HISTORY = 100, HISTORY_ARRIVAL_MS = 1000;
+  let history = [], historyAt = -1, historyGoing = null;
   let states = new Map();
   // Spaces that were Home until an agent started there: their rename may not have shown yet.
   const released = new Set();
@@ -289,7 +292,10 @@ export function navigation(beforeAsk = (_cx) => {}, core = { spaces, panes, agen
     }));
     if (going && (tab?.id === going.tab || Date.now() > going.until)) going = null;
     // Until a close's target shows, what shows is Herdr's pick, not somewhere the person went.
-    if (space && tab && !home && !going) trail[space.id] = [tab.id, ...(trail[space.id] ?? []).filter(id => id !== tab.id && alive(id))];
+    if (space && tab && !home && !going) {
+      trail[space.id] = [tab.id, ...(trail[space.id] ?? []).filter(id => id !== tab.id && alive(id))];
+      recordVisit(space.id, tab.id);
+    }
     inView = tab && !home ? { tab: tab.id, space: space.id, agent: every.some(a => a.tab === tab.id) } : null;
     const looked = !going && every.find(a => a.address === inViewAgent(terms, every));
     if (looked && !home) { lastIn[looked.tab] = looked.address; fresh.delete(looked.space); }
@@ -445,6 +451,57 @@ export function navigation(beforeAsk = (_cx) => {}, core = { spaces, panes, agen
     };
   }
 
+  // Cross-space Back/Forward visit history (只记本次运行): each step is a (space, tab), updating its pane as focus moves within the tab.
+  const sameVisit = (a, b) => Boolean(a && b) && a.space === b.space && a.tab === b.tab;
+  const visitAlive = (step, all) => Boolean(all.find(s => s.id === step.space)?.tabs.some(c => c.id === step.tab));
+  function recordVisit(spaceId, tabId) {
+    const f = focused();
+    const pane = f?.tab === tabId && f?.pane ? f.pane : panes().find(p => p.tab === tabId && p.focused)?.pane ?? null;
+    const cur = { space: spaceId, tab: tabId, pane };
+    if (historyGoing !== null) {
+      const target = history[historyGoing.index];
+      if (target && sameVisit(target, cur)) {
+        historyGoing = null;
+        historyAt = history.indexOf(target);
+        if (pane) target.pane = pane;
+        return;
+      }
+      if (target && Date.now() - historyGoing.at < HISTORY_ARRIVAL_MS) return;
+      historyGoing = null;
+    }
+    const current = history[historyAt];
+    if (current && sameVisit(current, cur)) {
+      if (pane) current.pane = pane;
+      return;
+    }
+    history = history.slice(0, historyAt + 1);
+    history.push(cur);
+    if (history.length > MAX_HISTORY) history.shift();
+    historyAt = history.length - 1;
+  }
+
+  function nextHistoryIndex(direction, all) {
+    const onHome = atHome();
+    const from = historyGoing?.index ?? (onHome && direction < 0 ? historyAt + 1 : historyAt);
+    const current = onHome ? null : history[from];
+    for (let i = from + direction; i >= 0 && i < history.length; i += direction) {
+      const step = history[i];
+      if (visitAlive(step, all) && !(current && sameVisit(step, current))) return i;
+    }
+    return null;
+  }
+
+  function stepHistory(direction) {
+    const all = spaces(), i = nextHistoryIndex(direction, all);
+    if (i === null) return false;
+    const { space, tab, pane } = history[i];
+    historyGoing = { index: i, at: Date.now() };
+    // tab.select brings the space along without flashing another tab there (and risking an agent's unread done).
+    run("tab.select", { id: tab });
+    if (pane && panes().some(p => p.tab === tab && p.pane === pane)) focusPane(pane);
+    return true;
+  }
+
   // The next or previous tab the bar shows, going around.
   function walkTabs(by) {
     const list = visibleTabs();
@@ -466,6 +523,8 @@ export function navigation(beforeAsk = (_cx) => {}, core = { spaces, panes, agen
       else if (command.startsWith("close-pane-now:")) await closePaneNow(command.slice("close-pane-now:".length), cx);
       else if (command === "home") await goHome(cx);
       else if (command === "home-mod") await refitHome(false, cx);
+      else if (command === "back") stepHistory(-1);
+      else if (command === "forward") stepHistory(1);
       // As Herdr's own Settings, a dialog; pressed again, it replaces the open one (closing one already gone does nothing).
       else if (command === "settings" || command.startsWith("settings:")) {
         if (settingsOpen) closeOverlay(settingsOpen);

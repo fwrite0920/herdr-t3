@@ -783,13 +783,14 @@ test("a title is bright when it's in view, needs you or is done; hover brightens
   assert.deepEqual(look("Seen"), ["bright", false]);
 });
 
-test("a card's marks sit on its third line when it has one, else on the title's", () => {
+test("a card's marks sit on its third line when it has one, else on the folder line so the title stays clear", () => {
   const f = fixture(); f.add("m1/A"); f.add("m1/B");
-  f.env.panes = () => [{ pane: "m1/A", branch: "dev" }];
+  f.env.panes = () => [{ pane: "m1/A", branch: "dev", cwd: "/srv/a" }, { pane: "m1/B", cwd: "/srv/b" }];
   f.render();
   assert.equal(find(lineOf(f.tree, "m1/A"), "machine-m1/A"), null, "the title keeps its whole line");
   assert.ok(find(lineOf(f.tree, "dev"), "machine-m1/A"), "the branch line carries the mark");
-  assert.ok(find(lineOf(f.tree, "m1/B"), "machine-m1/B"), "no third line: the title's line carries it");
+  assert.equal(find(lineOf(f.tree, "m1/B"), "machine-m1/B"), null, "no third line: the title still keeps its whole line");
+  assert.ok(find(lineOf(f.tree, "b"), "machine-m1/B"), "no third line: the folder line carries the mark");
 });
 
 test("remote machine names stay in hover details; only Inbox cards carry a mark", () => {
@@ -2184,11 +2185,30 @@ test("past 40 rows coming and going at once, they just show", () => {
 test("a card and a settled row measure as T3's, and the lists stack as its does", () => {
   const f = fixture(); f.add("A", "idle", 100); f.add("B", "idle", 200); f.terms[1].labels.settled = "500:0"; f.mod.open = true; f.render();
   const num = (n, k) => n.style[k]?.[0], card = find(f.tree, "card-A");
-  assert.deepEqual(["px", "py", "rounded"].map((k) => num(card, k)), [10, 8, 6]);
-  assert.deepEqual([num(card.items[0], "h"), num(card.items[1], "h"), num(card.items[1], "mt")], [20, 20, 4], "its lines, 4 apart");
+  assert.deepEqual(["px", "py", "rounded"].map((k) => num(card, k)), [10, 7, 8]);
+  assert.deepEqual([num(card.items[0], "h"), num(card.items[1], "h"), num(card.items[1], "mt")], [20, 18, 3], "title line 20, folder line 18, 3 apart");
   const slim = find(f.tree, "slim-B");
   assert.deepEqual(["h", "px", "gap", "rounded"].map((k) => num(slim, k)), [36, 10, 10, 6]);
   assert.deepEqual(["h", "min_w"].map((k) => num(find(slim, "slim-corner-B"), k)), [24, 32], "T3's corner");
   assert.equal(num(find(f.tree, "settled"), "gap"), 1, "gap-px between a shelf's rows");
   assert.deepEqual(["h", "px", "gap"].map((k) => num(find(f.tree, "inbox-top"), k)), [32, 8, 4], "the search field alone, its middle on the pane headers'");
+});
+
+test("card header shows live pane folder name and program icon instead of generic space name", () => {
+  const f = fixture();
+  f.add("wsl2/A", "done", 100);
+  f.rows[0].space_name = "wsl2";
+  f.rows[0].program = { key: "pi", name: "Pi", icon: "icons/pi.svg" };
+  f.context.namer = () => () => "π > GRANT: Implement auth";
+  const ps = [{ pane: "wsl2/A", cwd: "/home/dev/code/grant-service", branch: "demo/arch" }];
+  f.context.panes = () => ps;
+  f.render();
+  const card = find(f.tree, "card-wsl2/A");
+  const line1 = texts(card.items[0]);
+  const line2 = texts(card.items[1]);
+  assert.ok(find(card.items[0], "status-lane-wsl2/A"), "line 1 leads with left status lane");
+  assert.ok(line1.includes("GRANT: Implement auth"), "line 1 leads with cleaned task title without duplicate π prefix");
+  assert.ok(line2.includes("grant-service"), "line 2 shows live cwd folder name");
+  assert.ok(!line2.includes("wsl2"), "generic space name is not repeated");
+  assert.ok(find(card, "machine-wsl2/A"), "remote machine mark stays on card");
 });

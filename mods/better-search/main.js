@@ -352,6 +352,7 @@ export default class BetterSearch extends View {
     if (t3Steps) {
       const target = relToFolder(this.root?.root, activeSpace?.folder, rel);
       if (target) {
+        setShared("t3.filesOpen", { space, path: target, at: Date.now() });
         for (const [name, args] of t3Steps) run(name, args);
         return run(`t3-files.open:${target}`);
       }

@@ -102,10 +102,10 @@ $modDirs = @(Get-ChildItem -Directory "$src\mods\t3-*")
 if (Test-Path "$src\mods\better-search") { $modDirs += Get-Item "$src\mods\better-search" }
 if (Test-Path "$src\extras\mods") { $modDirs += @(Get-ChildItem -Directory "$src\extras\mods") }
 foreach ($d in $modDirs) {
-  $out = & herdr-app check $d.FullName 2>&1
-  if ($LASTEXITCODE -ne 0) {
+  $out = (& herdr-app check $d.FullName 2>&1 | Out-String)
+  if ($LASTEXITCODE -ne 0 -or $out -notmatch 'check passed') {
     Write-Host "FAIL herdr-app check $($d.Name)" -ForegroundColor Red
-    $out | Select-Object -Last 15 | ForEach-Object { Write-Host "  $_" }
+    ($out -split "`r?`n") | Select-Object -Last 15 | ForEach-Object { Write-Host "  $_" }
     $fail = 1
   }
 }
@@ -121,7 +121,8 @@ fail=0
 ts="--noEmit --allowJs --checkJs --target ES2022 --module ES2022 --moduleResolution bundler --lib ES2022 --strict --strictNullChecks false --noImplicitAny false --useUnknownInCatchVariables false --skipLibCheck"
 for d in mods/t3-*/ mods/better-search/ extras/mods/*/; do
   [ -d "$d" ] || continue
-  out=$(bunx -p typescript tsc $ts "$d"*.js "$d"gpui-kit.d.ts types/*.d.ts 2>&1) || { echo "FAIL tsc $d"; echo "$out" | tail -20; fail=1; }
+  dts="${d}gpui-kit.d.ts"; [ -f "$dts" ] || dts="mods/t3-files/gpui-kit.d.ts"
+  out=$(bunx -p typescript tsc $ts "$d"*.js "$dts" types/*.d.ts 2>&1) || { echo "FAIL tsc $d"; echo "$out" | tail -20; fail=1; }
 done
 exit "$fail"
 '@

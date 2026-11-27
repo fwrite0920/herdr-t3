@@ -4,5 +4,9 @@
   "cloned_from": {
     "name": "tabs",
     "version": "0.1.10"
-  }
+  },
+  "palette": [
+    { "title": "Go Back", "command": "t3-tabs.back", "group": "Navigation" },
+    { "title": "Go Forward", "command": "t3-tabs.forward", "group": "Navigation" }
+  ]
 }

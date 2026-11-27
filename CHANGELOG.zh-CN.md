@@ -2,6 +2,19 @@
 
 [English](CHANGELOG.md) · 中文
 
+## 2026-11-27
+
+- 新增 **Antigravity 真实会话标题自动解析**（`mods/t3-tabs/resolve-agy-titles.cjs`、`shared/name.js`、`shared/store.js`）：针对 `agy` 不发 OSC 终端标题的问题，仅在存在存活本机 Antigravity 终端时按需只读查询 `~/.gemini/antigravity-cli/conversation_summaries.db`（无 SQLite 时回退 `history.jsonl`），将真实会话标题写入 `t3.agentTitles` 统一呈现于 Inbox、Lists、标签栏、窗格头与 Go to；同时在 `shared/name.js` 与 `mods/t3-inbox/row-view.js` 中为 `pi` 与 `omp` 统一去除重复前导 `π ` / `π > `。
+- 借鉴 Orca 重构 **Inbox 卡片与 Settled/Snoozed 窄行**（`mods/t3-inbox/row-view.js`），保留清晰三行层次：静止无框圆角 8（仅当前查看或 `Needs you` 时亮出底色与细边），左侧统一 14px 垂直槽对齐状态轨（转圈／绿点／琥珀点／红点／淡灰点）→ 程序图标 → 分支图标；第一行由任务标题领衔（自动去除 Pi 重复前导 `π ` / `π > `）配右侧无框轻量状态／时长文字；第二行展示程序图标 + 实时 `pane.cwd` 目录名取代 `wsl2` 等通用 space 名；远程机器标记留在分支行末（无分支时落第二行末，不挤第一行标题）；Settled/Snoozed 窄行同步程序图标与目录悬停提示。
+- 新增 **终端文件路径直达处理器**（`mods/t3-links`，通过 `layouts/herdr-t3.json` 的 `link_handlers` 挂载）：在本地或远程终端中 Cmd/Ctrl-Click 文件路径（支持 `path:42`、`path:42:7`、`path(42,7)`、`path:5-12`、`path#L42`）时直接打开右侧 Space 面板的 `Files` 页并高亮定位到目标行；压缩包、PDF、目录、不存在的文件及 space 根目录之外的路径自动回退给 Herdr 默认打开器。
+- 升级 **Files**（`mods/t3-files`）支持 **`:line[:col]` 行号定位** 与 **只读 ripgrep 全文内容搜索**：
+  - 支持在搜索框输入 `file.js:42` 或 `:42`（以及来自 `t3-links` / `t3-files.open:path:line` 的打开请求）直接跳转并选中目标行（请求具体行号时 Markdown/SVG/HTML 自动切到代码视图），并在工具栏元信息中标注 `L<n>`。
+  - 搜索栏新增 `Files | Text` 切换及区分大小写（`Aa`）、正则（`.*`）开关，基于防抖只读 `rg --json` 检索本地及远程项目内容，准确高亮中英文匹配片段，点击或回车直达匹配位置，并支持一键 `@path:L<line>` 递交给当前 Agent。
+  - 新增 `t3.filesOpen` 跨 mod 打开通道（`shared/store.js`、`mods/better-search/main.js`），即使 `t3-files` 尚未首次挂载也能可靠打开并定位文件。
+- 新增 **跨 Space 全局后退 / 前进历史导航**（`mods/t3-tabs`）：内存中记录最近 100 步 `(space, tab, pane)` 访问轨迹（自动跳过 Home 与已关闭标签、同标签内切分屏仅更新目标窗格，在 Home 按后退可直达离开前的最后一个工作标签），支持 `t3-tabs.back` / `t3-tabs.forward`（快捷键 `cmd-ctrl-left/right`、`ctrl-alt-left/right`、命令面板，以及全局 `Alt + 鼠标侧键`）。
+- 优化 **布局视觉反馈**（`layouts/herdr-t3.json`）：为分隔线启用 `divider.hover: "accent"` 悬停高亮，并为 `main` 非聚焦分屏增加轻度 `veil: 0.18` 柔化以突出当前焦点。
+- 修复 `scripts/check-windows.ps1` 在 Windows PowerShell 5.1 下调用 `herdr-app check` 误判退出码的问题。
+
 ## 2026-11-25
 
 - 修复 **Git**（`mods/t3-changes`）在关闭自动换行时 Diff 内容区完全空白的问题（将行号与 Hunk 的 `@` 递交点击从 `v_virtual_list` 行渲染回调迁移至列表级 `on_item_click` + 点击横坐标判定，并将 Hunk 的 `@L<n>` 徽标紧贴 `@@` 头部以便长行时始终可见）；同时将**自动换行**（`diff.wrap`）升级为支持中文宽字符与实测等宽字体的虚拟化按列折行（`wrapRowLines`），消除长注释/长表达式右侧截断与 600 行上限。
