@@ -34,8 +34,10 @@ Install: copy `extras/mods/asciicn-wallpaper` into `~/.config/herdr-app/mods/`, 
 
 ## Theme and settings
 
-The layout sets no theme: yours stays. `extras/themes/` holds two light and dark pairs if you want them:
+The layout sets no theme: yours stays. `extras/themes/` holds light and dark themes if you want them:
 
+- `omarchy` and `omarchy-light`: restrained botanical dark and warm-paper light themes with muted sage-green accents.
+- `matte-paper` and `matte-mist`: anti-glare daytime light themes tuned for reflective office displays — `matte-paper` uses a low-glare warm parchment surface (`#efeae0`) with moss-green accents (`#355939`), while `matte-mist` uses a cool overcast slate-paper surface (`#e8edf3`) with steel-blue accents (`#1e5288`) suited to cool white office lighting; both use reinforced surface separation, borders, secondary text, and WCAG AA (≥ 4.5:1) ANSI colors so content stays legible through screen reflections.
 - `catppuccin-mocha` and `catppuccin-latte`: [Catppuccin](https://catppuccin.com)'s official palette, terminal colors as its spec gives them and the panels in Catppuccin's own surfaces (mantle behind, base for cards, surface0 for selection and borders), with blue as the accent.
 - `t3-code-dark` and `t3-code-light`: the colors T3 Code's web app draws by default, a true black canvas with accent `#346bf1` and a `#fcfcfc` canvas with accent `#1b4ed8`, with the VS Code terminal palette T3 Code uses. Terminal text takes the chat's 90% foreground, so an agent's replies read like T3 Code's.
 

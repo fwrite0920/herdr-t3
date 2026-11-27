@@ -77,4 +77,15 @@ const drawn = treeRow({ dim: "#888888", ring: "#0000ff", foreground: "#ffffff" }
   { leading: el("box"), trailing: el("tail"), status: "M" });
 assert.deepEqual(drawn.kids.map((k) => typeof k === "string" ? "text" : k.tag), ["div", "box", "icon", "div", "div", "tail"]);
 
+// Light themes pick the darkened Catppuccin light icon set (icons/cat-light/); dark themes keep icons/cat/.
+const iconDataSrc = fs.readFileSync(path.join(__dirname, "file-icons-data.js"), "utf8").replace(/^export const /gm, "const ");
+const iconSrc = fs.readFileSync(path.join(__dirname, "file-icons.js"), "utf8")
+  .replace(/^import [^;]*;\r?\n/gm, "").replace(/^export function /gm, "function ");
+const iconCtx = vm.createContext({});
+vm.runInContext(`${iconDataSrc}\n${iconSrc}\nglobalThis.fi = { fileIcon, folderIcon };`, iconCtx);
+assert.equal(iconCtx.fi.fileIcon("app.js", "src/app.js", { background: "#0c0b0c" }), "icons/cat/javascript.svg");
+assert.equal(iconCtx.fi.fileIcon("app.js", "src/app.js", { background: "#efeae0" }), "icons/cat-light/javascript.svg");
+assert.equal(iconCtx.fi.folderIcon("src", false, { background: "#e8edf3" }), "icons/cat-light/folder_src.svg");
+assert.equal(iconCtx.fi.folderIcon("src", true, { background: "#1e1e2e" }), "icons/cat/folder_src_open.svg");
+
 console.log("ok: file tree: lone folders flatten (groups never), paths keep their order, a path finds its row, the keys move as Pierre's, and a page's box leads the row.");

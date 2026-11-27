@@ -34,8 +34,10 @@ Review 跟随你的主题，包括 Graphite 等主题里带透明度的复选框
 
 ## 主题和设置
 
-布局不指定主题，沿用你自己的。`extras/themes/` 里附带两对明暗主题，需要的话可以用：
+布局不指定主题，沿用你自己的。`extras/themes/` 里附带多套明暗主题，需要的话可以用：
 
+- `omarchy` 和 `omarchy-light`：克制的低饱和深色与暖白纸浅色主题，配鼠尾草／森林绿强调色。
+- `matte-paper` 和 `matte-mist`：专为反光办公显示器调校的哑光抗反光浅色主题——`matte-paper` 采用柔和暖纸底（`#efeae0`）配深苔绿强调色（`#355939`），`matte-mist` 采用适配冷白办公灯光的冷雾灰纸底（`#e8edf3`）配深钢蓝强调色（`#1e5288`）；两套均强化了层级明度差、边框、`muted`/`dim` 次要文字及全 16 色 ANSI 对比度（≥ 4.5:1），在屏幕反光下依然清晰易读。
 - `catppuccin-mocha` 和 `catppuccin-latte`：[Catppuccin](https://catppuccin.com) 官方色板，终端色按官方规范，界面用 Catppuccin 自己的层次色（底层 mantle、卡片 base、选中和边框 surface0），强调色为 blue。
 - `t3-code-dark` 和 `t3-code-light`：T3 Code 网页端默认绘制的颜色，深色 canvas 为纯黑、accent 为 `#346bf1`，浅色 canvas 为 `#fcfcfc`、accent 为 `#1b4ed8`，终端用 T3 Code 采用的 VS Code 终端配色。终端文字取对话正文的 90% 前景色，让 agent 的回复读起来和 T3 Code 一样。
 

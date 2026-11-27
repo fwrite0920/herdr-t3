@@ -4,6 +4,8 @@
 
 ## 2026-11-27
 
+- 新增两套面向反光办公显示器的哑光抗反光浅色主题（`extras/themes/matte-paper.json` 暖纸底配深苔绿强调色 `#355939`，以及适配冷白办公灯光的 `extras/themes/matte-mist.json` 冷雾灰底配深钢蓝强调色 `#1e5288`）、浅色主题自适应 Catppuccin 文件与文件夹图标集（`shared/icons/cat-light/`、`shared/file-icons.js`、`shared/file-tree.js`、`mods/t3-files/main.js`），以及加粗加长弧段的高可见度 `working.svg` 运行转圈图标（`t3-inbox` / `t3-agents` / `t3-spaces`）：压低纯白眩光的同时保持干净的层级与边框对比、锐利深炭灰线框图标、醒目钴蓝 `working`（`#1455d1`）、约 14.6:1 深墨正文与清晰终端选区，且 `Files` / `Review` 文件图标在浅色主题下自动切换为深色高对比版本。
+
 - 新增 **Antigravity 真实会话标题自动解析**（`mods/t3-tabs/resolve-agy-titles.cjs`、`shared/name.js`、`shared/store.js`）：针对 `agy` 不发 OSC 终端标题的问题，仅在存在存活本机 Antigravity 终端时按需只读查询 `~/.gemini/antigravity-cli/conversation_summaries.db`（无 SQLite 时回退 `history.jsonl`），将真实会话标题写入 `t3.agentTitles` 统一呈现于 Inbox、Lists、标签栏、窗格头与 Go to；同时在 `shared/name.js` 与 `mods/t3-inbox/row-view.js` 中为 `pi` 与 `omp` 统一去除重复前导 `π ` / `π > `。
 - 借鉴 Orca 重构 **Inbox 卡片与 Settled/Snoozed 窄行**（`mods/t3-inbox/row-view.js`），保留清晰三行层次：静止无框圆角 8（仅当前查看或 `Needs you` 时亮出底色与细边），左侧统一 14px 垂直槽对齐状态轨（转圈／绿点／琥珀点／红点／淡灰点）→ 程序图标 → 分支图标；第一行由任务标题领衔（自动去除 Pi 重复前导 `π ` / `π > `）配右侧无框轻量状态／时长文字；第二行展示程序图标 + 实时 `pane.cwd` 目录名取代 `wsl2` 等通用 space 名；远程机器标记留在分支行末（无分支时落第二行末，不挤第一行标题）；Settled/Snoozed 窄行同步程序图标与目录悬停提示。
 - 新增 **终端文件路径直达处理器**（`mods/t3-links`，通过 `layouts/herdr-t3.json` 的 `link_handlers` 挂载）：在本地或远程终端中 Cmd/Ctrl-Click 文件路径（支持 `path:42`、`path:42:7`、`path(42,7)`、`path:5-12`、`path#L42`）时直接打开右侧 Space 面板的 `Files` 页并高亮定位到目标行；压缩包、PDF、目录、不存在的文件及 space 根目录之外的路径自动回退给 Herdr 默认打开器。

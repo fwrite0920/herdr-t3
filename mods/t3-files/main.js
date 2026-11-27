@@ -1042,7 +1042,7 @@ export default class Files extends View {
           .when(!active, (el) => el.text_color(t.muted).hover((s) => s.bg(t.foreground + "12").text_color(t.foreground)))
           .on_click((_e, cx) => { if (!active) { this.open(st, rel, cx); this.reveal(st, rel, cx); } })
           .on_mouse_down("middle", (_e, cx) => { cx.stop_propagation(); this.closeFile(st, rel, cx); })
-          .child(image(`${MOD}/${fileIcon(rel)}`).size(13).flex_none())
+          .child(image(`${MOD}/${fileIcon(rel, rel, t)}`).size(13).flex_none())
           .child(div().flex_1().min_w(0).truncate().child(nameOf(rel)))
           .when(Boolean(mark), (el) => el.child(div().flex_none().text_size(10).font_bold().text_color(markColor).child(mark)))
           .child(div().id(`t3-file-tab-close-${i}`).size(14).flex_none().flex().items_center().justify_center().rounded(3).text_color(t.dim)
@@ -1151,7 +1151,7 @@ export default class Files extends View {
       .on_hover((on, cx) => { if (on) this.hot = id; else if (this.hot === id) this.hot = null; cx.notify(); })
       .on_click((_e, cx) => press(cx));
     return v_flex().id("t3-files-binary").size_full().p(24).gap(10).items_center().justify_center().text_center()
-      .child(image(`${MOD}/${fileIcon(st.file)}`).size(32).flex_none())
+      .child(image(`${MOD}/${fileIcon(st.file, st.file, t)}`).size(32).flex_none())
       .child(div().text_size(14).font_medium().text_color(t.foreground).child(nameOf(st.file)))
       .child(div().text_size(12).text_color(t.muted).child(meta))
       .when(Boolean(v.problem), (el) => el.child(div().max_w(360).text_size(12).text_color(t.dim).child(v.problem)))
@@ -1305,7 +1305,7 @@ export default class Files extends View {
         .on_hover((on, cx) => { if (on && st.at !== i) { st.at = i; cx.notify(); } })
         .on_click((_e, cx) => this.pick(st, r.path, cx, jump))
         .on_mouse_down("right", () => { this.menuFor = r.path; })
-        .child(image(`${MOD}/${fileIcon(r.path)}`).size(16).flex_none())
+        .child(image(`${MOD}/${fileIcon(r.path, r.path, t)}`).size(16).flex_none())
         .child(h_flex().flex_none().children(pieces(r.path.slice(cut), cut, r.ranges, t.foreground)))
         .when(Boolean(dir), (el) => el.child(h_flex().min_w(0).overflow_hidden().children(pieces(dir, 0, r.ranges, t.dim))));
     };
@@ -1345,7 +1345,7 @@ export default class Files extends View {
         .on_click((_e, cx) => this.pickMatch(st, m, cx))
         .on_mouse_down("right", () => { this.menuFor = m.path; })
         .child(h_flex().w_full().min_w(0).gap(5).items_center().text_size(11.5)
-          .child(image(`${MOD}/${fileIcon(m.path)}`).size(14).flex_none())
+          .child(image(`${MOD}/${fileIcon(m.path, m.path, t)}`).size(14).flex_none())
           .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(`${m.path}:${m.line}`))
           .when(Boolean(active && agent), (el) => el.child(div().id(`text-mention-${i}`).h(16).px(4).flex().items_center().flex_none().rounded(4)
             .text_size(10.5).text_color(t.dim).hover((s) => s.bg(t.foreground + "18").text_color(t.foreground))

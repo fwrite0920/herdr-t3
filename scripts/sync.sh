@@ -37,8 +37,11 @@ share nav-column mods/t3-files extras/mods/review
 share file-menu mods/t3-files extras/mods/review
 share panel-states mods/t3-files extras/mods/review
 share button mods/t3-actions mods/t3-agents mods/t3-spaces mods/t3-inbox mods/t3-tabs mods/t3-pane mods/t3-chrome mods/t3-files extras/mods/pulls-review extras/mods/review extras/mods/asciicn-wallpaper
-# file-icons.js's SVGs (scripts/vendor.sh makes them): each mod draws only its own.
-for d in mods/t3-files extras/mods/review; do rsync -a --delete "$src/shared/icons/cat/" "$src/$d/icons/cat/"; done
+# file-icons.js's SVGs (scripts/vendor.sh makes dark cat/ and light cat-light/): each mod draws only its own.
+for d in mods/t3-files extras/mods/review; do
+  rsync -a --delete "$src/shared/icons/cat/" "$src/$d/icons/cat/"
+  rsync -a --delete "$src/shared/icons/cat-light/" "$src/$d/icons/cat-light/"
+done
 
 # mod.json stays per repo: here the layout places it ("none"), alone it docks left.
 [ ! -d "$inbox" ] || rsync -a --delete $gen --exclude mod.json "$src/mods/t3-inbox/" "$inbox/mods/t3-inbox/"

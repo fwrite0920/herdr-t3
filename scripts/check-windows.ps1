@@ -37,6 +37,18 @@ foreach ($line in $syncLines) {
     }
   }
 }
+foreach ($iconSet in @("cat", "cat-light")) {
+  $srcIcons = Join-Path $src "shared\icons\$iconSet"
+  if (Test-Path $srcIcons) {
+    foreach ($t in @("mods\t3-files", "extras\mods\review")) {
+      $dstIcons = Join-Path $src "$t\icons\$iconSet"
+      if (Test-Path (Join-Path $src $t)) {
+        New-Item -ItemType Directory -Force -Path $dstIcons | Out-Null
+        Copy-Item -Force "$srcIcons\*" $dstIcons
+      }
+    }
+  }
+}
 
 Write-Host "==> 2. Verifying RECIPE byte limits (<= 60,000 bytes)..." -ForegroundColor Cyan
 foreach ($recipe in @("RECIPE.md", "RECIPE.zh-CN.md")) {

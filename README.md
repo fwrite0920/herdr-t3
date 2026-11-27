@@ -141,7 +141,7 @@ No network requests.
 - **pulls.review**: a Review bar and the panel's Review page.
 - **Theme export for Pi**: Pi's colors follow Herdr's.
 - **asciicn wallpaper**: Home in your theme's colours: four pictures built in, or preview your image in Braille, Blocks or Dots before applying it. Import Studio `.ans` files too, including Unicode, leading-dash and hidden filenames. A failed Apply keeps your preview for retry; deleting an added wallpaper asks for confirmation and stops its conversion. See [the extras](docs/user/extras.md#asciicn-wallpaper).
-- **Themes**: Catppuccin and T3 Code, light and dark.
+- **Themes**: Omarchy, Catppuccin, and T3 Code (light and dark), plus anti-glare office light themes (`matte-paper` and `matte-mist`).
 
 How to add them: [the extras](docs/user/extras.md).
 

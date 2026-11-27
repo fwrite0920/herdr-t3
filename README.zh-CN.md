@@ -141,7 +141,7 @@ git clone --depth 1 https://github.com/JinJieBeWater/herdr-t3 && herdr-t3/script
 - **pulls.review**：Review 栏和面板里的 Review 页。
 - **给 Pi 用的主题导出**：让 Pi 的配色跟着 Herdr 走。
 - **asciicn 壁纸**：Home 的配色跟着主题：自带 4 张画，也能先用 Braille、Blocks 或 Dots 预览自己的图片再应用，或导入 Studio 的 `.ans`，支持 Unicode、短横开头和隐藏文件名。Apply 失败会保留预览供重试；删除加进来的壁纸前会再次确认，并停止它的转换。见[可选扩展](docs/user/extras.zh-CN.md#asciicn-壁纸)。
-- **主题**：Catppuccin 和 T3 Code，各有明暗两套。
+- **主题**：Omarchy、Catppuccin、T3 Code（各有明暗两套），以及面向反光办公屏的哑光浅色主题（`matte-paper`、`matte-mist`）。
 
 安装方法见[可选扩展](docs/user/extras.zh-CN.md)。
 
